@@ -60,6 +60,9 @@ export interface HostScanOptions {
   communityMissing?: boolean;
 }
 
+/** A character below space, or DEL: what a line-oriented tool splits or hides on. */
+const hasControlChar = (s: string) => [...s].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127);
+
 const MAX_HASH_BYTES = 50 * 1024 * 1024;
 
 function sha256File(p: string): string | undefined {
@@ -173,7 +176,7 @@ export async function scanHost(
   let oddNames = 0;
   for (const p of tree.files) {
     // "Icon\r" is how macOS stores a custom folder icon: the one legitimate control-character name.
-    if (!/[\x00-\x1f\x7f]/.test(basename(p)) || basename(p) === "Icon\r" || oddNames >= 50) continue;
+    if (!hasControlChar(basename(p)) || basename(p) === "Icon\r" || oddNames >= 50) continue;
     oddNames++;
     findings.push({
       surface: "host",
