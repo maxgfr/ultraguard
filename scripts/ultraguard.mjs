@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // src/cli.ts
-import { readFileSync as readFileSync12, realpathSync as realpathSync2 } from "fs";
+import { readFileSync as readFileSync13, realpathSync as realpathSync2 } from "fs";
 import { homedir as homedir5 } from "os";
 import { resolve as resolve2 } from "path";
 import { pathToFileURL } from "url";
@@ -10593,7 +10593,8 @@ function renderReport(run, now = /* @__PURE__ */ new Date()) {
       }
       continue;
     }
-    for (const sev of SEV_ORDER) for (const f of fs.filter((x) => x.severity === sev)) out2.push(findingLine(f));
+    const risky = (f) => /^Risky |not Apple's|downloads and runs|reverse shell|encoded payload/.test(f.title) ? 0 : 1;
+    for (const sev of SEV_ORDER) for (const f of fs.filter((x) => x.severity === sev).sort((a, b) => risky(a) - risky(b))) out2.push(findingLine(f));
     out2.push("");
   }
   const timed = findings.filter((f) => f.at && f.severity !== "info").sort((a, b) => String(a.at).localeCompare(String(b.at)));
@@ -10612,9 +10613,10 @@ function renderReport(run, now = /* @__PURE__ */ new Date()) {
   for (const f of findings)
     out2.push(`- [${f.id}] ${f.evidence.kind}: \`${f.evidence.ref}\`${f.evidence.excerpt ? `: ${f.evidence.excerpt.replace(/`/g, "'")}` : ""}`);
   out2.push("");
-  return { report: out2.join("\n"), remediation: renderRemediation(findings, vs, sources, gaps), verdicts: vs };
+  const inventory = run.read("host-inventory.json", void 0);
+  return { report: out2.join("\n"), remediation: renderRemediation(findings, vs, sources, gaps, inventory), verdicts: vs };
 }
-function renderRemediation(findings, vs, _sources, gaps) {
+function renderRemediation(findings, vs, _sources, gaps, inventory) {
   const out2 = ["# Remediation", "", "ultraguard runs none of these commands. Read each one, then run the ones that apply.", ""];
   const v = Object.fromEntries(vs.map((x) => [x.surface, x.verdict]));
   let step = 0;
@@ -10672,12 +10674,23 @@ function renderRemediation(findings, vs, _sources, gaps) {
   const host = findings.filter((f) => f.surface === "host" && (f.severity === "compromised" || f.severity === "exposed"));
   if (host.length) {
     h("This machine");
-    if (host.some((f) => f.severity === "compromised"))
+    if (host.some((f) => f.severity === "compromised")) {
+      out2.push("An IOC is on this machine. Treat every credential it holds as stolen, and rotate them from ANOTHER, clean machine:", "");
+      const creds = inventory?.credentials ?? [];
+      const envs = creds.filter((c) => c.kind.startsWith(".env"));
+      for (const c of creds.filter((x) => !x.kind.startsWith(".env"))) out2.push(`- ${c.kind}: \`${c.path}\``);
+      if (envs.length) out2.push(`- ${envs.length} \`.env\` file(s) with project secrets (listed in host-inventory.json)`);
+      if (!creds.length)
+        out2.push(
+          "- `~/.ssh`, `~/.aws`, `~/.config/gcloud`, `~/.azure`, `~/.npmrc`, `~/.pypirc`, `~/.docker/config.json`, `~/.kube`, the gh token, `.env` files"
+        );
       out2.push(
-        "An IOC is on this machine. Treat every credential it holds as stolen: browser sessions, `~/.ssh`, `~/.aws`, `~/.config/gcloud`, `~/.azure`, `~/.npmrc`, `~/.pypirc`, `~/.docker/config.json`, `~/.kube`, the gh token, `.env` files and AI provider keys.",
-        "Rotate them from ANOTHER, clean machine. Then remove the persistence below and consider a reinstall.",
+        "- browser sessions and saved passwords, and AI provider keys in your shell profile or apps",
+        "",
+        "Then remove the persistence below and consider a reinstall.",
         ""
       );
+    }
     for (const f of host) out2.push(`- ${f.title} [${f.id}]: \`${f.evidence.ref}\``);
     out2.push("");
   }
@@ -10703,7 +10716,7 @@ function renderRemediation(findings, vs, _sources, gaps) {
       ""
     );
   }
-  const review = findings.filter((f) => f.severity === "suspicious");
+  const review = findings.filter((f) => f.severity === "suspicious").sort((a, b) => Number(!/^Risky |not Apple's/.test(a.title)) - Number(!/^Risky |not Apple's/.test(b.title)));
   if (review.length) {
     h("To judge: changes in the window that match no IOC");
     for (const f of review) out2.push(`- ${f.title} [${f.id}]: \`${f.evidence.ref}\``);
@@ -11708,22 +11721,360 @@ async function scanGithub(iocs, runner2, opts = {}) {
 
 // src/scan/host.ts
 import { createHash as createHash2 } from "crypto";
-import { existsSync as existsSync8, readdirSync as readdirSync4, readFileSync as readFileSync11, statSync as statSync7 } from "fs";
+import { existsSync as existsSync9, readdirSync as readdirSync6, readFileSync as readFileSync12, statSync as statSync8 } from "fs";
 import { homedir as homedir3, platform } from "os";
+import { basename as basename5, join as join6 } from "path";
+
+// src/scan/hostintel.ts
+import { existsSync as existsSync8, readdirSync as readdirSync4, readFileSync as readFileSync11, statSync as statSync7 } from "fs";
 import { basename as basename4, join as join5 } from "path";
+var STRONG = [
+  [/\b(curl|wget)\b[^|;\n]*\|\s*(sudo\s+)?(ba|z|da)?sh\b/i, "downloads and runs a script"],
+  [/\b(curl|wget)\b[^\n]*(-o|--output|>)\s*\S*\s*(&&|;)\s*(chmod|\.\/|sh|bash|zsh|python|node)/i, "downloads then executes a file"],
+  [/\/dev\/(tcp|udp)\//, "opens a raw network socket (reverse shell pattern)"],
+  [/base64\s+(-d|-D|--decode)[^\n]*\|\s*(ba|z)?sh\b|\becho\s+[A-Za-z0-9+/=]{40,}\s*\|\s*base64/i, "decodes and runs an encoded payload"],
+  [/\b(python3?|perl|ruby|node)\s+-(c|e)\s+['"][^'"]*(socket|exec|eval|child_process|subprocess)/i, "runs inline interpreter code that spawns or connects"],
+  [/\bosascript\s+-e\b[^\n]*(do shell script|password)/i, "AppleScript that runs shell code or asks for a password"]
+];
+var TEMP_PATH = /^(\/tmp\/|\/private\/tmp\/|\/var\/tmp\/|\/private\/var\/tmp\/|\/dev\/shm\/|\/Users\/Shared\/)/;
+var KNOWN_HIDDEN = /* @__PURE__ */ new Set([
+  ".nvm",
+  ".volta",
+  ".local",
+  ".cargo",
+  ".rustup",
+  ".bun",
+  ".deno",
+  ".pyenv",
+  ".rbenv",
+  ".asdf",
+  ".sdkman",
+  ".vscode",
+  ".vscode-insiders",
+  ".cursor",
+  ".windsurf",
+  ".docker",
+  ".orbstack",
+  ".colima",
+  ".rd",
+  ".config",
+  ".npm",
+  ".pnpm",
+  ".yarn",
+  ".fnm",
+  ".gem",
+  ".go",
+  ".foundry",
+  ".claude",
+  ".codex",
+  ".agents",
+  ".lima",
+  ".ollama",
+  ".dotnet",
+  ".jenv",
+  ".nix-profile",
+  ".oh-my-zsh",
+  ".antigen",
+  ".zinit",
+  ".tmux",
+  ".gradle",
+  ".m2"
+]);
+function riskSignals(command2, executable, home) {
+  const out2 = [];
+  for (const [re, label] of STRONG) if (re.test(command2)) out2.push(label);
+  for (const p of [executable, ...command2.split(/\s+/)].filter(Boolean)) {
+    if (TEMP_PATH.test(p)) {
+      out2.push(`runs from a temporary or shared folder (${p})`);
+      break;
+    }
+    if (p.startsWith(`${home}/.`)) {
+      const top = p.slice(home.length + 1).split("/")[0] ?? "";
+      if (!KNOWN_HIDDEN.has(top)) {
+        out2.push(`runs from a hidden folder of your home (${p})`);
+        break;
+      }
+    }
+  }
+  return [...new Set(out2)];
+}
+function startupCommand(text) {
+  const args = /<key>ProgramArguments<\/key>\s*<array>([\s\S]*?)<\/array>/.exec(text)?.[1];
+  if (args) {
+    const parts = [...args.matchAll(/<string>([^<]*)<\/string>/g)].map((m) => decodeXml2(m[1] ?? ""));
+    const program2 = /<key>Program<\/key>\s*<string>([^<]+)<\/string>/.exec(text)?.[1];
+    const shellC = parts.length >= 3 && /\/(ba|z|da)?sh$/.test(parts[0] ?? "") && parts[1] === "-c";
+    const executable = program2 ?? (shellC ? (parts[2] ?? "").trim().split(/\s+/)[0]?.replace(/^["']|["']$/g, "") : parts[0]);
+    return { command: parts.join(" "), executable };
+  }
+  const program = /<key>Program<\/key>\s*<string>([^<]+)<\/string>/.exec(text)?.[1];
+  if (program) return { command: decodeXml2(program), executable: decodeXml2(program) };
+  const exec = /^ExecStart=[-@+!:]*(.*)$/m.exec(text)?.[1] ?? /^Exec=(.*)$/m.exec(text)?.[1];
+  if (exec) return { command: exec.trim(), executable: exec.trim().split(/\s+/)[0] };
+  return { command: "" };
+}
+function decodeXml2(s) {
+  return s.replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+}
+async function signerOf(runner2, executable) {
+  const res = await runner2("codesign", ["-dv", "--verbose=2", executable], { timeoutMs: 15e3 });
+  if (res.missing) return void 0;
+  const text = `${res.stderr}
+${res.stdout}`;
+  if (/not signed at all|code object is not signed/i.test(text)) return { signed: false };
+  if (!res.ok && !/Authority=|Signature=adhoc/.test(text)) return void 0;
+  const authority = /^Authority=(.+)$/m.exec(text)?.[1]?.trim();
+  const team = /^TeamIdentifier=(.+)$/m.exec(text)?.[1]?.trim();
+  if (/Signature=adhoc/.test(text)) return { signed: false, signer: "ad-hoc signature (no identity)" };
+  return { signed: true, signer: authority, team: team && team !== "not set" ? team : void 0 };
+}
+var SHELL_STARTUP = [".zshrc", ".zprofile", ".zshenv", ".zlogin", ".bashrc", ".bash_profile", ".profile", ".config/fish/config.fish"];
+var SHELL_RISK = [
+  ...STRONG,
+  [/\b(DYLD_INSERT_LIBRARIES|LD_PRELOAD)\s*=/, "injects a library into every program"],
+  [/\bNODE_OPTIONS\s*=.*--(require|import|loader)\b/, "makes every Node.js process load a module"],
+  [/\bPYTHONSTARTUP\s*=|\bPERL5OPT\s*=|\bRUBYOPT\s*=.*-r/, "makes every interpreter load a file"],
+  [/^\s*alias\s+(sudo|ssh|git|gh|npm|su|passwd)=/, "redefines a security-sensitive command"],
+  [/^\s*(function\s+)?(sudo|ssh|git|gh)\s*\(\)/, "redefines a security-sensitive command"],
+  [/\bexport\s+PATH=["']?(\/tmp|\/private\/tmp|\/Users\/Shared)/, "puts a temporary folder first in PATH"]
+];
+function shellStartupFindings(home) {
+  const findings = [];
+  const lines = [];
+  for (const rel of SHELL_STARTUP) {
+    const p = join5(home, rel);
+    let text;
+    try {
+      if (statSync7(p).size > 2 * 1024 * 1024) continue;
+      text = readFileSync11(p, "utf8");
+    } catch {
+      continue;
+    }
+    text.split("\n").forEach((line, i) => {
+      if (/^\s*#/.test(line)) return;
+      for (const [re, signal] of SHELL_RISK) {
+        if (!re.test(line)) continue;
+        lines.push({ path: p, line: i + 1, signal, text: line.trim().slice(0, 200) });
+        findings.push({
+          surface: "host",
+          severity: "suspicious",
+          subject: p,
+          title: `${basename4(p)} line ${i + 1} ${signal}`,
+          evidence: { kind: "file", ref: `${p}:${i + 1}`, excerpt: line.trim().slice(0, 200) },
+          key: `host|${p}|${i + 1}|${signal}`
+        });
+        break;
+      }
+    });
+  }
+  return { findings, lines };
+}
+function readSmall(p) {
+  try {
+    if (statSync7(p).size > 1024 * 1024) return void 0;
+    return readFileSync11(p, "utf8");
+  } catch {
+    return void 0;
+  }
+}
+function configFindings(home, reviewSinceMs) {
+  const out2 = [];
+  const add2 = (p, title, excerpt, line) => out2.push({
+    surface: "host",
+    severity: "suspicious",
+    subject: p,
+    title,
+    evidence: { kind: "file", ref: line ? `${p}:${line}` : p, excerpt },
+    key: `host|${p}|${title}`
+  });
+  const lineOf = (text, re) => text.split("\n").findIndex((l) => re.test(l)) + 1;
+  const npmrc = readSmall(join5(home, ".npmrc"));
+  const reg = npmrc ? /^\s*registry\s*=\s*(\S+)/m.exec(npmrc)?.[1] : void 0;
+  if (npmrc && reg && !/^https:\/\/registry\.(npmjs\.org|yarnpkg\.com)\/?$/.test(reg))
+    add2(join5(home, ".npmrc"), `~/.npmrc sends every npm install to another registry: ${reg}`, `registry=${reg}`, lineOf(npmrc, /^\s*registry\s*=/));
+  for (const pip of [join5(home, ".pip/pip.conf"), join5(home, ".config/pip/pip.conf"), join5(home, "Library/Application Support/pip/pip.conf")]) {
+    const text = readSmall(pip);
+    const idx = text ? /^\s*index-url\s*=\s*(\S+)/m.exec(text)?.[1] : void 0;
+    if (text && idx && !/^https:\/\/pypi\.org\/simple\/?$/.test(idx))
+      add2(pip, `pip installs from another index: ${idx}`, `index-url = ${idx}`, lineOf(text, /index-url/));
+  }
+  const gitconfig = readSmall(join5(home, ".gitconfig"));
+  if (gitconfig) {
+    const hooks = /^\s*hooksPath\s*=\s*(.+)$/m.exec(gitconfig)?.[1]?.trim();
+    if (hooks) {
+      const dir = hooks.replace(/^~(?=\/)/, home);
+      let recent = [];
+      try {
+        recent = readdirSync4(dir).filter((f) => statSync7(join5(dir, f)).mtimeMs >= reviewSinceMs);
+      } catch {
+      }
+      add2(
+        join5(home, ".gitconfig"),
+        `git runs global hooks from ${hooks} in every repository${recent.length ? `; changed recently: ${recent.join(", ")}` : ""}`,
+        `hooksPath = ${hooks}`,
+        lineOf(gitconfig, /hooksPath/)
+      );
+    }
+    const sshCmd = /^\s*sshCommand\s*=\s*(.+)$/m.exec(gitconfig)?.[1]?.trim();
+    if (sshCmd && !/^ssh(\s|$)/.test(sshCmd))
+      add2(join5(home, ".gitconfig"), `git runs a custom SSH command: ${sshCmd}`, sshCmd, lineOf(gitconfig, /sshCommand/));
+  }
+  const ak = join5(home, ".ssh/authorized_keys");
+  try {
+    const st = statSync7(ak);
+    if (st.mtimeMs >= reviewSinceMs) {
+      const keys = (readSmall(ak) ?? "").split("\n").filter((l) => l.trim() && !l.startsWith("#"));
+      const comments = keys.map((k) => k.trim().split(/\s+/).slice(2).join(" ") || "(no comment)");
+      out2.push({
+        surface: "host",
+        severity: "suspicious",
+        subject: ak,
+        title: `~/.ssh/authorized_keys changed recently: ${keys.length} key(s) can log in to this machine (${comments.join(", ").slice(0, 120)})`,
+        at: st.mtime.toISOString(),
+        evidence: { kind: "file", ref: ak },
+        key: `host|${ak}|recent`
+      });
+    }
+  } catch {
+  }
+  return out2;
+}
+function recentExtensions(home, reviewSinceMs) {
+  const findings = [];
+  const list = [];
+  for (const rel of [".vscode/extensions", ".vscode-insiders/extensions", ".cursor/extensions", ".windsurf/extensions", ".vscode-oss/extensions"]) {
+    const dir = join5(home, rel);
+    const editor = rel.split("/")[0]?.replace(/^\./, "") ?? rel;
+    const manifest = readSmall(join5(dir, "extensions.json")) ?? (() => {
+      try {
+        return readFileSync11(join5(dir, "extensions.json"), "utf8");
+      } catch {
+        return void 0;
+      }
+    })();
+    let entries = [];
+    if (manifest) {
+      try {
+        entries = JSON.parse(manifest).map((e) => ({
+          id: e.identifier?.id,
+          version: e.version,
+          path: e.location?.path ?? join5(dir, e.relativeLocation ?? ""),
+          installed: e.metadata?.installedTimestamp,
+          updated: e.metadata?.updated,
+          source: e.metadata?.source,
+          publisher: e.metadata?.publisherDisplayName
+        }));
+      } catch {
+      }
+    } else {
+      let names = [];
+      try {
+        names = readdirSync4(dir);
+      } catch {
+        continue;
+      }
+      for (const name of names) {
+        if (name.startsWith(".") || !/-\d+\.\d+\.\d+/.test(name)) continue;
+        try {
+          const st = statSync7(join5(dir, name));
+          if (st.isDirectory()) entries.push({ id: name.replace(/-\d+\.\d+\.\d+.*$/, ""), version: "", path: join5(dir, name), installed: st.birthtimeMs });
+        } catch {
+        }
+      }
+    }
+    for (const e of entries) {
+      if (!e.id || !e.installed || e.installed < reviewSinceMs || e.updated) continue;
+      const installed2 = new Date(e.installed).toISOString();
+      list.push({ path: e.path, id: e.id, installed: installed2 });
+      const sideloaded = e.source === "vsix";
+      findings.push({
+        surface: "host",
+        severity: "suspicious",
+        subject: e.path,
+        title: `Editor extension ${e.id}${e.version ? `@${e.version}` : ""} was newly installed in ${editor}${e.publisher ? ` (publisher: ${e.publisher})` : ""}${sideloaded ? ", from a .vsix file, not the Marketplace" : ""}: check it is the one you meant`,
+        at: installed2,
+        evidence: { kind: "file", ref: e.path },
+        key: `host|${e.path}|new-ext`
+      });
+    }
+  }
+  return { findings, list };
+}
+async function processFindings(runner2, home) {
+  const ps = await runner2("ps", ["-axo", "pid=,comm="], { timeoutMs: 1e4 });
+  if (!ps.ok) return [];
+  const out2 = [];
+  for (const line of ps.stdout.split("\n")) {
+    const m = /^\s*(\d+)\s+(\/.+)$/.exec(line);
+    if (!m) continue;
+    const exe = m[2];
+    const signals = riskSignals("", exe, home);
+    if (!signals.length) continue;
+    out2.push({
+      surface: "host",
+      severity: "suspicious",
+      subject: exe,
+      title: `Running process ${basename4(exe)} (pid ${m[1]}) ${signals[0]}`,
+      evidence: { kind: "command", ref: "ps -axo pid=,comm=", excerpt: line.trim() },
+      key: `host|process|${exe}`
+    });
+  }
+  return out2;
+}
+function credentialInventory(home, envFiles) {
+  const out2 = [];
+  const has = (rel, kind, test) => {
+    const p = join5(home, rel);
+    if (!existsSync8(p)) return;
+    if (test) {
+      const text = readSmall(p);
+      if (!text || !test.test(text)) return;
+    }
+    out2.push({ path: p, kind });
+  };
+  has(".aws/credentials", "AWS access keys");
+  has(".aws/sso/cache", "AWS SSO tokens");
+  has(".config/gcloud/credentials.db", "Google Cloud credentials");
+  has(".config/gcloud/application_default_credentials.json", "Google Cloud application credentials");
+  has(".azure/msal_token_cache.json", "Azure tokens");
+  has(".azure/accessTokens.json", "Azure tokens");
+  has(".npmrc", "npm publish token", /_authToken\s*=/);
+  has(".yarnrc.yml", "yarn registry token", /npmAuthToken/);
+  has(".pypirc", "PyPI upload token", /password\s*=|token/i);
+  has(".cargo/credentials.toml", "crates.io token");
+  has(".gem/credentials", "RubyGems key");
+  has(".docker/config.json", "Docker registry logins", /"auths"\s*:\s*\{\s*"/);
+  has(".kube/config", "Kubernetes credentials");
+  has(".config/gh/hosts.yml", "GitHub CLI token", /oauth_token|user:/);
+  has(".git-credentials", "git HTTPS credentials (plain text)");
+  has(".netrc", "netrc logins (plain text)");
+  has(".vault-token", "HashiCorp Vault token");
+  has(".terraform.d/credentials.tfrc.json", "Terraform Cloud token");
+  try {
+    for (const f of readdirSync4(join5(home, ".ssh"))) {
+      if (/^id_[a-z0-9]+$/.test(f) || /\.pem$/.test(f)) out2.push({ path: join5(home, ".ssh", f), kind: "SSH private key" });
+    }
+  } catch {
+  }
+  if (existsSync8(join5(home, ".gnupg/private-keys-v1.d"))) out2.push({ path: join5(home, ".gnupg"), kind: "GPG private keys" });
+  for (const p of envFiles.slice(0, 200)) out2.push({ path: p, kind: ".env file (project secrets)" });
+  return out2;
+}
+
+// src/scan/host.ts
 var MAX_HASH_BYTES = 50 * 1024 * 1024;
 function sha256File(p) {
   try {
-    if (statSync7(p).size > MAX_HASH_BYTES) return void 0;
-    return createHash2("sha256").update(readFileSync11(p)).digest("hex");
+    if (statSync8(p).size > MAX_HASH_BYTES) return void 0;
+    return createHash2("sha256").update(readFileSync12(p)).digest("hex");
   } catch {
     return void 0;
   }
 }
 function readText(p, max = 2 * 1024 * 1024) {
   try {
-    if (statSync7(p).size > max) return void 0;
-    return readFileSync11(p, "utf8");
+    if (statSync8(p).size > max) return void 0;
+    return readFileSync12(p, "utf8");
   } catch {
     return void 0;
   }
@@ -11740,8 +12091,8 @@ function hitOf(m, f) {
   };
 }
 function startupDirs(home, os) {
-  if (os === "darwin") return [join5(home, "Library/LaunchAgents"), "/Library/LaunchAgents", "/Library/LaunchDaemons"];
-  return [join5(home, ".config/systemd/user"), join5(home, ".config/autostart"), "/etc/systemd/system", "/etc/cron.d", "/etc/xdg/autostart"];
+  if (os === "darwin") return [join6(home, "Library/LaunchAgents"), "/Library/LaunchAgents", "/Library/LaunchDaemons"];
+  return [join6(home, ".config/systemd/user"), join6(home, ".config/autostart"), "/etc/systemd/system", "/etc/cron.d", "/etc/xdg/autostart"];
 }
 async function scanHost(iocs, tree, runner2, opts = {}) {
   const home = opts.home ?? homedir3();
@@ -11750,6 +12101,7 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
   const result = { surface: "host", scanned: true, stats: {}, startedAt: (opts.now ?? /* @__PURE__ */ new Date()).toISOString() };
   const findings = [];
   const gaps = [];
+  const inventory = { startupItems: [], credentials: [], recentExtensions: [], shellStartup: [] };
   const M = {
     file: matchers(iocs, "file", "workflow_file"),
     hash: matchers(iocs, "sha256"),
@@ -11766,12 +12118,13 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
     const digest = sha256File(p);
     const hashHit = digest ? hashes.get(digest) : void 0;
     const campaignHashes = M.hash.filter((h) => h.campaign.id === m.campaign.id).length;
-    const nameOnly = !hashHit && !!m.indicator.weak;
+    const exactName = !/[*?]/.test(m.indicator.value) && !m.indicator.regex;
+    const nameOnly = !hashHit && (!!m.indicator.weak || exactName && campaignHashes > 0);
     findings.push(
       hitOf(hashHit ?? m, {
         subject: p,
         severity: nameOnly ? "suspicious" : "compromised",
-        title: hashHit ? `File ${p} matches the sha256` : nameOnly ? `File ${p} is named like "${m.indicator.value}" (a common name)${campaignHashes ? `, and its sha256 matches none of the campaign's ${campaignHashes} hash(es)` : ""}` : `File ${p} matches "${m.indicator.value}"`,
+        title: hashHit ? `File ${p} matches the sha256` : nameOnly ? `File ${p} is named like "${m.indicator.value}"${m.indicator.weak ? " (a common name)" : ""}${campaignHashes ? `, but its sha256 matches none of the campaign's ${campaignHashes} hash(es)` : ""}` : `File ${p} matches "${m.indicator.value}"`,
         evidence: { kind: "file", ref: p, excerpt: digest ? `sha256=${digest}` : void 0 }
       })
     );
@@ -11791,8 +12144,8 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
     });
   if (hashes.size) gaps.push({ surface: "host", what: "sha256 of every file", why: "only files named like an IOC and startup items are hashed" });
   for (const dir of tree.vscodeDirs) {
-    const p = join5(dir, "tasks.json");
-    const text = existsSync8(p) ? readText(p) : void 0;
+    const p = join6(dir, "tasks.json");
+    const text = existsSync9(p) ? readText(p) : void 0;
     if (!text || !/"runOn"\s*:\s*"folderOpen"/.test(text)) continue;
     const line = text.split("\n").findIndex((l) => /folderOpen/.test(l)) + 1;
     const cmd = /"command"\s*:\s*"([^"]+)"/.exec(text)?.[1];
@@ -11820,15 +12173,15 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
   for (const dir of opts.startupDirs ?? startupDirs(home, os)) {
     let names = [];
     try {
-      names = readdirSync4(dir);
+      names = readdirSync6(dir);
     } catch {
       continue;
     }
     for (const name of names) {
-      const p = join5(dir, name);
+      const p = join6(dir, name);
       let st;
       try {
-        st = statSync7(p);
+        st = statSync8(p);
       } catch {
         continue;
       }
@@ -11836,33 +12189,64 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
       startupCount++;
       const text = readText(p) ?? "";
       const m = M.content.find((x) => x.test(text)) ?? (hashes.size ? hashes.get(sha256File(p) ?? "") : void 0);
-      const program = /<key>Program(?:Arguments)?<\/key>\s*<(?:array>\s*<)?string>([^<]+)/.exec(text)?.[1] ?? /^ExecStart=(.*)$/m.exec(text)?.[1] ?? /^Exec=(.*)$/m.exec(text)?.[1];
+      const { command: command2, executable } = startupCommand(text);
+      const item = { path: p, mtime: st.mtime.toISOString(), command: command2, executable, signals: riskSignals(command2, executable, home) };
+      if (executable?.startsWith("/")) {
+        item.exists = existsSync9(executable);
+        if (!item.exists) item.signals.push("points to a program that no longer exists");
+        else if (os === "darwin" && !opts.skipLive) {
+          const sig = await signerOf(runner2, executable);
+          if (sig) {
+            item.signed = sig.signed;
+            item.signer = sig.signer;
+            item.team = sig.team;
+            if (!sig.signed) item.signals.push(`is not signed by any developer${sig.signer ? ` (${sig.signer})` : ""}`);
+          }
+        }
+      }
+      const label = /<key>Label<\/key>\s*<string>([^<]+)<\/string>/.exec(text)?.[1] ?? name.replace(/\.plist$/, "");
+      if (/^com\.apple\./i.test(label) && !(item.signer ?? "").startsWith("Software Signing") && !/^\/(System|usr\/libexec|usr\/sbin)\//.test(executable ?? ""))
+        item.signals.unshift(`is named like an Apple service (${label}) but is not Apple's`);
+      inventory.startupItems.push(item);
+      const recent = st.mtimeMs >= sinceMs;
+      const facts = [
+        command2 ? `runs ${command2.slice(0, 160)}` : "no program found",
+        item.signer ? `signed by ${item.signer}${item.team ? ` (team ${item.team})` : ""}` : void 0,
+        ...item.signals
+      ].filter(Boolean);
+      const strong = item.signals.some((s) => !s.startsWith("points to") && !s.startsWith("is not signed"));
       if (m)
         findings.push(
           hitOf(m, {
             subject: p,
             title: `Startup item ${p} contains "${m.indicator.value}"`,
-            at: st.mtime.toISOString(),
-            evidence: { kind: "file", ref: p, excerpt: program }
+            at: item.mtime,
+            evidence: { kind: "file", ref: p, excerpt: command2 }
           })
         );
-      else if (st.mtimeMs >= sinceMs)
+      else if (strong || recent)
         findings.push({
           surface: "host",
           severity: "suspicious",
           subject: p,
-          title: `Startup item ${basename4(p)} was written during the campaign window${program ? ` (runs ${program})` : ""}`,
-          at: st.mtime.toISOString(),
-          evidence: { kind: "file", ref: p, excerpt: program },
-          key: `host|${p}|startup-mtime`
+          title: `${strong ? "Risky startup item" : "Startup item"} ${basename5(p)}${recent ? " was written recently" : ""}: ${facts.join("; ")}`,
+          at: item.mtime,
+          evidence: { kind: "file", ref: p, excerpt: command2.slice(0, 300) },
+          key: `host|${p}|startup`
         });
     }
   }
   result.stats.startupItems = startupCount;
-  const traces = [".zsh_history", ".bash_history", ".local/share/fish/fish_history", ".python_history"].map((f) => join5(home, f));
+  const rc = shellStartupFindings(home);
+  findings.push(...rc.findings);
+  inventory.shellStartup = rc.lines;
+  findings.push(...configFindings(home, sinceMs));
+  const traces = [".zsh_history", ".bash_history", ".local/share/fish/fish_history", ".python_history", ".zshrc", ".bashrc", ".profile", ".zprofile"].map(
+    (f) => join6(home, f)
+  );
   traces.push("/etc/hosts");
   for (const p of traces) {
-    const text = existsSync8(p) ? readText(p, 20 * 1024 * 1024) : void 0;
+    const text = existsSync9(p) ? readText(p, 20 * 1024 * 1024) : void 0;
     if (!text) continue;
     const lines = text.split("\n");
     for (const m of M.content) {
@@ -11871,7 +12255,8 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
       findings.push(
         hitOf(m, {
           subject: p,
-          severity: p === "/etc/hosts" ? "compromised" : "exposed",
+          // In history it was typed (maybe while investigating); in a startup file or /etc/hosts it is wired in.
+          severity: /_history$/.test(p) ? "exposed" : "compromised",
           title: `${p} line ${ln + 1} mentions "${m.indicator.value}"`,
           evidence: {
             kind: "file",
@@ -11884,11 +12269,11 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
   }
   let extensions = 0;
   for (const dir of [".vscode/extensions", ".vscode-insiders/extensions", ".cursor/extensions", ".windsurf/extensions", ".vscode-oss/extensions"].map(
-    (d) => join5(home, d)
+    (d) => join6(home, d)
   )) {
     let names = [];
     try {
-      names = readdirSync4(dir);
+      names = readdirSync6(dir);
     } catch {
       continue;
     }
@@ -11902,21 +12287,24 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
       );
       if (m)
         findings.push(
-          hitOf(m, { subject: join5(dir, name), title: `Editor extension ${id}@${version} is installed`, evidence: { kind: "file", ref: join5(dir, name) } })
+          hitOf(m, { subject: join6(dir, name), title: `Editor extension ${id}@${version} is installed`, evidence: { kind: "file", ref: join6(dir, name) } })
         );
     }
   }
   result.stats.extensions = extensions;
+  const ext = recentExtensions(home, sinceMs);
+  findings.push(...ext.findings);
+  inventory.recentExtensions = ext.list;
   if (opts.hitRepos?.length) {
     const wanted = new Set(opts.hitRepos.map((r) => r.toLowerCase()));
     for (const dir of tree.gitDirs) {
-      const cfg = readText(join5(dir, ".git/config")) ?? "";
+      const cfg = readText(join6(dir, ".git/config")) ?? "";
       const urls = [...cfg.matchAll(/url\s*=\s*(\S+)/g)].map((x) => x[1] ?? "");
       const repo = urls.map((u) => /github\.com[:/]([^/]+\/[^/.]+?)(?:\.git)?$/.exec(u)?.[1]?.toLowerCase()).find((r) => r && wanted.has(r));
       if (!repo) continue;
       let fetched;
       try {
-        fetched = statSync7(join5(dir, ".git/FETCH_HEAD")).mtime.toISOString();
+        fetched = statSync8(join6(dir, ".git/FETCH_HEAD")).mtime.toISOString();
       } catch {
       }
       findings.push({
@@ -11925,7 +12313,7 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
         subject: dir,
         title: `Local clone of ${repo}, a repository the GitHub scan found hit${fetched ? ` (last fetch ${fetched})` : ""}`,
         at: fetched,
-        evidence: { kind: "file", ref: join5(dir, ".git/config") },
+        evidence: { kind: "file", ref: join6(dir, ".git/config") },
         key: `host|${dir}|clone|${repo}`
       });
     }
@@ -11946,6 +12334,19 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
             })
           );
       }
+      lines.forEach((l, i) => {
+        if (/^\s*#/.test(l) || !l.trim()) return;
+        const signals = riskSignals(l, void 0, home);
+        if (signals.length)
+          findings.push({
+            surface: "host",
+            severity: "suspicious",
+            subject: "crontab",
+            title: `crontab line ${i + 1} ${signals.join("; ")}`,
+            evidence: { kind: "command", ref: "crontab -l", excerpt: l.slice(0, 200) },
+            key: `host|crontab|${i + 1}`
+          });
+      });
     }
     const net = os === "darwin" ? await runner2("lsof", ["-nPi"], { timeoutMs: 2e4 }) : await runner2("ss", ["-tunap"], { timeoutMs: 2e4 });
     if (net.ok) {
@@ -11984,7 +12385,30 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
           );
       }
     }
-  } else gaps.push({ surface: "host", what: "crontab, open connections and processes", why: "live checks were skipped" });
+    findings.push(...await processFindings(runner2, home));
+  } else gaps.push({ surface: "host", what: "crontab, open connections, processes and code signatures", why: "live checks were skipped" });
+  inventory.credentials = credentialInventory(
+    home,
+    tree.files.filter((f) => /^\.env(\.[\w-]+)?$/.test(basename5(f)) && !/\.(example|sample|template|dist)$/.test(f))
+  );
+  if (inventory.credentials.length) {
+    const kinds = [...new Set(inventory.credentials.map((c) => c.kind))];
+    findings.push({
+      surface: "host",
+      severity: "info",
+      subject: "credentials",
+      title: `Credentials a stealer on this machine would take: ${kinds.join(", ")} (${inventory.credentials.length} files, listed in host-inventory.json)`,
+      evidence: { kind: "file", ref: "host-inventory.json" },
+      key: "host|credentials"
+    });
+  }
+  result.stats.credentialFiles = inventory.credentials.length;
+  gaps.push({
+    surface: "host",
+    what: "login items, browser extensions and kernel or system extensions",
+    why: "not read: they need privileges or per-browser profiles",
+    fix: "System Settings > General > Login Items; each browser's extensions page"
+  });
   gaps.push({
     surface: "host",
     what: "files outside the scanned roots and deeper than the walk depth",
@@ -11992,12 +12416,12 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
     fix: "pass --roots and --depth to widen it"
   });
   result.finishedAt = (/* @__PURE__ */ new Date()).toISOString();
-  return { result, findings, gaps };
+  return { result, findings, gaps, inventory };
 }
 
 // src/scan/walk.ts
-import { lstatSync, readdirSync as readdirSync6 } from "fs";
-import { join as join6 } from "path";
+import { lstatSync, readdirSync as readdirSync7 } from "fs";
+import { join as join7 } from "path";
 var PRUNE = /* @__PURE__ */ new Set([
   "node_modules",
   ".git",
@@ -12034,7 +12458,7 @@ function walk(roots, opts = {}) {
     const { dir, depth } = stack.pop();
     let names;
     try {
-      names = readdirSync6(dir);
+      names = readdirSync7(dir);
     } catch {
       out2.unreadable++;
       continue;
@@ -12044,7 +12468,7 @@ function walk(roots, opts = {}) {
         out2.capped = true;
         return out2;
       }
-      const p = join6(dir, name);
+      const p = join7(dir, name);
       if (name === ".git") {
         out2.gitDirs.push(dir);
         continue;
@@ -12073,11 +12497,11 @@ var VERSION = "1.1.1";
 // src/watch.ts
 import { mkdirSync as mkdirSync5 } from "fs";
 import { homedir as homedir4 } from "os";
-import { join as join7 } from "path";
+import { join as join12 } from "path";
 var EXIT_ALERT = 10;
 var EXIT_INCOMPLETE = 20;
 function stateDir(flag) {
-  return flag ?? env("HOME") ?? join7(homedir4(), ".ultraguard");
+  return flag ?? env("HOME") ?? join12(homedir4(), ".ultraguard");
 }
 function loadState(dir) {
   mkdirSync5(dir, { recursive: true });
@@ -12291,7 +12715,8 @@ async function runScan(surface, a, run, iocs, tree) {
   if (surface === "host") {
     const r2 = await scanHost(iocs, (tree ?? (() => walkFor(a)))(), runner, { hitRepos: run.meta().hitRepos, skipLive: argBool(a, "skip-live") });
     const f2 = run.recordSurface(r2.result, r2.findings, r2.gaps);
-    return `host: ${r2.result.stats.files ?? 0} files, ${r2.result.stats.startupItems ?? 0} startup items; ${f2.length} finding(s)`;
+    run.write("host-inventory.json", r2.inventory);
+    return `host: ${r2.result.stats.files ?? 0} files, ${r2.result.stats.startupItems ?? 0} startup items, ${r2.result.stats.credentialFiles ?? 0} credential files; ${f2.length} finding(s)`;
   }
   if (surface === "deps") {
     const r2 = await scanDeps(iocs, (tree ?? (() => walkFor(a)))(), run, { osv: argBool(a, "no-osv") ? false : void 0 });
@@ -12362,7 +12787,7 @@ Next: read each source, then write ${run.path("iocs.json")} (start from ${run.pa
       }
       if (sub !== "set") throw new UsageError("ioc takes `set --file <iocs.json>` or `show`");
       const file = argValue(a, "file");
-      const own = file ? JSON.parse(readFileSync12(file, "utf8")).campaigns : [];
+      const own = file ? JSON.parse(readFileSync13(file, "utf8")).campaigns : [];
       const carried = run.read("iocs.carried.json", { campaigns: [] }).campaigns;
       if (!file && !carried.length) throw new UsageError("ioc set needs --file <iocs.json>");
       const merged = [...own, ...carried.filter((c) => !own.some((o) => o.id === c.id))];
@@ -12392,7 +12817,8 @@ ${problems.map((p) => `  ${p.path}: ${p.message}`).join("\n")}`);
       const iocs = needIocs(run);
       const wanted = argList(a, "surfaces");
       for (const w of wanted) if (!SURFACE_OF[w]) throw new UsageError(`--surfaces takes github,host,deps,cloud, not "${w}"`);
-      const list = wanted.length ? wanted : ["github", "host", "deps", "cloud"];
+      const ORDER2 = ["github", "host", "deps", "cloud"];
+      const list = ORDER2.filter((s) => !wanted.length || wanted.includes(s));
       let tree;
       const shared = () => tree ??= walkFor(a);
       for (const s of list) out(await runScan(s, a, run, iocs, shared));
@@ -12418,7 +12844,7 @@ ${run.path("REMEDIATION.md")}`
       const file = a.positional[0];
       if (!file) throw new UsageError("check needs the answer file: ultraguard check <answer.md> --out <run>");
       const run = needRun(a);
-      const problems = checkAnswer(run, readFileSync12(file, "utf8"));
+      const problems = checkAnswer(run, readFileSync13(file, "utf8"));
       if (json2) out(jsonLine({ ok: problems.length === 0, problems }));
       else
         out(

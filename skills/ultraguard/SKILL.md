@@ -113,10 +113,13 @@ Your job is what the engine cannot do:
    evidence (`gh api …`, the URL, the commit diff) and say so if it is the
    user's own work. A finding stays in the data; your answer says it is a
    false positive and cites it.
-2. **Resolve REVIEW findings.** A LaunchAgent written during the window is
-   either an install the user made or persistence. Look (read-only: `ls -l`,
-   `codesign -dv`, `plutil -p`, the package that owns it), then say which, and
-   ask the user when only they can know.
+2. **Resolve REVIEW findings.** The host scan analyses the machine beyond the
+   IOCs (startup items with their signer, shell startup files, package and
+   git settings, new extensions, odd processes) and writes the facts to
+   `<run>/host-inventory.json`. A LaunchAgent written recently is either an
+   install the user made or persistence: check it read-only
+   ([host](references/host.md) lists the commands), then say which, and ask
+   the user when only they can know.
 3. **Rank by what ran.** REPORT.md separates repositories where the attacker
    made CI run from probe-only ones. Open the run or commit: a probe run that
    only executed the repository's own workflows on a docs change leaked

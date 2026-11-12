@@ -11,9 +11,10 @@
   "usageFloor": 27,
   "forks": {},
   "allowedForeignFlags": [
-    "verbose",
     "file-info",
-    "user"
+    "require",
+    "user",
+    "verbose"
   ],
   "repin": {
     "artifacts": [

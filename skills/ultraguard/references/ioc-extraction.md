@@ -73,7 +73,9 @@ Ecosystems: `npm`, `pypi`, `crates.io`, `go`, `packagist`, `rubygems`, `vscode`.
   ordinary projects also have (`bundle.js`, `setup.js`, `.vscode/tasks.json`,
   `lint.yml`, `codeql.yml`) is only suspicious on a name match. Add the
   campaign's sha256 values when it publishes them: a hash match settles it.
-  Keep a distinctive name (`.ci-*.sh`, `wfx-docs`) strong.
+  On disk, an exact file name (no wildcard) from a campaign that publishes
+  hashes is treated as weak automatically until its hash matches. Keep a
+  distinctive pattern (`.ci-*.sh`, `wfx-docs`) strong.
 - **Versions are listed one by one.** Expand a range a source writes as
   `0.0.16-18` into `["0.0.16", "0.0.17", "0.0.18"]`, after checking the source
   means a range. A package listed with no version flags every version: use

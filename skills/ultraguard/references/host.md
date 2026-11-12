@@ -1,40 +1,69 @@
 # The host scan (macOS and Linux)
 
+Two layers. **IOC matching** finds what a campaign's sources name. **Machine
+analysis** looks at what an analyst checks when no IOC is known yet: who
+signed what starts at login, what the shell runs when a terminal opens, where
+packages come from, which extensions are new. Each check collects facts and
+risk signals. A signal makes a `suspicious` finding with the facts in its
+title, and everything collected goes to `<run>/host-inventory.json`.
+
 The walk starts at `--roots` (default: the home directory), goes `--depth`
 levels (default 6), skips heavy and system trees (`node_modules`, `.git`,
 `Library`, caches, build output, media folders) and stops after 400,000
-entries. Everything it skipped is a coverage gap.
+entries. What it skipped is a coverage gap.
+
+## IOC matching
 
 | Check | Severity on a match |
 |---|---|
-| Files named like a `file` / `workflow_file` IOC, with their sha256 | compromised |
+| Files named like a `file` / `workflow_file` IOC, with their sha256 | compromised (suspicious for a `weak` name whose hash does not match) |
 | `.vscode/tasks.json` with `"runOn": "folderOpen"` | compromised with an IOC, suspicious without |
-| Startup items: `~/Library/LaunchAgents`, `/Library/LaunchAgents`, `/Library/LaunchDaemons` (macOS); systemd user and system units, autostart, `/etc/cron.d` (Linux) | compromised with an IOC; suspicious when written during the window |
-| Shell history (zsh, bash, fish, python) mentioning an IOC | exposed |
-| `/etc/hosts` mentioning an IOC | compromised |
-| Editor extensions (VS Code, Insiders, Cursor, Windsurf, VSCodium) named by a `package` IOC with `ecosystem: "vscode"` | compromised |
+| Startup items holding an IOC | compromised |
+| Shell startup files (`.zshrc`, `.profile`…) or `/etc/hosts` holding an IOC | compromised |
+| Shell history mentioning an IOC | exposed (it may have been typed while investigating) |
+| Editor extensions named by a `package` IOC with `ecosystem: "vscode"` | compromised |
 | Local clones of repositories the GitHub scan found hit | exposed |
-| crontab lines with an IOC (`crontab -l`) | compromised |
-| Open connections to an IOC IP (`lsof -nPi` on macOS, `ss -tunap` on Linux) | compromised |
-| Running processes matching a `process` IOC | compromised |
+| crontab lines, open connections (IOC IPs), running processes | compromised |
 
-## Judging a suspicious startup item
+## Machine analysis (no IOC needed)
 
-Read-only, on macOS:
+| Check | Suspicious when |
+|---|---|
+| Startup items: `~/Library/LaunchAgents`, `/Library/LaunchAgents`, `/Library/LaunchDaemons` (macOS); systemd units, autostart, `/etc/cron.d` (Linux) | the command fetches and runs code, opens a raw socket, decodes a payload, or runs from `/tmp`, `/Users/Shared` or an unknown hidden folder: at any date. Written in the last 30 days: always, with what it runs and who signed it (`codesign`) |
+| Shell startup files | a line fetches and runs code, sets `DYLD_INSERT_LIBRARIES` / `LD_PRELOAD` / `NODE_OPTIONS=--require`, or redefines `sudo`, `ssh`, `git`, `gh`, `npm` |
+| `~/.npmrc`, pip config | packages come from a registry other than npmjs.org or pypi.org |
+| `~/.gitconfig` | global hooks (`core.hooksPath`) or a custom `sshCommand` |
+| `~/.ssh/authorized_keys` | changed in the last 30 days (lists who can log in) |
+| Editor extensions (VS Code, Insiders, Cursor, Windsurf, VSCodium) | first installed in the last 30 days (updates are ignored), with the publisher; flagged harder when sideloaded from a `.vsix` |
+| crontab | a line fetches and runs code or opens a socket |
+| Running processes | the executable lives in a temporary folder or an unknown hidden folder of your home |
 
-- `plutil -p <plist>`: what it runs and when;
-- `codesign -dv --verbose=2 <binary>`: who signed it;
-- `pkgutil --file-info <path>`: which installer put it there;
-- `ls -l@ <path>`: dates and the quarantine attribute.
+Plus one `info` finding: the **credential stores** on the machine (AWS, GCP,
+Azure, npm, PyPI, Docker, Kubernetes, gh, git, SSH and GPG keys, `.env`
+files), recorded by path and kind, never by value. It is what a stealer here
+would take, and REMEDIATION.md lists exactly these when the host is
+compromised.
 
-On Linux: `systemctl --user cat <unit>`, and `dpkg -S` or `rpm -qf` for the
-owning package. If the user installed or updated that software during the
-window, say so and keep it at REVIEW for them to confirm. Otherwise treat it
-as compromised.
+Not read: login items, browser extensions, kernel and system extensions.
+They are a coverage gap.
 
-## When the host is compromised
+## Judging a suspicious item
 
-Every credential the machine holds is stolen: browser sessions, `~/.ssh`,
-`~/.aws`, `~/.config/gcloud`, `~/.azure`, `~/.npmrc`, `~/.pypirc`,
-`~/.docker/config.json`, `~/.kube`, the gh token, `.env` files, AI provider
-keys. Rotation must happen from another, clean machine.
+Start from `host-inventory.json`: each startup item carries its command, its
+executable, whether that exists, its signer and team ID, and its signals.
+Then, read-only:
+
+- macOS: `plutil -p <plist>` (what runs, when), `codesign -dv --verbose=2
+  <binary>` (who signed), `spctl -a -vv <app>` (Gatekeeper's verdict),
+  `pkgutil --file-info <path>` (which installer), `ls -l@ <path>` (dates,
+  quarantine attribute), `mdls -name kMDItemWhereFroms <file>` (download
+  origin).
+- Linux: `systemctl --user cat <unit>`, `dpkg -S <path>` or `rpm -qf <path>`.
+
+Signed by the vendor you expect, in `/Applications`, installed or updated by
+the user on that date: say so and leave it at REVIEW for the user to confirm.
+Unsigned, ad-hoc signed, in a temporary or hidden folder, or not installed by
+anyone the user remembers: treat it as compromised.
+
+A remote-access tool (RustDesk, AnyDesk, TeamViewer, ScreenConnect) that the
+user did not install is a classic intrusion: ask first.

@@ -169,7 +169,8 @@ async function runScan(surface: "github" | "host" | "deps" | "cloud", a: Command
   if (surface === "host") {
     const r = await scanHost(iocs, (tree ?? (() => walkFor(a)))(), runner, { hitRepos: run.meta().hitRepos, skipLive: argBool(a, "skip-live") });
     const f = run.recordSurface(r.result, r.findings, r.gaps);
-    return `host: ${r.result.stats.files ?? 0} files, ${r.result.stats.startupItems ?? 0} startup items; ${f.length} finding(s)`;
+    run.write("host-inventory.json", r.inventory);
+    return `host: ${r.result.stats.files ?? 0} files, ${r.result.stats.startupItems ?? 0} startup items, ${r.result.stats.credentialFiles ?? 0} credential files; ${f.length} finding(s)`;
   }
   if (surface === "deps") {
     const r = await scanDeps(iocs, (tree ?? (() => walkFor(a)))(), run, { osv: argBool(a, "no-osv") ? false : undefined });
@@ -273,7 +274,9 @@ async function dispatch(a: CommandArgs): Promise<number> {
       const iocs = needIocs(run);
       const wanted = argList(a, "surfaces");
       for (const w of wanted) if (!SURFACE_OF[w]) throw new UsageError(`--surfaces takes github,host,deps,cloud, not "${w}"`);
-      const list = (wanted.length ? wanted : ["github", "host", "deps", "cloud"]) as ("github" | "host" | "deps" | "cloud")[];
+      // Always github first, whatever order was asked: the host scan looks for clones of the repos it found hit.
+      const ORDER = ["github", "host", "deps", "cloud"] as const;
+      const list = ORDER.filter((s) => !wanted.length || wanted.includes(s));
       let tree: WalkResult | undefined;
       const shared = () => (tree ??= walkFor(a));
       // GitHub first: the host scan looks for local clones of the repositories it found hit.
