@@ -14,7 +14,7 @@ import { riskSignals } from "./hostintel.js";
 
 type NewFinding = Omit<Finding, "id">;
 
-export interface McpServer {
+export interface AgentMcpServer {
   config: string;
   name: string;
   command?: string;
@@ -27,7 +27,7 @@ export interface McpServer {
 export interface AgentInventory {
   configs: string[];
   commands: { config: string; where: string; command: string }[];
-  mcpServers: McpServer[];
+  mcpServers: AgentMcpServer[];
 }
 
 const MAX = 2 * 1024 * 1024;
@@ -94,7 +94,7 @@ export function projectConfigPaths(repo: string): string[] {
 }
 
 /** The package an MCP launcher runs: `npx -y pkg@1.2.3`, `uvx pkg==1.0`, `pnpm dlx pkg`, `bunx pkg`. */
-export function launcherPackage(command: string | undefined, args: string[] = []): McpServer["package"] {
+export function launcherPackage(command: string | undefined, args: string[] = []): AgentMcpServer["package"] {
   const cmd = basename(command ?? "");
   let rest = args;
   let eco: "npm" | "pypi" | undefined;
@@ -135,8 +135,8 @@ function configCommands(j: any): { where: string; command: string }[] {
   return out;
 }
 
-function mcpFrom(j: any, config: string): McpServer[] {
-  const out: McpServer[] = [];
+function mcpFrom(j: any, config: string): AgentMcpServer[] {
+  const out: AgentMcpServer[] = [];
   const add = (servers: any) => {
     if (!servers || typeof servers !== "object") return;
     for (const [name, s] of Object.entries<any>(servers)) {
@@ -153,8 +153,8 @@ function mcpFrom(j: any, config: string): McpServer[] {
 }
 
 /** Codex keeps MCP servers in TOML: [mcp_servers.name] with command = "..." and args = [...]. */
-function mcpFromToml(text: string, config: string): McpServer[] {
-  const out: McpServer[] = [];
+function mcpFromToml(text: string, config: string): AgentMcpServer[] {
+  const out: AgentMcpServer[] = [];
   for (const block of text.split(/^\[mcp_servers\./m).slice(1)) {
     const name = /^([^\]]+)\]/.exec(block)?.[1]?.replace(/^"|"$/g, "") ?? "?";
     // [mcp_servers.x.env] and other sub-tables belong to server x, they are not servers.
