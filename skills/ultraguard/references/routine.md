@@ -6,7 +6,10 @@ sources already handled, the campaigns already seen, and the findings already
 alerted.
 
 ```bash
-# 1. Search the news as usual, save the hits, then:
+# 1. Search the news: your search tool, or keyless (works on a headless runner):
+ultraguard search "GitHub Actions supply chain attack <month year>" --out <run>
+ultraguard search "malicious npm packages <month year>" --out <run>
+#    then, with the hits you keep:
 ultraguard watch plan --web-results <hits.json> --out <run>
 #    NOTHING NEW: stop here and say so in one line.
 #    Otherwise it fetched the new sources. Every --resweep-days (default 7) it

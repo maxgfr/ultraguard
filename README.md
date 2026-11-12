@@ -68,6 +68,7 @@ A run directory with:
 
 ```bash
 ultraguard doctor --probe                                  # what this machine lets it see
+ultraguard search "<query>" --out <run>                    # keyless web search, when the host has none
 ultraguard intel <url>... --out <run>                      # or --web-results <hits.json>
 ultraguard ioc set --file iocs.json --out <run>            # every indicator must cite a fetched [S#]
 ultraguard sweep --out <run>                               # github, host, deps, cloud

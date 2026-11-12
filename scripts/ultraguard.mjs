@@ -100,6 +100,9 @@ function envInt(suffix, def, min = 0, max = Number.MAX_SAFE_INTEGER) {
   if (!Number.isFinite(n)) return def;
   return Math.min(max, Math.max(min, Math.trunc(n)));
 }
+function countOption(value, def) {
+  return typeof value === "number" && Number.isFinite(value) ? Math.max(1, Math.floor(value)) : def;
+}
 var DEFAULT_BRAND;
 var current;
 var MAX_TIMER_MS;
@@ -2822,6 +2825,9 @@ var init_private_dir = __esm({
     init_no_write();
   }
 });
+function spentSlackMs(budgetMs) {
+  return budgetMs === void 0 ? 0 : Math.min(25, budgetMs / 4);
+}
 var REDIRECT_STATUS;
 var DOT_SEGMENT;
 var MAX_IDENT;
@@ -6831,6 +6837,45 @@ var init_markdown2 = __esm({
     LAYOUT_INSIDE = /<(?:table|pre)[\s/>]/;
   }
 });
+function parseTag(tag) {
+  const parts = (tag || "en").trim().replace(/[.@].*$/, "").split(/[-_]/);
+  const lang = (parts[0] || "en").toLowerCase();
+  let i = 1;
+  const script = /^[a-z]{4}$/i.test(parts[i] ?? "") ? parts[i++].toLowerCase() : void 0;
+  const region = /^(?:[a-z]{2}|\d{3})$/i.test(parts[i] ?? "") ? parts[i].toLowerCase() : void 0;
+  return { lang, script, region };
+}
+function baseLang3(lang) {
+  return parseTag(lang).lang;
+}
+function resolveRegion(lang, region) {
+  if (region?.trim()) return region.trim().toLowerCase();
+  const t = parseTag(lang);
+  if (t.region) return t.region;
+  const byScript = t.script ? SCRIPT_COUNTRY[`${t.lang}-${t.script}`] : void 0;
+  return byScript ?? LANG_COUNTRY[t.lang] ?? t.lang;
+}
+function ddgRegion(lang, region) {
+  const r = resolveRegion(lang, region);
+  if (r === NO_REGION) return "wt-wt";
+  const l = baseLang3(lang);
+  return DDG_KL[`${l}-${r}`] ?? DDG_KL[l] ?? `${REGION_ALIASES[r] ?? r}-${DDG_LANG_ALIASES[l] ?? l}`;
+}
+function searxngLanguage(lang, region) {
+  if (!lang?.trim()) return void 0;
+  const t = parseTag(lang);
+  if (!/^[a-z]{2,3}$/.test(t.lang)) return void 0;
+  const country = region?.trim() ? region.trim().toLowerCase() : t.region ?? (t.script ? SCRIPT_COUNTRY[`${t.lang}-${t.script}`] : void 0);
+  return country && /^[a-z]{2}$/.test(country) && country !== NO_REGION ? `${t.lang}-${country.toUpperCase()}` : t.lang;
+}
+function acceptLanguageHeader(lang, region) {
+  const l = baseLang3(lang);
+  const r = resolveRegion(lang, region);
+  if (r === NO_REGION) return l === "en" ? "en" : `${l},en;q=0.5`;
+  const R = r.toUpperCase();
+  if (l === "en") return `${l}-${R},${l};q=0.9`;
+  return `${l}-${R},${l};q=0.9,en;q=0.5`;
+}
 var LANG_COUNTRY;
 var SCRIPT_COUNTRY;
 var REGION_ALIASES;
@@ -6968,6 +7013,11 @@ async function postJson(base2, path, body, opts) {
   prefixCache.set(base2, "/v1");
   return httpJson("POST", `${base2}/v1${path}`, body("/v1"), req);
 }
+function serverReason(data) {
+  const raw = typeof data === "string" ? data : typeof data?.error === "string" ? data.error : "";
+  const line = cleanInline(raw).slice(0, 200);
+  return line || void 0;
+}
 function mapScrapeResponse(json2) {
   if (!json2 || typeof json2 !== "object" || Array.isArray(json2)) return null;
   if (json2.success === false) return null;
@@ -6989,6 +7039,24 @@ function mapScrapeResponse(json2) {
     ...final ? { finalUrl: final } : {},
     ...status !== void 0 ? { statusCode: status } : {}
   };
+}
+function mapSearchResponse(json2) {
+  if (!json2 || typeof json2 !== "object") return [];
+  if (json2.success === false) return [];
+  const data = json2.data;
+  const web = Array.isArray(data) ? data : Array.isArray(data?.web) ? data.web : Array.isArray(data?.results) ? data.results : [];
+  const out2 = [];
+  for (const x of web) {
+    if (!x || typeof x.url !== "string" || !x.url) continue;
+    out2.push({
+      url: x.url,
+      // `||` (not `??`): an empty title degrades to the URL, never blank.
+      title: cleanInline(String(x.title || x.url)),
+      description: cleanInline(String(x.description ?? x.snippet ?? "")).slice(0, 360),
+      ...typeof x.markdown === "string" && x.markdown.trim() ? { markdown: x.markdown } : {}
+    });
+  }
+  return out2;
 }
 async function scrapeViaFirecrawl(url, opts = {}) {
   const base2 = firecrawlBase(opts);
@@ -7020,6 +7088,53 @@ async function scrapeViaFirecrawl(url, opts = {}) {
   const data = mapScrapeResponse(r.data);
   if (!data) return { why: `Firecrawl returned no markdown for ${url} \u2014 fell back to the built-in extractor.` };
   return { data };
+}
+async function searchViaFirecrawl(query, limit, opts = {}) {
+  const base2 = firecrawlBase(opts);
+  if (!base2) return { why: `Firecrawl disabled (--firecrawl off / ${envName("FIRECRAWL")}=off). Skipping.` };
+  if (!await probeFirecrawl(base2, firecrawlIsExplicit(opts))) {
+    return { why: `Firecrawl not reachable at ${base2} (bring it up with \`${brand().cli} firecrawl up\`). Skipping.`, status: 0 };
+  }
+  const n = Number.isFinite(limit) ? Math.min(100, Math.max(1, Math.trunc(limit))) : 10;
+  const locale = {};
+  if (opts.lang || opts.region) {
+    if (opts.lang) locale.lang = baseLang3(opts.lang);
+    const country = resolveRegion(opts.lang, opts.region);
+    if (/^[a-z]{2}$/.test(country) && country !== "wt") locale.country = country;
+  }
+  const timeoutMs = Math.max(1, Math.round(Math.min(SEARCH_TIMEOUT_MS, opts.budgetMs ?? SEARCH_TIMEOUT_MS)));
+  const r = await postJson(
+    base2,
+    "/search",
+    // `sources` is v2's; v1's strict schema rejects any key it does not know.
+    // `timeout` tells Firecrawl to stop just before we do: its own default is
+    // 60 s, double the time this client waits.
+    (prefix) => ({
+      query,
+      limit: n,
+      ...locale,
+      timeout: Math.max(1e3, timeoutMs - SERVER_MARGIN_MS.search),
+      ...prefix === "/v2" ? { sources: ["web"] } : {}
+    }),
+    // No retry: this is the cascade's last rung, and a second attempt at an
+    // instance that just failed or throttled us doubles the wait for nothing.
+    { timeoutMs, retries: 0 }
+  );
+  if (!r.ok) {
+    const budgetRanOut = r.timedOut === true && timeoutMs < SEARCH_TIMEOUT_MS;
+    if (!r.status && !budgetRanOut) markFirecrawlDown(base2);
+    const reason = serverReason(r.data);
+    const why = r.status === 429 || r.status === 503 ? `rate-limited (HTTP ${r.status})` : !r.status ? `unreachable (${r.error ?? "no response"})` : (
+      // It answered: a 4xx is this request refused (a bad field, a key a
+      // Cloud base wants), which "unreachable" misreported as an outage.
+      `${r.status < 500 ? "rejected the request" : "failed"} (HTTP ${r.status}${reason ? `: ${reason}` : ""})`
+    );
+    return { why: `Firecrawl search ${why} at ${base2}.`, status: r.status };
+  }
+  if (r.data?.success === false) {
+    return { why: `Firecrawl search failed at ${base2}${serverReason(r.data) ? `: ${serverReason(r.data)}` : ""}.`, status: r.status };
+  }
+  return { hits: mapSearchResponse(r.data) };
 }
 var FIRECRAWL_DEFAULT_BASE;
 var PROBE_TIMEOUT_MS2;
@@ -7164,6 +7279,12 @@ function contactUa() {
 }
 function defaultUa() {
   return brand().defaultUa === "contact" ? contactUa() : browserUa();
+}
+function pageDelayMs() {
+  return envInt("PAGE_DELAY_MS", 350, 0, 5e3);
+}
+function sleep(ms, signal) {
+  return signal ? sleepUnlessAborted(ms, signal) : new Promise((r) => setTimeout(r, ms));
 }
 function sleepUnlessAborted(ms, signal) {
   return new Promise((resolve9) => {
@@ -9304,6 +9425,25 @@ init_fetch();
 init_locale();
 init_url();
 init_shared();
+var KEYLESS_ENGINES = ["ddg", "ddglite", "mojeek"];
+function isKeylessEngine(v) {
+  return KEYLESS_ENGINES.includes(v);
+}
+function keylessEngines(opts = {}) {
+  if (opts.engines) return opts.engines;
+  const raw = env("ENGINES");
+  if (raw === void 0) return KEYLESS_ENGINES;
+  if (raw.toLowerCase() === "off") return [];
+  return engineNames(raw).filter(isKeylessEngine);
+}
+function unknownEngines(opts = {}) {
+  const raw = opts.engines ? void 0 : env("ENGINES");
+  if (raw === void 0 || raw.toLowerCase() === "off") return [];
+  return engineNames(raw).filter((s) => !isKeylessEngine(s));
+}
+function engineNames(raw) {
+  return raw.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+}
 var INLINE_TAG = /<\/?(?:a|abbr|b|bdi|bdo|cite|code|em|i|kbd|mark|q|s|samp|small|span|strong|sub|sup|time|u|var|wbr)\b[^<>]*>/gi;
 function stripTags(s) {
   return decodeEntities(s.replace(INLINE_TAG, "").replace(/<[^<>]*>/g, " ")).replace(/\s+/g, " ").trim();
@@ -9317,6 +9457,17 @@ function ddgRedirectTarget(href) {
     }
   }
   return href.startsWith("//") ? `https:${href}` : href;
+}
+function throttleReason(status, error) {
+  if (status === 429 || status === 503) return { throttled: true, why: `rate-limited (HTTP ${status})` };
+  if (status === 403) return { throttled: true, why: "blocked this client as automated traffic (HTTP 403)" };
+  if (status === 0) return { throttled: false, why: `unreachable (${error || "no response"})` };
+  return { throttled: false, why: `unreachable (status ${status})` };
+}
+function looksLikeChallenge(body) {
+  if (body.length > 4e4) return false;
+  const head = body.slice(0, 4e3).toLowerCase();
+  return /<title>[^<]*captcha/.test(head) || head.includes("anomaly-modal") || head.includes("/anomaly.js") || head.includes("captcha-wrap") || head.includes("sending automated queries");
 }
 var attrPattern = (name) => new RegExp(`(?:^|\\s)${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s"'<>=\`]+))`, "i");
 var HREF_ATTR = attrPattern("href");
@@ -9450,6 +9601,68 @@ var SPECS = {
     parse: parseMojeek
   }
 };
+async function searchViaKeyless(engine, query, opts = {}) {
+  const spec = SPECS[engine];
+  const q = query.trim();
+  if (!q) return { hits: [], note: "Empty query." };
+  const pages = countOption(opts.pages, 1);
+  const limit = countOption(opts.limit, 10);
+  const localised = !!(opts.lang || opts.region);
+  const kl = localised ? ddgRegion(opts.lang, opts.region) : "wt-wt";
+  const acceptLanguage = acceptLanguageHeader(opts.lang, opts.region);
+  const locale = localised ? { lang: baseLang3(opts.lang), region: resolveRegion(opts.lang, opts.region).toUpperCase() } : void 0;
+  const seen = /* @__PURE__ */ new Set();
+  const hits = [];
+  const deadline = opts.budgetMs === void 0 ? Number.POSITIVE_INFINITY : Date.now() + opts.budgetMs;
+  let url = spec.url(q, 0, kl, locale);
+  for (let p = 0; p < pages && hits.length < limit; p++) {
+    if (opts.signal?.aborted || Date.now() >= deadline - spentSlackMs(opts.budgetMs)) {
+      if (p > 0) break;
+      return { hits: [], note: `${spec.label} was not asked: ${opts.signal?.aborted ? "the search was cancelled" : "no time was left"}.`, stopped: true };
+    }
+    const r = await httpGet(url, {
+      accept: "text/html",
+      acceptLanguage,
+      timeoutMs: Math.max(1, Math.min(opts.timeoutMs ?? 12e3, deadline - Date.now())),
+      retries: 0,
+      signal: opts.signal
+    });
+    if (!r.ok || !r.body.trim()) {
+      if (p > 0) break;
+      if (!r.status && r.error === "cancelled") return { hits: [], note: `${spec.label} did not get to answer: the search was cancelled.`, stopped: true };
+      if (r.ok) return { hits: [], note: `${spec.label} returned an empty page (HTTP ${r.status}).`, status: r.status };
+      const { throttled, why } = throttleReason(r.status, r.error);
+      return { hits: [], note: `${spec.label} ${why}.`, throttled, ...r.status === 403 ? { blocked: true } : {}, status: r.status };
+    }
+    const before = hits.length;
+    const parsed = spec.parse(r.body, limit * 2);
+    if (parsed.length === 0 && looksLikeChallenge(r.body)) {
+      if (p > 0) break;
+      return {
+        hits: [],
+        note: `${spec.label} served an anti-bot challenge (HTTP ${r.status}) instead of results \u2014 blocked, not empty.`,
+        throttled: true,
+        blocked: true,
+        status: r.status
+      };
+    }
+    for (const f of parsed) {
+      const key = canonicalizeUrl(f.url);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      hits.push(f);
+      if (hits.length >= limit) break;
+    }
+    if (hits.length === before || p + 1 >= pages || hits.length >= limit) break;
+    const next = spec.next ? spec.next(r.body, q, kl, p) : spec.url(q, p + 1, kl, locale);
+    if (!next) break;
+    url = next;
+    const pause = pageDelayMs();
+    if (opts.signal?.aborted || Date.now() + pause >= deadline - spentSlackMs(opts.budgetMs)) break;
+    if (pause) await sleep(pause, opts.signal);
+  }
+  return hits.length ? { hits, answered: true } : { hits: [], note: `${spec.label} returned no results.`, answered: true };
+}
 init_brand();
 init_fetch();
 init_firecrawl();
@@ -9457,7 +9670,246 @@ init_locale();
 init_trim();
 init_url();
 init_shared();
+var SEARXNG_DEFAULT_BASE = "http://localhost:8888";
+var PROBE_TIMEOUT_MS4 = 2e3;
+var PROBE_BODY_BYTES2 = 4096;
+var QUERY_TIMEOUT_MS = 8e3;
+function searxngBase(opts = {}) {
+  const raw = (opts.searxng ?? env("SEARXNG") ?? SEARXNG_DEFAULT_BASE).trim();
+  if (!raw || raw.toLowerCase() === "off") return null;
+  return trimTrailing(raw, "/");
+}
+function searxngIsExplicit(opts = {}) {
+  return !!(opts.searxng ?? env("SEARXNG"));
+}
 var probeCache2 = new ProbeMemo();
+function probeSearxng(base2, explicit = false) {
+  return probeCache2.get(`${base2}|${explicit}`, async () => {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), PROBE_TIMEOUT_MS4);
+    try {
+      const res = await fetch(`${base2}/healthz`, { signal: ctrl.signal });
+      const body = await readCappedBytes(res, PROBE_BODY_BYTES2).then(
+        (b) => b.toString("utf8"),
+        () => ""
+      );
+      return explicit || res.ok && /^\s*ok\s*$/i.test(body);
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(t);
+    }
+  });
+}
+async function searchViaSearxng(query, opts = {}) {
+  const base2 = searxngBase(opts);
+  if (!base2) return rungResult("searxng", "disabled", [], [`SearXNG disabled (--searxng off / ${envName("SEARXNG")}=off).`]);
+  const deadline = budgetDeadline(opts);
+  if (!await probeSearxng(base2, searxngIsExplicit(opts))) {
+    return rungResult(
+      "searxng",
+      "unreachable",
+      [],
+      [
+        searxngIsExplicit(opts) ? `SearXNG not reachable at ${base2}.` : `SearXNG not running at ${base2} \u2014 start it with \`${brand().cli} searxng up\` for local, keyless discovery.`
+      ]
+    );
+  }
+  const pages = countOption(opts.pages, 1);
+  const limit = countOption(opts.limit, 10);
+  const acceptLanguage = acceptLanguageHeader(opts.lang, opts.region);
+  const language = searxngLanguage(opts.lang, opts.region);
+  const root = `${base2}/search?q=${encodeURIComponent(query)}&format=json&safesearch=1` + (language ? `&language=${encodeURIComponent(language)}` : "");
+  const notes = [];
+  const seen = /* @__PURE__ */ new Set();
+  const hits = [];
+  const suspended = /* @__PURE__ */ new Map();
+  let failed2;
+  for (let p = 0; p < pages && hits.length < limit; p++) {
+    const stop = halted(opts, deadline);
+    if (stop) {
+      if (p > 0) break;
+      return rungResult("searxng", "not-tried", [], [`SearXNG was not asked: ${stop === "cancelled" ? "the search was cancelled" : "no time was left"}.`]);
+    }
+    const r = await httpGet(root + (p > 0 ? `&pageno=${p + 1}` : ""), {
+      accept: "application/json",
+      acceptLanguage,
+      timeoutMs: Math.max(1, Math.min(QUERY_TIMEOUT_MS, deadline - Date.now())),
+      // No retry: the cascade's next rung is the retry.
+      retries: 0,
+      signal: opts.signal
+    });
+    if (!r.ok) {
+      if (p === 0 && !r.status && r.error === "cancelled") {
+        return rungResult("searxng", "not-tried", [], ["SearXNG did not get to answer: the search was cancelled."]);
+      }
+      if (p === 0) {
+        failed2 = r.status === 429 || r.status === 503 ? "throttled" : r.status === 0 ? "unreachable" : "error";
+        notes.push(
+          failed2 === "throttled" ? `SearXNG rate-limited (HTTP ${r.status}).` : failed2 === "unreachable" ? `SearXNG unreachable (${r.error || "no response"}).` : (
+            // SearXNG answers a format it does not serve with flask.abort(403),
+            // and the probe has just shown the instance is up: this is the
+            // most common misconfiguration, not an outage.
+            r.status === 403 ? "SearXNG refused format=json (HTTP 403) \u2014 add `json` to `search.formats` in its settings.yml." : `SearXNG failed the query (HTTP ${r.status}).`
+          )
+        );
+      }
+      break;
+    }
+    let data;
+    try {
+      data = JSON.parse(r.body);
+    } catch {
+      if (p === 0) {
+        failed2 = "error";
+        notes.push("SearXNG returned a non-JSON body \u2014 is `format: json` enabled on that instance?");
+      }
+      break;
+    }
+    for (const e of data.unresponsive_engines ?? []) {
+      const pair = Array.isArray(e) ? e : [];
+      if (typeof pair[0] === "string") suspended.set(pair[0], typeof pair[1] === "string" ? pair[1] : "unavailable");
+    }
+    const before = hits.length;
+    for (const raw of data.results ?? []) {
+      const it = raw;
+      if (typeof it.url !== "string") continue;
+      const key = canonicalizeUrl(it.url);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      hits.push({
+        url: it.url,
+        title: typeof it.title === "string" && it.title.trim() ? it.title.trim() : it.url,
+        snippet: typeof it.content === "string" ? it.content.trim() : "",
+        via: "searxng"
+      });
+      if (hits.length >= limit) break;
+    }
+    if (hits.length === before) break;
+    if (p < pages - 1) {
+      const pause = pageDelayMs();
+      if (opts.signal?.aborted || Date.now() + pause >= deadline - spentSlackMs(opts.timeoutMs)) break;
+      if (pause) await sleep(pause, opts.signal);
+    }
+  }
+  if (suspended.size) {
+    notes.push(`SearXNG upstreams throttled: ${[...suspended].map(([e, why]) => `${e} (${why})`).join(", ")} \u2014 fewer results than usual, not an empty web.`);
+  }
+  if (!hits.length && !notes.length) notes.push("SearXNG returned no results.");
+  const outcome = hits.length ? "hits" : failed2 ?? (suspended.size ? "throttled" : "empty");
+  return rungResult("searxng", outcome, hits, notes);
+}
+function budgetDeadline(opts) {
+  return opts.timeoutMs !== void 0 && opts.timeoutMs > 0 ? Date.now() + opts.timeoutMs : Number.POSITIVE_INFINITY;
+}
+function halted(opts, deadline) {
+  if (opts.signal?.aborted) return "cancelled";
+  return Date.now() >= deadline - spentSlackMs(opts.timeoutMs) ? "out of time" : void 0;
+}
+function rungResult(rung, outcome, hits, notes) {
+  return { hits, notes, rungs: [report(rung, outcome, hits.length, notes.join(" "))], searched: answered2(outcome) };
+}
+function report(rung, outcome, hits = 0, note) {
+  return { rung, outcome, ...hits ? { hits } : {}, ...note ? { note } : {} };
+}
+var answered2 = (outcome) => outcome === "hits" || outcome === "empty";
+function keylessOutcome(r) {
+  if (r.hits.length) return "hits";
+  if (r.stopped) return "not-tried";
+  if (r.answered) return "empty";
+  if (r.blocked) return "blocked";
+  if (r.throttled) return "throttled";
+  return r.status ? "error" : "unreachable";
+}
+async function search(query, opts = {}) {
+  const q = query.trim();
+  if (!q) return { hits: [], notes: ["Empty query."] };
+  const deadline = budgetDeadline(opts);
+  const left = () => deadline === Number.POSITIVE_INFINITY ? void 0 : Math.max(1, deadline - Date.now());
+  const keyless = keylessEngines(opts);
+  const order = ["searxng", ...keyless, "firecrawl"];
+  const untried = (rung) => report(rung, rung === "searxng" && !searxngBase(opts) || rung === "firecrawl" && !firecrawlBase(opts) ? "disabled" : "not-tried");
+  const notes = [];
+  const unknown = unknownEngines(opts);
+  if (unknown.length) {
+    notes.push(`${envName("ENGINES")} names no engine this knows: ${unknown.join(", ")} (expected ${KEYLESS_ENGINES.join(", ")}) \u2014 ignored.`);
+  }
+  const rungs = [];
+  let hits = [];
+  for (let i = 0; i < order.length; i++) {
+    const rung = order[i];
+    if (hits.length) {
+      rungs.push(untried(rung));
+      continue;
+    }
+    const stop = halted(opts, deadline);
+    if (stop) {
+      const rest = order.slice(i).map(untried);
+      const skipped = rest.filter((r) => r.outcome === "not-tried").map((r) => r.rung);
+      const why = stop === "cancelled" ? "the search was cancelled" : `the ${opts.timeoutMs} ms budget ran out`;
+      if (skipped.length) notes.push(`Stopped before ${skipped.join(", ")}: ${why}.`);
+      rungs.push(...rest);
+      break;
+    }
+    if (rung === "searxng") {
+      const r = await searchViaSearxng(q, { ...opts, timeoutMs: left() });
+      hits = r.hits;
+      notes.push(...r.notes);
+      rungs.push(...r.rungs ?? []);
+    } else if (rung === "firecrawl") {
+      const fc = await searchViaFirecrawl(q, limitOf(opts), { firecrawl: opts.firecrawl, lang: opts.lang, region: opts.region, budgetMs: left() });
+      hits = firecrawlHits(fc.hits ?? [], limitOf(opts));
+      if (fc.why) notes.push(fc.why);
+      rungs.push(report("firecrawl", firecrawlOutcome(fc), hits.length, fc.why));
+    } else {
+      const r = await searchViaKeyless(rung, q, {
+        limit: opts.limit,
+        pages: opts.pages,
+        lang: opts.lang,
+        region: opts.region,
+        budgetMs: left(),
+        signal: opts.signal
+      });
+      hits = r.hits.map((h) => ({ ...h, via: rung }));
+      rungs.push(report(rung, keylessOutcome(r), r.hits.length, r.note));
+      if (!r.answered && r.note) notes.push(r.note);
+    }
+  }
+  if (!hits.length) notes.push(closingNote(rungs, opts.signal?.aborted === true));
+  return { hits, notes, rungs, searched: rungs.some((r) => answered2(r.outcome)) };
+}
+var limitOf = (opts) => countOption(opts.limit, 10);
+function firecrawlHits(found, limit) {
+  const seen = /* @__PURE__ */ new Set();
+  const hits = [];
+  for (const h of found) {
+    const key = canonicalizeUrl(h.url);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    hits.push({ url: h.url, title: h.title, snippet: h.description, via: "firecrawl" });
+    if (hits.length >= limit) break;
+  }
+  return hits;
+}
+function firecrawlOutcome(fc) {
+  if (fc.hits) return fc.hits.length ? "hits" : "empty";
+  if (fc.status === void 0) return "disabled";
+  if (fc.status === 0) return "unreachable";
+  return fc.status === 429 || fc.status === 503 ? "throttled" : "error";
+}
+function closingNote(rungs, cancelled) {
+  const cli = brand().cli;
+  if (rungs.every((r) => r.outcome === "disabled")) {
+    return `No search backend was enabled \u2014 SearXNG and Firecrawl are off and no keyless engine is selected, so nothing was searched. Set ${envName("ENGINES")} to a list of ${KEYLESS_ENGINES.join(", ")}, or run \`${cli} stack up\`.`;
+  }
+  if (rungs.some((r) => answered2(r.outcome))) return `No results from any engine. \`${cli} stack up\` starts SearXNG and Firecrawl locally.`;
+  if (cancelled) return "The search was cancelled before any engine answered \u2014 nothing was searched.";
+  const keyless = rungs.filter((r) => isKeylessEngine(r.rung));
+  if (keyless.length && keyless.every((r) => r.outcome === "blocked")) {
+    return `Every keyless engine blocked this client (${keyless.map((r) => r.rung).join(", ")}) \u2014 nothing was searched, which is not the same as nothing being there. Try again later, or run \`${cli} stack up\` for a local SearXNG.`;
+  }
+  return `No engine answered (${rungs.filter((r) => r.outcome !== "disabled").map((r) => `${r.rung} ${r.outcome}`).join(", ")}) \u2014 nothing was searched, which is not the same as nothing being there. Try again later, or run \`${cli} stack up\` for a local SearXNG.`;
+}
 init_brand();
 init_fetch();
 init_doc();
@@ -10333,6 +10785,25 @@ function renderRemediation(findings, vs, _sources, gaps) {
   }
   if (step === 0) out2.push("Nothing to do: no surface was hit.", "");
   return out2.join("\n");
+}
+
+// src/search.ts
+var defaultSearcher = (query, opts) => search(query, { limit: opts.limit, timeoutMs: 45e3 });
+async function searchInto(run, query, opts = {}) {
+  const res = await (opts.searcher ?? defaultSearcher)(query, { limit: opts.limit ?? 10 });
+  const existing = run.read("search-hits.json", []);
+  const seen = new Set(existing.map((h) => safeCanonical(h.url)));
+  const added = [];
+  for (const h of parseWebResults(res.hits)) {
+    const k = safeCanonical(h.url);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    const raw = res.hits.find((x) => x.url === h.url);
+    added.push({ url: h.url, title: h.title, snippet: raw?.snippet?.slice(0, 300), query });
+  }
+  const all = [...existing, ...added];
+  run.write("search-hits.json", all);
+  return { query, added, total: all.length, searched: res.searched !== false, notes: res.notes };
 }
 
 // src/run.ts
@@ -11738,6 +12209,7 @@ your lockfiles and your cloud for them. Read-only: it changes nothing.
 
 USAGE
   ultraguard doctor [--probe] [--json]
+  ultraguard search <query> --out <run> [--limit <n>]
   ultraguard intel [<url>...] [--web-results <file.json>] --out <run>
   ultraguard ioc set --file <iocs.json> --out <run>
   ultraguard ioc show --out <run> [--json]
@@ -11749,7 +12221,8 @@ USAGE
   ultraguard watch commit --out <run> [--state <dir>] [--notify-issue <owner/repo>]
 
 THE LOOP
-  1. You search the web for attacks; save the hits as JSON.
+  1. You search the web for attacks: with your own search tool (save the hits
+     as JSON), or with search, keyless, into <run>/search-hits.json.
   2. intel        fetch each page once: sources [S1], [S2]... and iocs.todo.json
   3. ioc set      validate your IOC file: every indicator cites a fetched [S#]
   4. sweep        run every scan: findings [F1], [F2]... and coverage gaps
@@ -11765,6 +12238,7 @@ SCAN FLAGS
   --skip-live           host: skip crontab, open connections and processes
   --no-osv              deps: skip the OSV malicious-package advisories
   --surfaces <list>     sweep: github,host,deps,cloud (default: all)
+  --limit <n>           search: hits to aim for (default 10)
 
 ROUTINE (watch)
   watch plan drops sources already handled in --state (default ~/.ultraguard,
@@ -11782,7 +12256,7 @@ VERDICTS (per surface)
   --json        machine-readable output
   --help, --version
 `;
-var COMMANDS = ["doctor", "intel", "ioc", "scan", "sweep", "report", "check", "watch"];
+var COMMANDS = ["doctor", "search", "intel", "ioc", "scan", "sweep", "report", "check", "watch"];
 var VALUE_FLAGS = [
   "out",
   "web-results",
@@ -11795,7 +12269,8 @@ var VALUE_FLAGS = [
   "surfaces",
   "state",
   "resweep-days",
-  "notify-issue"
+  "notify-issue",
+  "limit"
 ];
 var BOOL_FLAGS = ["json", "probe", "skip-live", "no-osv"];
 var SCAN = ["out", "repos", "max-repos", "concurrency", "roots", "depth", "skip-live", "no-osv", "json"];
@@ -11805,6 +12280,7 @@ var SPEC = {
   boolFlags: BOOL_FLAGS,
   commandFlags: {
     doctor: ["probe", "json"],
+    search: ["out", "limit", "json"],
     intel: ["out", "web-results", "json"],
     ioc: ["out", "file", "json"],
     scan: SCAN,
@@ -11870,6 +12346,23 @@ async function dispatch(a) {
       const lines = await doctor(runner, { probe: argBool(a, "probe") });
       out(json2 ? jsonLine(lines) : formatDoctor(lines));
       return lines.find((l) => l.check === "gh" && !l.ok) ? EXIT_FAILURE : EXIT_OK;
+    }
+    case "search": {
+      const run = needRun(a);
+      const query = a.positional.join(" ").trim();
+      if (!query) throw new UsageError('search needs a query: ultraguard search "malicious npm packages november 2026" --out <run>');
+      const r = await searchInto(run, query, { limit: argInt(a, "limit", { min: 1, max: 50 }) });
+      if (json2) out(jsonLine(r));
+      else {
+        for (const h of r.added) out(`- ${h.title ?? ""} <${h.url}>${h.snippet ? `
+    ${h.snippet}` : ""}`);
+        if (!r.searched) out(`search could not reach any engine: ${r.notes.join("; ")}`);
+        out(
+          `
+${r.added.length} new hit(s), ${r.total} in ${run.path("search-hits.json")}. Keep the primary write-ups, then: ultraguard intel --web-results <that file, trimmed> --out ${run.dir}`
+        );
+      }
+      return r.searched ? EXIT_OK : EXIT_FAILURE;
     }
     case "intel": {
       const run = needRun(a);

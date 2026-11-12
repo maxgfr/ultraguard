@@ -1,8 +1,14 @@
 # Where to look for attacks
 
-The engine fetches; you search. Use your host's web search tool, keep the
-primary write-ups (the research team that found the attack), and drop
-aggregators that only repeat them.
+The engine fetches; you search. Use your host's web search tool, or, when
+there is none, `ultraguard search "<query>" --out <run>`: keyless, through the
+webindex engine, every hit appended to `<run>/search-hits.json`. Keep the
+primary write-ups (the research team that found the attack), drop the
+aggregators that only repeat them, then pass the kept ones to `intel`.
+
+A secondary write-up is still worth a source when it adds indicators the
+primary one lacks (another vendor saw a second variant). Keep it, and cite it
+for those indicators only.
 
 ## Primary sources
 
