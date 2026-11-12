@@ -1,7 +1,16 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { antivirusPass, avTargets, parseClamOutput, parseClamVersion, parseYaraOutput, yaraPass, yaraRuleFiles } from "../src/scan/antivirus.js";
+import {
+  antivirusPass,
+  avTargets,
+  parseClamOutput,
+  readableTargets,
+  parseClamVersion,
+  parseYaraOutput,
+  yaraPass,
+  yaraRuleFiles,
+} from "../src/scan/antivirus.js";
 import type { HostInventory } from "../src/scan/hostintel.js";
 import { tmp } from "./helpers.js";
 
@@ -52,11 +61,68 @@ describe("clamav", () => {
         stderr: "LibClamAV Warning: *** The virus database is older than 7 days! ***\n",
       };
     };
-    const r = await antivirusPass(runner, { home: dir, inventory: inv(), flagged: ["/etc/hosts"], sinceMs: 0, listDir: dir, now: NOW });
+    // A future window keeps the real /tmp out of the targets.
+    const r = await antivirusPass(runner, { home: dir, inventory: inv(), flagged: ["/etc/hosts"], sinceMs: Date.now() + 1e10, listDir: dir, now: NOW });
     expect(r.findings.map((f) => [f.severity, f.title])).toEqual([["compromised", "ClamAV detects Win.Trojan.Agent in /x/evil.app"]]);
     expect(r.gaps.map((g) => g.why)).toEqual(["ClamAV's signatures are 213 days old", expect.stringContaining("the pass is targeted")]);
     expect(calls.at(-1)?.[0]).toBe("clamscan");
     expect(calls.at(-1)).toContain("--infected");
+  });
+
+  it.skipIf(process.getuid?.() === 0)("names the targets this user cannot read instead of an empty error, and never scans them", async () => {
+    const dir = tmp("ug-avr-");
+    const locked = join(dir, "root-only.sock");
+    writeFileSync(locked, "x");
+    chmodSync(locked, 0o000);
+    const fine = join(dir, "fine.txt");
+    writeFileSync(fine, "y");
+    expect(readableTargets([locked, fine, join(dir, "gone")])).toEqual({ readable: [fine, join(dir, "gone")], unreadable: [locked] });
+    const calls: string[][] = [];
+    const runner = async (cmd: string, args: string[]) => {
+      calls.push([cmd, ...args]);
+      if (cmd === "clamdscan") return { ok: false, status: 2, stdout: "", stderr: "" };
+      if (args[0] === "--version") return { ok: true, status: 0, stdout: "ClamAV 1.5.4/28181/Thu Nov 12 07:27:14 2026", stderr: "" };
+      return { ok: true, status: 0, stdout: "", stderr: "" };
+    };
+    const r = await antivirusPass(runner, { home: dir, inventory: inv(), flagged: [], sinceMs: 0, listDir: dir, now: NOW, full: [locked, fine] });
+    expect(r.gaps).toEqual([
+      {
+        surface: "host",
+        what: `1 antivirus target(s): ${locked}`,
+        why: "this user cannot read them (owned by root or another user)",
+        fix: `sudo clamscan "${locked}"`,
+      },
+    ]);
+    chmodSync(locked, 0o600);
+  });
+
+  it("a clamscan error printed on stdout (--stdout) is a named gap, and status 2 alone still says why", async () => {
+    const dir = tmp("ug-ave-");
+    const res = (stdout: string) => async (cmd: string, args: string[]) => {
+      if (cmd === "clamdscan") return { ok: false, status: 2, stdout: "", stderr: "" };
+      if (args[0] === "--version") return { ok: true, status: 0, stdout: "ClamAV 1.5.4/28181/Thu Nov 12 07:27:14 2026", stderr: "" };
+      return { ok: false, status: 2, stdout, stderr: "" };
+    };
+    const a = await antivirusPass(res("/x/y: Access denied. ERROR\n"), {
+      home: dir,
+      inventory: inv(),
+      flagged: [],
+      sinceMs: 0,
+      listDir: dir,
+      now: NOW,
+      full: ["/x"],
+    });
+    expect(a.gaps.map((g) => g.why)).toEqual(["clamscan could not read them: /x/y: Access denied. ERROR"]);
+    const b = await antivirusPass(res(""), { home: dir, inventory: inv(), flagged: [], sinceMs: 0, listDir: dir, now: NOW, full: ["/x"] });
+    expect(b.gaps.map((g) => g.why)).toEqual(["clamscan could not read them: it exited with status 2 without naming the file"]);
+  });
+
+  it("lists a file once when two paths lead to it (/tmp is /private/tmp on macOS)", () => {
+    const home = tmp("ug-avl-");
+    mkdirSync(join(home, "real"), { recursive: true });
+    writeFileSync(join(home, "real", "a.sh"), "x");
+    symlinkSync(join(home, "real"), join(home, "link"));
+    expect(avTargets(home, inv(), [join(home, "real", "a.sh"), join(home, "link", "a.sh")], Date.now() + 1e10)).toEqual([join(home, "real", "a.sh")]);
   });
 
   it("is a gap, never a clean bill, when ClamAV is missing", async () => {

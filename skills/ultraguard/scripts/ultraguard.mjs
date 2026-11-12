@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // src/cli.ts
-import { readFileSync as readFileSync15, realpathSync as realpathSync2 } from "fs";
+import { readFileSync as readFileSync15, realpathSync as realpathSync3 } from "fs";
 import { homedir as homedir5 } from "os";
 import { resolve as resolve4 } from "path";
 import { pathToFileURL } from "url";
@@ -10341,7 +10341,7 @@ function rulesAgeDays(meta, now = /* @__PURE__ */ new Date()) {
 }
 
 // src/scan/antivirus.ts
-import { readdirSync as readdirSync6, statSync as statSync7 } from "fs";
+import { accessSync as accessSync2, constants as constants2, readdirSync as readdirSync6, realpathSync as realpathSync2, statSync as statSync7 } from "fs";
 import { join as join5 } from "path";
 var MAX_TARGETS = 5e3;
 function parseClamVersion(line, now = /* @__PURE__ */ new Date()) {
@@ -10400,14 +10400,32 @@ function avTargets(home, inventory, flagged2, sinceMs) {
   for (const e of inventory.recentExtensions) add2(e.path);
   for (const dir of ["/tmp", "/private/tmp", "/var/tmp", "/Users/Shared", "/dev/shm", join5(home, "Downloads")])
     for (const p of recentFiles(dir, sinceMs, 2e3)) add2(p);
+  const real = /* @__PURE__ */ new Set();
   return [...set].filter((p) => {
     try {
       statSync7(p);
+      const r = realpathSync2(p);
+      if (real.has(r)) return false;
+      real.add(r);
       return true;
     } catch {
       return false;
     }
   });
+}
+function readableTargets(targets) {
+  const readable = [];
+  const unreadable = [];
+  for (const t of targets) {
+    try {
+      accessSync2(t, constants2.R_OK);
+      readable.push(t);
+    } catch (e) {
+      if (e.code === "EACCES" || e.code === "EPERM") unreadable.push(t);
+      else readable.push(t);
+    }
+  }
+  return { readable, unreadable };
 }
 function parseClamOutput(stdout) {
   const out2 = [];
@@ -10438,8 +10456,15 @@ async function antivirusPass(runner2, opts) {
       why: `ClamAV's signatures are ${engine.ageDays} days old`,
       fix: "ultraguard rules update (runs freshclam), then re-run scan host"
     });
-  const targets = opts.full ?? avTargets(opts.home, opts.inventory, opts.flagged, opts.sinceMs);
+  const { readable: targets, unreadable } = readableTargets(opts.full ?? avTargets(opts.home, opts.inventory, opts.flagged, opts.sinceMs));
   stats.avTargets = targets.length;
+  if (unreadable.length)
+    gaps.push({
+      surface: "host",
+      what: `${unreadable.length} antivirus target(s): ${unreadable.slice(0, 3).join(", ")}${unreadable.length > 3 ? ", ..." : ""}`,
+      why: "this user cannot read them (owned by root or another user)",
+      fix: `sudo clamscan ${unreadable.slice(0, 3).map((u) => JSON.stringify(u)).join(" ")}`
+    });
   if (!targets.length) return { findings, gaps, stats, engine };
   const { listed, odd } = splitTargets(targets);
   const list = join5(opts.listDir, "av-targets.txt");
@@ -10467,12 +10492,13 @@ async function antivirusPass(runner2, opts) {
     });
   }
   stats.avDetections = hits.length;
-  const errors = res.stderr.split("\n").filter((l) => /ERROR|Can't open|Access denied|Permission denied|Not supported/i.test(l) && !/Warning/i.test(l));
+  const errors = `${res.stdout}
+${res.stderr}`.split("\n").filter((l) => /ERROR|Can't open|Access denied|Permission denied|Not supported/i.test(l) && !/Warning/i.test(l) && !/ FOUND$/.test(l));
   if (errors.length || !res.ok && res.status !== 1 && !hits.length && !/Warning/i.test(res.stderr))
     gaps.push({
       surface: "host",
       what: `${errors.length || "some"} antivirus target(s)`,
-      why: `${engine.name} could not read them: ${(errors[0] ?? res.stderr.trim().split("\n")[0] ?? "").slice(0, 160)}`
+      why: `${engine.name} could not read them: ${(errors[0] ?? res.stderr.trim().split("\n")[0] ?? "").slice(0, 160) || `it exited with status ${res.status} without naming the file`}`
     });
   if (res.status !== 0 && res.status !== 1 && res.status !== 2)
     gaps.push({
@@ -14210,7 +14236,7 @@ Run \`ultraguard --help\`.
 }
 function isStartedFile() {
   try {
-    return !!process.argv[1] && pathToFileURL(realpathSync2(process.argv[1])).href === import.meta.url;
+    return !!process.argv[1] && pathToFileURL(realpathSync3(process.argv[1])).href === import.meta.url;
   } catch {
     return false;
   }
