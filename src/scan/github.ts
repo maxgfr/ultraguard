@@ -40,8 +40,12 @@ interface Repo {
 
 const firstLine = (s: string | undefined | null) => (s ?? "").split("\n")[0] ?? "";
 
+/** The later of two ISO dates (author vs committer), or whichever exists. */
+const laterOf = (a?: string | null, b?: string | null): string | undefined => (a && b ? (a > b ? a : b) : (a ?? b ?? undefined));
+
 /** Paths a probe commit touches: docs and text only, nothing that runs. */
-const DOCS_ONLY = /(^|\/)(docs?|documentation)\/|\.(md|mdx|txt|rst|adoc)$|(^|\/)(README|CHANGELOG|LICENSE|NOTICE)[^/]*$/i;
+// Text documents only: a .txt can be requirements.txt, a docs/ folder can hold conf.py or package.json.
+const DOCS_ONLY = /\.(md|mdx|rst|adoc)$|(^|\/)(README|CHANGELOG|LICENSE|NOTICE|AUTHORS)(\.(md|txt|rst))?$/i;
 
 function hit(m: Matcher, base: Omit<NewFinding, "campaign" | "source" | "indicator" | "key" | "severity"> & { severity?: Finding["severity"] }): NewFinding {
   return {
@@ -155,7 +159,7 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
       });
     for (const c of commits.data ?? []) {
       const msg = firstLine(c.commit?.message);
-      const m = firstMatch(M.commit, msg, c.commit?.author?.date);
+      const m = firstMatch(M.commit, msg, laterOf(c.commit?.author?.date, c.commit?.committer?.date));
       if (!m) continue;
       const repo = c.repository?.full_name ?? "?";
       accF.push(
@@ -251,6 +255,7 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
   let inactive = 0;
   let noAdmin = 0;
   let quietGaps = 0;
+  const contentCapped: string[] = [];
   const rate = await gh.api<any>("rate_limit");
   const remaining = rate.data?.resources?.core?.remaining as number | undefined;
   if (remaining !== undefined && remaining < repos.length * 6)
@@ -330,22 +335,32 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
       const cmp = await gh.api<any>(`repos/${r}/compare/${sha}...${repo.default_branch}`);
       return cmp.ok && (cmp.data?.status === "identical" || cmp.data?.status === "ahead");
     };
-    const describe = (files: string[] | undefined): string => {
-      if (!files) return "";
-      if (files.length && files.every((f) => DOCS_ONLY.test(f.split(" ").slice(1).join(" ")))) return "; the commit only changes docs (a probe)";
-      return files.length
-        ? `; the commit changes ${files
-            .slice(0, 4)
-            .map((f) => f.split(" ").slice(1).join(" "))
-            .join(", ")}${files.length > 4 ? ", ..." : ""}`
-        : "";
+    // What a commit or a run carried, as a structured kind (never parsed back from a title the attacker writes).
+    type Carried = { text: string; kind?: "probe" | "own-code" | "attacker" };
+    const describe = (files: string[] | undefined): Carried => {
+      if (!files) return { text: "" };
+      if (files.length && files.every((f) => DOCS_ONLY.test(f.split(" ").slice(1).join(" "))))
+        return { text: "; the commit only changes docs (a probe)", kind: "probe" };
+      return {
+        text: files.length
+          ? `; the commit changes ${files
+              .slice(0, 4)
+              .map((f) => f.split(" ").slice(1).join(" "))
+              .join(", ")}${files.length > 4 ? ", ..." : ""}`
+          : "",
+        kind: "attacker",
+      };
     };
-    /** For a run: what it executed. Someone else's commit already on the default branch is the repository's own code. */
-    const describeRun = async (sha: string | undefined, actor: string | undefined): Promise<string> => {
-      if (!sha) return "";
+    /**
+     * For a run: what it executed. A commit by someone else, already on the default
+     * branch, is the repository's own code. Bot authors are not trusted for that:
+     * the author of a commit is free text, and a bot name is the easiest to borrow.
+     */
+    const describeRun = async (sha: string | undefined, actor: string | undefined): Promise<Carried> => {
+      if (!sha) return { text: "" };
       const c = await commitOf(sha);
-      if (c?.author && actor && c.author.toLowerCase() !== actor.toLowerCase() && (await onDefault(sha)))
-        return `; it ran ${repo.default_branch}'s own code (commit by ${c.author}, no attacker change)`;
+      if (c?.author && actor && !/\[bot\]$/i.test(c.author) && c.author.toLowerCase() !== actor.toLowerCase() && (await onDefault(sha)))
+        return { text: `; it ran ${repo.default_branch}'s own code (commit by ${c.author}, no attacker change)`, kind: "own-code" };
       return describe(c?.files);
     };
 
@@ -354,16 +369,20 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
       if (commits.truncated) truncated.push(`${r} commits`);
       for (const c of commits.data ?? []) {
         const msg = firstLine(c.commit?.message);
-        const m = firstMatch(M.commit, msg, c.commit?.author?.date);
+        // The committer date is when it landed; an author date can be backdated to slip out of the window.
+        const landed = laterOf(c.commit?.author?.date, c.commit?.committer?.date);
+        const m = firstMatch(M.commit, msg, landed);
         if (!m) continue;
         const actor = c.author?.login ?? c.commit?.author?.name;
         const files = await filesOf(c.sha);
+        const carried = describe(files);
         const excerpt = `sha=${c.sha}${files ? `; ${files.join(", ")}` : ""}`.slice(0, 600);
         add(
           hit(m, {
             surface: "github:repos",
             subject: r,
-            title: `Commit ${String(c.sha).slice(0, 8)} "${msg}" on ${repo.default_branch} by ${actor}${describe(files)}`,
+            title: `Commit ${String(c.sha).slice(0, 8)} "${msg}" on ${repo.default_branch} by ${actor}${carried.text}`,
+            ciRun: carried.kind,
             actor,
             scope: scopeOf(actor),
             at: c.commit?.author?.date,
@@ -387,12 +406,13 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
         firstMatch(M.pr, run.display_title, run.created_at);
       if (!m) continue;
       const actor = run.triggering_actor?.login ?? run.actor?.login;
-      const what = await describeRun(run.head_sha, actor);
+      const carried = await describeRun(run.head_sha, actor);
       add(
         hit(m, {
           surface: "github:repos",
           subject: r,
-          title: `Workflow "${run.name}" ran on ${run.head_branch} ("${firstLine(run.display_title)}"), ${run.conclusion ?? run.status}, triggered by ${actor}${what}`,
+          title: `Workflow "${run.name}" ran on ${run.head_branch} ("${firstLine(run.display_title)}"), ${run.conclusion ?? run.status}, triggered by ${actor}${carried.text}`,
+          ciRun: carried.kind ?? "attacker",
           actor,
           scope: scopeOf(actor),
           at: run.created_at,
@@ -413,24 +433,30 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
     }
 
     if (M.cache.length) {
-      const caches = await gh.api<any>(`repos/${r}/actions/caches?per_page=100`);
-      for (const c of caches.data?.actions_caches ?? []) {
-        const m = firstMatch(M.cache, c.key);
-        if (m)
-          add(
-            hit(m, {
-              surface: "github:repos",
-              subject: r,
-              title: `Actions cache "${c.key}"`,
-              at: c.created_at,
-              evidence: { kind: "api", ref: `repos/${r}/actions/caches?key=${c.key}` },
-            }),
-          );
+      // The API filters caches by key prefix: one call per prefix finds them all, however many caches exist.
+      for (const m0 of M.cache) {
+        const caches = await gh.paged<any>(`repos/${r}/actions/caches?key=${encodeURIComponent(m0.indicator.value)}`, {
+          pick: (b) => b.actions_caches ?? [],
+          maxPages: 5,
+        });
+        for (const c of caches.data ?? []) {
+          const m = firstMatch(M.cache, c.key);
+          if (m)
+            add(
+              hit(m, {
+                surface: "github:repos",
+                subject: r,
+                title: `Actions cache "${c.key}"`,
+                at: c.created_at,
+                evidence: { kind: "api", ref: `repos/${r}/actions/caches?key=${encodeURIComponent(c.key)}` },
+              }),
+            );
+        }
       }
     }
     if (M.artifact.length) {
-      const arts = await gh.api<any>(`repos/${r}/actions/artifacts?per_page=100`);
-      for (const a of arts.data?.artifacts ?? []) {
+      const arts = await gh.paged<any>(`repos/${r}/actions/artifacts`, { pick: (b) => b.artifacts ?? [], maxPages: 5 });
+      for (const a of arts.data ?? []) {
         const m = firstMatch(M.artifact, a.name);
         if (m)
           add(
@@ -460,8 +486,9 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
         );
     }
     if (M.content.length && Array.isArray(wf.data)) {
+      if (wf.data.length > 25) contentCapped.push(`${r} (${wf.data.length} workflow files)`);
       for (const f of wf.data.slice(0, 25)) {
-        const body = await gh.api<any>(`repos/${r}/contents/${f.path}`);
+        const body = await gh.api<any>(`repos/${r}/contents/${String(f.path).split("/").map(encodeURIComponent).join("/")}`);
         const text = body.data?.content ? Buffer.from(body.data.content, "base64").toString("utf8") : "";
         const lines = text.split("\n");
         for (const m of M.content) {
@@ -574,11 +601,45 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
     repG.push({
       surface: "github:repos",
       what: `${inactive} repositories with no push since ${sinceDay}`,
-      why: "only their pull requests were checked: branches, runs and files cannot have changed without a push",
+      why: "only their pull requests were checked; their branches, commits and files cannot have changed without a push, but scheduled or manual runs, caches, artifacts, webhooks and deploy keys were not read",
+    });
+  if (contentCapped.length)
+    repG.push({
+      surface: "github:repos",
+      what: `workflow files past the first 25 in ${contentCapped.join(", ")}`,
+      why: "their contents were not read for string, IP, domain or URL indicators",
     });
   if (noAdmin)
     repG.push({ surface: "github:repos", what: `webhooks and deploy keys of ${noAdmin} repositories`, why: "they need admin rights on the repository" });
   if (truncated.length) repG.push({ surface: "github:repos", what: truncated.join("; "), why: "more than 300 items in the window: the oldest were not read" });
+  // Every other refused or failed call, and every list the page cap cut: not looked at, so never clean.
+  const handled = new Set(["user/keys", "user/gpg_keys", "user", "rate_limit"]);
+  const failed = gh.failures.filter((f) => !handled.has(f.path) && !/rate limit/i.test(f.error ?? ""));
+  for (const [surface, list] of [
+    ["github:account", failed.filter((f) => !/^(repos\/|user\/repos)/.test(f.path))],
+    ["github:repos", failed.filter((f) => /^(repos\/|user\/repos)/.test(f.path))],
+  ] as const) {
+    if (!list.length) continue;
+    const byStatus = new Map<number, number>();
+    for (const f of list) byStatus.set(f.status, (byStatus.get(f.status) ?? 0) + 1);
+    const where = [...new Set(list.map((f) => f.path.split("?")[0]?.split("/").slice(0, 3).join("/")))].slice(0, 6);
+    (surface === "github:account" ? accG : repG).push({
+      surface,
+      what: `${list.length} GitHub API read(s) that failed (${[...byStatus].map(([st, n]) => `${n}x ${st ? `HTTP ${st}` : "error"}`).join(", ")}), e.g. ${where.join(", ")}`,
+      why: `what they would have read was not checked: ${list[0]?.error ?? ""}`.slice(0, 300),
+      fix: "check the token's scopes and permissions (gh auth status), then re-run scan github",
+    });
+  }
+  const cut = gh.truncated.filter((p) => !/actions\/runs|\/commits\?/.test(p));
+  if (cut.length)
+    (cut.some((p) => p.startsWith("repos/") || p.startsWith("user/repos")) ? repG : accG).push({
+      surface: cut.some((p) => p.startsWith("repos/") || p.startsWith("user/repos")) ? "github:repos" : "github:account",
+      what: `${cut.length} list(s) cut by the page cap: ${cut
+        .slice(0, 5)
+        .map((p) => p.split("?")[0])
+        .join(", ")}`,
+      why: "their oldest items were not read",
+    });
   repG.push({
     surface: "github:repos",
     what: "branches other than the default branch, for commits and files",

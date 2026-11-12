@@ -25,6 +25,14 @@ const NAMES: Record<Surface, RegExp> = {
   cloud: /\bcloud\b|\baws\b|\bgcp\b|\bazure\b/i,
 };
 
+const CLEAN_WORDS = /\b(clean|safe|unaffected|not (been )?(compromised|hit|affected|touched)|propre|sain|intact|pas (été )?(touché|compromis))\b/i;
+const NOTHING_WORDS =
+  /\b(nothing (was |is )?(found|detected|matched)|no (sign|trace|indicator|ioc|finding|match)s?\b.{0,30}\b(found|matched|detected)|rien (n'a été |de )?(trouvé|détecté)|aucune? (trace|ioc|indicateur|signe))/i;
+const NEGATED_CLEAN = /\b(not|isn't|aren't|n'est pas|ne sont pas|pas)\s+(\w+\s+)?(clean|safe|propre|sain)\b/i;
+const BAD_WORDS = /\b(compromised|exposed|infected|hit|review|unknown|compromis|exposé|touché|à vérifier|inconnu)\b/i;
+const ALL_CLEAN =
+  /\b(everything|all (surfaces )?(is |are )?|nothing (was )?(found|hit)|tout est|rien n'a été)\b.{0,20}\b(clean|safe|found|propre|sain|trouvé|touché)\b/i;
+
 export function checkAnswer(run: Run, text: string): CheckProblem[] {
   const problems: CheckProblem[] = [];
   const known = [...run.sources().map((s) => s.id), ...run.findings().map((f) => f.id)];
@@ -56,27 +64,49 @@ export function checkAnswer(run: Run, text: string): CheckProblem[] {
       });
   }
 
-  // Sentence by sentence: "your machine is clean. The repos were hit" names two surfaces on one line.
+  // Clean claims, clause by clause: "your machine is clean. The repos were hit" names two
+  // surfaces; "your machine and your dependencies are clean" claims two; "clean, but
+  // keep an eye on it" still claims clean before the "but".
   const sentences = lines.flatMap((l, i) => l.split(/(?<=[.!?;])\s+/).map((t) => ({ t, line: i + 1 })));
-  const CLEAN_WORDS = /\b(clean|safe|not (been )?(compromised|hit|affected)|propre|sain|rien trouvé|aucune trace)\b/i;
-  const allClean =
-    /\b(everything|all (surfaces )?(is |are )?|nothing (was )?(found|hit)|tout est|rien n'a été)\b.{0,20}\b(clean|safe|found|propre|sain|trouvé|touché)\b/i;
   const anyBad = vs.some((v) => v.verdict !== "CLEAN");
+  const bad = (surface: Surface, strength: "clean" | "nothing") => {
+    const v = vs.find((x) => x.surface === surface);
+    if (!v || v.verdict === "CLEAN") return undefined;
+    // "Nothing matched" is true of a REVIEW surface (no IOC, only changes to judge); "clean" is not.
+    if (strength === "nothing" && v.verdict === "REVIEW") return undefined;
+    return v;
+  };
   for (const { t, line } of sentences) {
-    if (/\b(but|except|however|mais|sauf)\b/i.test(t)) continue;
-    if (anyBad && allClean.test(t)) {
+    const head = t.split(/\b(?:but|however|except|although|though|mais|sauf|cependant|toutefois|bien que)\b/i)[0] ?? t;
+    if (anyBad && ALL_CLEAN.test(head) && !SURFACES.some((x) => NAMES[x].test(head))) {
       problems.push({
         rule: "wrong-clean",
-        message: `"${t.slice(0, 80)}" but the verdicts are ${vs.map((v) => `${v.surface}=${v.verdict}`).join(", ")}`,
+        message: `"${head.trim().slice(0, 80)}" but the verdicts are ${vs.map((v) => `${v.surface}=${v.verdict}`).join(", ")}`,
         line,
       });
       continue;
     }
-    if (!CLEAN_WORDS.test(t)) continue;
-    const named = SURFACES.filter((x) => NAMES[x].test(t));
-    if (named.length !== 1) continue;
-    const v = vs.find((x) => x.surface === named[0]);
-    if (v && v.verdict !== "CLEAN") problems.push({ rule: "wrong-clean", message: `calls ${v.surface} clean but its verdict is ${v.verdict}`, line });
+    const clauses = head.split(/,|;|\b(?:and|et|while|whereas|alors que|tandis que)\b/i);
+    let pending: Surface[] = [];
+    for (const c of clauses) {
+      const named = SURFACES.filter((x) => NAMES[x].test(c));
+      const strength = NEGATED_CLEAN.test(c) ? undefined : CLEAN_WORDS.test(c) ? "clean" : NOTHING_WORDS.test(c) ? "nothing" : undefined;
+      if (!strength) {
+        // A clause naming surfaces with no verdict of its own lends them to the next clause ("your machine and your deps are clean").
+        pending = BAD_WORDS.test(c) ? [] : [...pending, ...named];
+        continue;
+      }
+      for (const surface of new Set([...pending, ...named])) {
+        const v = bad(surface, strength);
+        if (v)
+          problems.push({
+            rule: "wrong-clean",
+            message: `calls ${surface} ${strength === "clean" ? "clean" : "free of findings"} but its verdict is ${v.verdict}`,
+            line,
+          });
+      }
+      pending = [];
+    }
   }
 
   if (run.gaps().length && !/\b(coverage|gaps?|not (checked|scanned|covered)|couverture|non vérifié|pas vérifié|angles? morts?)\b/i.test(text))

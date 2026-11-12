@@ -2839,6 +2839,9 @@ var init_shared = __esm({
     MAX_IDENT = 64;
   }
 });
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 var STOPWORDS;
 var LOCALE_STOPWORDS;
 var extraSets;
@@ -10103,6 +10106,11 @@ var NAMES = {
   deps: /\bdeps\b|\bdependenc(y|ies)\b|\blockfiles?\b|\bd[ée]pendances?\b|\bpackages?\b|\bpaquets?\b/i,
   cloud: /\bcloud\b|\baws\b|\bgcp\b|\bazure\b/i
 };
+var CLEAN_WORDS = /\b(clean|safe|unaffected|not (been )?(compromised|hit|affected|touched)|propre|sain|intact|pas (été )?(touché|compromis))\b/i;
+var NOTHING_WORDS = /\b(nothing (was |is )?(found|detected|matched)|no (sign|trace|indicator|ioc|finding|match)s?\b.{0,30}\b(found|matched|detected)|rien (n'a été |de )?(trouvé|détecté)|aucune? (trace|ioc|indicateur|signe))/i;
+var NEGATED_CLEAN = /\b(not|isn't|aren't|n'est pas|ne sont pas|pas)\s+(\w+\s+)?(clean|safe|propre|sain)\b/i;
+var BAD_WORDS = /\b(compromised|exposed|infected|hit|review|unknown|compromis|exposé|touché|à vérifier|inconnu)\b/i;
+var ALL_CLEAN = /\b(everything|all (surfaces )?(is |are )?|nothing (was )?(found|hit)|tout est|rien n'a été)\b.{0,20}\b(clean|safe|found|propre|sain|trouvé|touché)\b/i;
 function checkAnswer(run, text) {
   const problems = [];
   const known = [...run.sources().map((s) => s.id), ...run.findings().map((f) => f.id)];
@@ -10128,24 +10136,43 @@ function checkAnswer(run, text) {
       });
   }
   const sentences = lines.flatMap((l, i) => l.split(/(?<=[.!?;])\s+/).map((t) => ({ t, line: i + 1 })));
-  const CLEAN_WORDS = /\b(clean|safe|not (been )?(compromised|hit|affected)|propre|sain|rien trouvé|aucune trace)\b/i;
-  const allClean = /\b(everything|all (surfaces )?(is |are )?|nothing (was )?(found|hit)|tout est|rien n'a été)\b.{0,20}\b(clean|safe|found|propre|sain|trouvé|touché)\b/i;
   const anyBad = vs.some((v) => v.verdict !== "CLEAN");
+  const bad = (surface, strength) => {
+    const v = vs.find((x) => x.surface === surface);
+    if (!v || v.verdict === "CLEAN") return void 0;
+    if (strength === "nothing" && v.verdict === "REVIEW") return void 0;
+    return v;
+  };
   for (const { t, line } of sentences) {
-    if (/\b(but|except|however|mais|sauf)\b/i.test(t)) continue;
-    if (anyBad && allClean.test(t)) {
+    const head = t.split(/\b(?:but|however|except|although|though|mais|sauf|cependant|toutefois|bien que)\b/i)[0] ?? t;
+    if (anyBad && ALL_CLEAN.test(head) && !SURFACES.some((x) => NAMES[x].test(head))) {
       problems.push({
         rule: "wrong-clean",
-        message: `"${t.slice(0, 80)}" but the verdicts are ${vs.map((v2) => `${v2.surface}=${v2.verdict}`).join(", ")}`,
+        message: `"${head.trim().slice(0, 80)}" but the verdicts are ${vs.map((v) => `${v.surface}=${v.verdict}`).join(", ")}`,
         line
       });
       continue;
     }
-    if (!CLEAN_WORDS.test(t)) continue;
-    const named = SURFACES.filter((x) => NAMES[x].test(t));
-    if (named.length !== 1) continue;
-    const v = vs.find((x) => x.surface === named[0]);
-    if (v && v.verdict !== "CLEAN") problems.push({ rule: "wrong-clean", message: `calls ${v.surface} clean but its verdict is ${v.verdict}`, line });
+    const clauses = head.split(/,|;|\b(?:and|et|while|whereas|alors que|tandis que)\b/i);
+    let pending = [];
+    for (const c of clauses) {
+      const named = SURFACES.filter((x) => NAMES[x].test(c));
+      const strength = NEGATED_CLEAN.test(c) ? void 0 : CLEAN_WORDS.test(c) ? "clean" : NOTHING_WORDS.test(c) ? "nothing" : void 0;
+      if (!strength) {
+        pending = BAD_WORDS.test(c) ? [] : [...pending, ...named];
+        continue;
+      }
+      for (const surface of /* @__PURE__ */ new Set([...pending, ...named])) {
+        const v = bad(surface, strength);
+        if (v)
+          problems.push({
+            rule: "wrong-clean",
+            message: `calls ${surface} ${strength === "clean" ? "clean" : "free of findings"} but its verdict is ${v.verdict}`,
+            line
+          });
+      }
+      pending = [];
+    }
   }
   if (run.gaps().length && !/\b(coverage|gaps?|not (checked|scanned|covered)|couverture|non vérifié|pas vérifié|angles? morts?)\b/i.test(text))
     problems.push({
@@ -10436,6 +10463,13 @@ async function antivirusPass(runner2, opts) {
       what: `${errors.length || "some"} antivirus target(s)`,
       why: `${engine.name} could not read them: ${(errors[0] ?? res.stderr.trim().split("\n")[0] ?? "").slice(0, 160)}`
     });
+  if (res.status !== 0 && res.status !== 1 && res.status !== 2)
+    gaps.push({
+      surface: "host",
+      what: "part of the antivirus pass",
+      why: `${engine.name} did not finish (exit ${res.status}): files after the stop were not scanned`,
+      fix: "re-run scan host, or narrow --roots"
+    });
   if (!opts.full)
     gaps.push({
       surface: "host",
@@ -10552,6 +10586,13 @@ var Gh = class {
   calls = 0;
   /** Calls the rate limit refused: every one is something not looked at. */
   rateLimited = 0;
+  /**
+   * Every failed call except "not found" (no such file or list) and "empty
+   * repository": a 403 or a 500 is something not looked at, never a clean answer.
+   */
+  failures = [];
+  /** Lists cut by the page cap: their oldest items were not read. */
+  truncated = [];
   async api(path, extra = []) {
     this.calls++;
     const res = await this.run("gh", ["api", ...extra, path], { timeoutMs: this.timeoutMs });
@@ -10559,7 +10600,10 @@ var Gh = class {
     if (!res.ok) {
       if (/rate limit/i.test(res.stderr) || /rate limit/i.test(res.stdout)) this.rateLimited++;
       const m = /HTTP (\d{3})/.exec(res.stderr) ?? /"status":\s*"?(\d{3})/.exec(res.stdout);
-      return { ok: false, status: m ? Number(m[1]) : 0, error: (res.stderr || res.stdout).trim().split("\n")[0] };
+      const status = m ? Number(m[1]) : 0;
+      const error = (res.stderr || res.stdout).trim().split("\n")[0];
+      if (status !== 404 && status !== 409) this.failures.push({ path, status, error });
+      return { ok: false, status, error };
     }
     try {
       return { ok: true, status: 200, data: JSON.parse(res.stdout) };
@@ -10582,6 +10626,7 @@ var Gh = class {
       all.push(...list);
       if (list.length < 100 || opts.stop?.(list)) return { ok: true, status: 200, data: all };
     }
+    this.truncated.push(path);
     return { ok: true, status: 200, data: all, truncated: true };
   }
   /** The token's OAuth scopes, read from the X-OAuth-Scopes header. Undefined when gh hides them (fine-grained tokens). */
@@ -10709,6 +10754,8 @@ function validateIocs(raw, sources) {
       continue;
     }
     if (!c.id || typeof c.id !== "string") push(`${at}.id`, "required string");
+    else if (/^campaign-\d+$/.test(c.id))
+      push(`${at}.id`, `"${c.id}" is the template's placeholder: name the campaign (e.g. wfx-loot-2026-11), the routine remembers campaigns by id`);
     else if (ids.has(c.id)) push(`${at}.id`, `duplicate campaign id "${c.id}"`);
     else ids.add(c.id);
     if (!c.title) push(`${at}.title`, "required string");
@@ -10717,7 +10764,12 @@ function validateIocs(raw, sources) {
     if (!Array.isArray(c.sources) || c.sources.length === 0) push(`${at}.sources`, "cite at least one [S#]");
     else for (const s of c.sources) if (!usable.has(s)) push(`${at}.sources`, `${s} is not a fetched source of this run`);
     if (!Array.isArray(c.indicators) || c.indicators.length === 0) push(`${at}.indicators`, "at least one indicator");
-    else c.indicators.forEach((ind, ii) => validateIndicator(ind, `${at}.indicators[${ii}]`, usable, push));
+    else
+      c.indicators.forEach((ind, ii) => {
+        validateIndicator(ind, `${at}.indicators[${ii}]`, usable, push);
+        if (ind?.source && Array.isArray(c.sources) && !c.sources.includes(ind.source))
+          push(`${at}.indicators[${ii}].source`, `${ind.source} is not one of this campaign's sources (${c.sources.join(", ")}): add it to "sources"`);
+      });
   }
   return problems.length ? { problems } : { iocs: raw, problems };
 }
@@ -10743,7 +10795,7 @@ function validateIndicator(ind, at, usable, push) {
   if (ind.type === "ip" && !/^[\d.]+$|^[a-f0-9:]+$/i.test(defang(ind.value))) push(`${at}.value`, "an IPv4 or IPv6 address");
 }
 function defang(s) {
-  return s.replace(/\[\.\]|\(\.\)|\{\.\}/g, ".").replace(/\[:\]/g, ":").replace(/^hxxp/i, "http");
+  return s.replace(/\[\.\]|\(\.\)|\{\.\}|\[dot\]|\(dot\)|\{dot\}/gi, ".").replace(/\[:\/\/\]|\[:\]\/\//g, "://").replace(/\[:\]/g, ":").replace(/\[\/\]/g, "/").replace(/\bhxxp(s?)/gi, "http$1");
 }
 function globRegex(glob) {
   let re = "";
@@ -10759,6 +10811,12 @@ function compile(c, ind) {
   let test;
   if (ind.regex) {
     const re = new RegExp(value, "i");
+    test = ind.type === "file" || ind.type === "workflow_file" ? (s) => re.test(s) || re.test(s.split("/").pop() ?? s) : (s) => re.test(s);
+  } else if (ind.type === "ip") {
+    const re = new RegExp(`(?<![\\d.])${escapeRegExp(value)}(?![\\d])`);
+    test = (s) => re.test(s);
+  } else if (ind.type === "domain") {
+    const re = new RegExp(`(?<![a-z0-9-])${escapeRegExp(value)}(?![a-z0-9-])`, "i");
     test = (s) => re.test(s);
   } else if (ind.type === "file" || ind.type === "workflow_file") {
     const re = globRegex(value);
@@ -10802,7 +10860,8 @@ function inWindow(m, at) {
 function packageHit(ind, ecosystem, name, version) {
   if (ind.type !== "package") return false;
   if (normEco(ind.ecosystem ?? "") !== normEco(ecosystem)) return false;
-  if (ind.value.toLowerCase() !== name.toLowerCase()) return false;
+  const norm2 = (n) => normEco(ecosystem) === "pypi" ? n.toLowerCase().replace(/[-_.]+/g, "-") : n.toLowerCase();
+  if (norm2(ind.value) !== norm2(name)) return false;
   if (!ind.versions || ind.versions.length === 0) return true;
   const v = version.replace(/^v/, "");
   return ind.versions.some((x) => x.replace(/^v/, "") === v);
@@ -10913,9 +10972,8 @@ function findingLine(f) {
   return `- **${f.severity}**: ${f.title}${who}${when} ${cite(f)}`;
 }
 var SEV_ORDER = ["compromised", "exposed", "suspicious", "info"];
-var NOT_ATTACKER_CODE = /only changes docs|own code \(commit by/;
 function payloadRan(findings, repo) {
-  return findings.some((f) => f.subject === repo && f.severity === "compromised" && /^(Workflow "|Commit )/.test(f.title) && !NOT_ATTACKER_CODE.test(f.title));
+  return findings.some((f) => f.subject === repo && f.severity === "compromised" && f.ciRun === "attacker");
 }
 function idList(ids, max = 8) {
   if (!ids.length) return "none";
@@ -11148,7 +11206,17 @@ var Run = class {
   addSource(s) {
     const all = this.sources();
     const existing = all.find((x) => x.url === s.url);
-    if (existing && !existing.error) return existing;
+    if (existing && !existing.error) {
+      if (s.file && existing.file !== s.file) {
+        const merged = { ...existing, file: s.file };
+        this.write(
+          "sources.json",
+          all.map((x) => x.id === existing.id ? merged : x)
+        );
+        return merged;
+      }
+      return existing;
+    }
     const id = existing?.id ?? `S${all.length + 1}`;
     const src = { id, ...s };
     const next = existing ? all.map((x) => x.id === id ? src : x) : [...all, src];
@@ -11233,6 +11301,17 @@ async function scanCloud(iocs, runner2, opts = {}) {
   const result = { surface: "cloud", scanned: false, stats: {}, startedAt: (opts.now ?? /* @__PURE__ */ new Date()).toISOString() };
   const findings = [];
   const gaps = [];
+  const denied = /* @__PURE__ */ new Map();
+  const read2 = async (what, cmd, args, timeoutMs = T) => {
+    const res = await runner2(cmd, args, { timeoutMs });
+    const data = parseJsonOutput(res);
+    if (data === void 0) {
+      const d = denied.get(what) ?? { n: 0, why: (res.stderr || res.stdout).trim().split("\n")[0]?.slice(0, 200) || `exit ${res.status}` };
+      d.n++;
+      denied.set(what, d);
+    }
+    return data;
+  };
   const fedPrefix = matchers(iocs, "azure_fedcred_prefix");
   const who = await runner2("aws", ["sts", "get-caller-identity", "--output", "json"], { timeoutMs: T });
   if (who.missing) gaps.push({ surface: "cloud", what: "AWS", why: "the aws CLI is not installed", fix: "skip if you use no AWS account" });
@@ -11241,7 +11320,7 @@ async function scanCloud(iocs, runner2, opts = {}) {
   else {
     result.scanned = true;
     const account = parseJsonOutput(who)?.Account ?? "?";
-    const roles = parseJsonOutput(await runner2("aws", ["iam", "list-roles", "--output", "json"], { timeoutMs: T }))?.Roles ?? [];
+    const roles = (await read2("AWS IAM roles", "aws", ["iam", "list-roles", "--output", "json"]))?.Roles ?? [];
     result.stats.awsRoles = roles.length;
     for (const role of roles) {
       let doc = role.AssumeRolePolicyDocument;
@@ -11257,12 +11336,10 @@ async function scanCloud(iocs, runner2, opts = {}) {
         key: `cloud|aws|${account}|trust|${role.RoleName}`
       });
     }
-    const users = parseJsonOutput(await runner2("aws", ["iam", "list-users", "--output", "json"], { timeoutMs: T }))?.Users ?? [];
+    const users = (await read2("AWS IAM users", "aws", ["iam", "list-users", "--output", "json"]))?.Users ?? [];
     result.stats.awsUsers = users.length;
     await mapPool(users, 4, async (u) => {
-      const keys = parseJsonOutput(
-        await runner2("aws", ["iam", "list-access-keys", "--user-name", u.UserName, "--output", "json"], { timeoutMs: T })
-      )?.AccessKeyMetadata ?? [];
+      const keys = (await read2("AWS access keys", "aws", ["iam", "list-access-keys", "--user-name", u.UserName, "--output", "json"]))?.AccessKeyMetadata ?? [];
       for (const k of keys) {
         if (!k.CreateDate || k.CreateDate < since) continue;
         findings.push({
@@ -11290,14 +11367,18 @@ async function scanCloud(iocs, runner2, opts = {}) {
     gaps.push({ surface: "cloud", what: "GCP", why: "gcloud has no account or project set", fix: "gcloud auth login && gcloud config set project <id>" });
   else {
     result.scanned = true;
-    const sas = parseJsonOutput(await runner2("gcloud", ["iam", "service-accounts", "list", "--format=json"], { timeoutMs: T })) ?? [];
+    const sas = await read2("GCP service accounts", "gcloud", ["iam", "service-accounts", "list", "--format=json"]) ?? [];
     result.stats.gcpServiceAccounts = sas.length;
     await mapPool(sas, 4, async (sa) => {
-      const keys = parseJsonOutput(
-        await runner2("gcloud", ["iam", "service-accounts", "keys", "list", `--iam-account=${sa.email}`, "--managed-by=user", "--format=json"], {
-          timeoutMs: T
-        })
-      ) ?? [];
+      const keys = await read2("GCP service-account keys", "gcloud", [
+        "iam",
+        "service-accounts",
+        "keys",
+        "list",
+        `--iam-account=${sa.email}`,
+        "--managed-by=user",
+        "--format=json"
+      ]) ?? [];
       for (const k of keys) {
         if (!k.validAfterTime || k.validAfterTime < since) continue;
         findings.push({
@@ -11341,10 +11422,10 @@ async function scanCloud(iocs, runner2, opts = {}) {
   else if (!az.ok) gaps.push({ surface: "cloud", what: "Azure", why: "the az CLI is not logged in", fix: "az login" });
   else {
     result.scanned = true;
-    const apps = parseJsonOutput(await runner2("az", ["ad", "app", "list", "--show-mine", "--output", "json"], { timeoutMs: T })) ?? [];
+    const apps = await read2("Azure app registrations", "az", ["ad", "app", "list", "--show-mine", "--output", "json"]) ?? [];
     result.stats.azureApps = apps.length;
     await mapPool(apps, 4, async (app) => {
-      const creds = parseJsonOutput(await runner2("az", ["ad", "app", "federated-credential", "list", "--id", app.appId, "--output", "json"], { timeoutMs: T })) ?? [];
+      const creds = await read2("Azure federated credentials", "az", ["ad", "app", "federated-credential", "list", "--id", app.appId, "--output", "json"]) ?? [];
       for (const c of creds) {
         const m = fedPrefix.find((x) => x.test(c.name ?? ""));
         if (!m && !/github|token\.actions/.test(String(c.issuer ?? ""))) continue;
@@ -11360,6 +11441,13 @@ async function scanCloud(iocs, runner2, opts = {}) {
       }
     });
   }
+  for (const [what, d] of denied)
+    gaps.push({
+      surface: "cloud",
+      what: `${d.n} listing(s) of ${what}`,
+      why: `the CLI refused or failed: ${d.why}`,
+      fix: "check the role's read permissions, then re-run scan cloud"
+    });
   result.finishedAt = (/* @__PURE__ */ new Date()).toISOString();
   return { result, findings, gaps };
 }
@@ -11456,7 +11544,7 @@ function npmLock(text) {
 function pnpmLock(text) {
   const out2 = [];
   for (const m of text.matchAll(/^ {2}['"]?\/?((?:@[^/@\s]+\/)?[^/@\s:'"(]+)[@/](\d[^:'"(\s]*)/gm))
-    out2.push({ ecosystem: "npm", name: m[1], version: m[2] });
+    out2.push({ ecosystem: "npm", name: m[1], version: m[2].replace(/_.*$/, "") });
   return uniq(out2);
 }
 function yarnLock(text) {
@@ -11498,7 +11586,8 @@ function requirements(text) {
 }
 function goSum(text) {
   const out2 = [];
-  for (const m of text.matchAll(/^(\S+)\s+(v[^\s/]+?)(?:\/go\.mod)?\s+h1:/gm)) out2.push({ ecosystem: "go", name: m[1], version: m[2] });
+  for (const m of text.matchAll(/^(\S+)\s+(v\S+)\s+h1:/gm))
+    if (!m[2].endsWith("/go.mod")) out2.push({ ecosystem: "go", name: m[1], version: m[2] });
   return uniq(out2);
 }
 function composerLock(text) {
@@ -11510,7 +11599,12 @@ function composerLock(text) {
 }
 function gemfileLock(text) {
   const out2 = [];
-  for (const m of text.matchAll(/^ {4}([A-Za-z0-9_.-]+) \(([^)]+)\)$/gm)) out2.push({ ecosystem: "rubygems", name: m[1], version: m[2] });
+  for (const m of text.matchAll(/^ {4}([A-Za-z0-9_.-]+) \(([^)]+)\)$/gm))
+    out2.push({
+      ecosystem: "rubygems",
+      name: m[1],
+      version: m[2].replace(/-(x86|x64|arm|aarch|universal|java|mingw|mswin|i386|i686|ppc|s390)[\w-]*$/i, "")
+    });
   return uniq(out2);
 }
 
@@ -11601,6 +11695,14 @@ async function scanDeps(iocs, tree, run, opts = {}) {
     }
   }
   result.stats.lockfiles = lockfiles;
+  if (tree.capped)
+    gaps.push({
+      surface: "deps",
+      what: `lockfiles past the first ${tree.entries} entries of the walk`,
+      why: "the walk is capped",
+      fix: "re-run with --roots narrowed to your code folders"
+    });
+  if (tree.unreadable) gaps.push({ surface: "deps", what: `lockfiles in ${tree.unreadable} unreadable directories`, why: "permission denied" });
   result.stats.packages = where.size;
   if (unreadable) gaps.push({ surface: "deps", what: `${unreadable} lockfiles`, why: "could not be parsed or were over 64 MB" });
   if (opts.checker !== false && lockfiles > 0) {
@@ -11691,7 +11793,8 @@ async function scanDeps(iocs, tree, run, opts = {}) {
 
 // src/scan/github.ts
 var firstLine = (s) => (s ?? "").split("\n")[0] ?? "";
-var DOCS_ONLY = /(^|\/)(docs?|documentation)\/|\.(md|mdx|txt|rst|adoc)$|(^|\/)(README|CHANGELOG|LICENSE|NOTICE)[^/]*$/i;
+var laterOf = (a, b) => a && b ? a > b ? a : b : a ?? b ?? void 0;
+var DOCS_ONLY = /\.(md|mdx|rst|adoc)$|(^|\/)(README|CHANGELOG|LICENSE|NOTICE|AUTHORS)(\.(md|txt|rst))?$/i;
 function hit(m, base2) {
   return {
     severity: m.indicator.weak ? "suspicious" : "compromised",
@@ -11793,7 +11896,7 @@ async function scanGithub(iocs, runner2, opts = {}) {
       });
     for (const c of commits.data ?? []) {
       const msg = firstLine(c.commit?.message);
-      const m = firstMatch(M.commit, msg, c.commit?.author?.date);
+      const m = firstMatch(M.commit, msg, laterOf(c.commit?.author?.date, c.commit?.committer?.date));
       if (!m) continue;
       const repo = c.repository?.full_name ?? "?";
       accF.push(
@@ -11879,6 +11982,7 @@ async function scanGithub(iocs, runner2, opts = {}) {
   let inactive = 0;
   let noAdmin = 0;
   let quietGaps = 0;
+  const contentCapped = [];
   const rate = await gh.api("rate_limit");
   const remaining = rate.data?.resources?.core?.remaining;
   if (remaining !== void 0 && remaining < repos.length * 6)
@@ -11950,15 +12054,19 @@ async function scanGithub(iocs, runner2, opts = {}) {
       return cmp.ok && (cmp.data?.status === "identical" || cmp.data?.status === "ahead");
     };
     const describe = (files) => {
-      if (!files) return "";
-      if (files.length && files.every((f) => DOCS_ONLY.test(f.split(" ").slice(1).join(" ")))) return "; the commit only changes docs (a probe)";
-      return files.length ? `; the commit changes ${files.slice(0, 4).map((f) => f.split(" ").slice(1).join(" ")).join(", ")}${files.length > 4 ? ", ..." : ""}` : "";
+      if (!files) return { text: "" };
+      if (files.length && files.every((f) => DOCS_ONLY.test(f.split(" ").slice(1).join(" "))))
+        return { text: "; the commit only changes docs (a probe)", kind: "probe" };
+      return {
+        text: files.length ? `; the commit changes ${files.slice(0, 4).map((f) => f.split(" ").slice(1).join(" ")).join(", ")}${files.length > 4 ? ", ..." : ""}` : "",
+        kind: "attacker"
+      };
     };
     const describeRun = async (sha, actor) => {
-      if (!sha) return "";
+      if (!sha) return { text: "" };
       const c = await commitOf(sha);
-      if (c?.author && actor && c.author.toLowerCase() !== actor.toLowerCase() && await onDefault(sha))
-        return `; it ran ${repo.default_branch}'s own code (commit by ${c.author}, no attacker change)`;
+      if (c?.author && actor && !/\[bot\]$/i.test(c.author) && c.author.toLowerCase() !== actor.toLowerCase() && await onDefault(sha))
+        return { text: `; it ran ${repo.default_branch}'s own code (commit by ${c.author}, no attacker change)`, kind: "own-code" };
       return describe(c?.files);
     };
     if (M.commit.length || M.file.length) {
@@ -11966,16 +12074,19 @@ async function scanGithub(iocs, runner2, opts = {}) {
       if (commits.truncated) truncated.push(`${r} commits`);
       for (const c of commits.data ?? []) {
         const msg = firstLine(c.commit?.message);
-        const m = firstMatch(M.commit, msg, c.commit?.author?.date);
+        const landed = laterOf(c.commit?.author?.date, c.commit?.committer?.date);
+        const m = firstMatch(M.commit, msg, landed);
         if (!m) continue;
         const actor = c.author?.login ?? c.commit?.author?.name;
         const files = await filesOf(c.sha);
+        const carried = describe(files);
         const excerpt = `sha=${c.sha}${files ? `; ${files.join(", ")}` : ""}`.slice(0, 600);
         add2(
           hit(m, {
             surface: "github:repos",
             subject: r,
-            title: `Commit ${String(c.sha).slice(0, 8)} "${msg}" on ${repo.default_branch} by ${actor}${describe(files)}`,
+            title: `Commit ${String(c.sha).slice(0, 8)} "${msg}" on ${repo.default_branch} by ${actor}${carried.text}`,
+            ciRun: carried.kind,
             actor,
             scope: scopeOf(actor),
             at: c.commit?.author?.date,
@@ -11994,12 +12105,13 @@ async function scanGithub(iocs, runner2, opts = {}) {
       const m = firstMatch(M.branch, run.head_branch, run.created_at) ?? firstMatch(M.commit, firstLine(run.display_title), run.created_at) ?? firstMatch(M.pr, run.display_title, run.created_at);
       if (!m) continue;
       const actor = run.triggering_actor?.login ?? run.actor?.login;
-      const what = await describeRun(run.head_sha, actor);
+      const carried = await describeRun(run.head_sha, actor);
       add2(
         hit(m, {
           surface: "github:repos",
           subject: r,
-          title: `Workflow "${run.name}" ran on ${run.head_branch} ("${firstLine(run.display_title)}"), ${run.conclusion ?? run.status}, triggered by ${actor}${what}`,
+          title: `Workflow "${run.name}" ran on ${run.head_branch} ("${firstLine(run.display_title)}"), ${run.conclusion ?? run.status}, triggered by ${actor}${carried.text}`,
+          ciRun: carried.kind ?? "attacker",
           actor,
           scope: scopeOf(actor),
           at: run.created_at,
@@ -12016,24 +12128,29 @@ async function scanGithub(iocs, runner2, opts = {}) {
       runGaps.push({ id, name: w.name, missing });
     }
     if (M.cache.length) {
-      const caches = await gh.api(`repos/${r}/actions/caches?per_page=100`);
-      for (const c of caches.data?.actions_caches ?? []) {
-        const m = firstMatch(M.cache, c.key);
-        if (m)
-          add2(
-            hit(m, {
-              surface: "github:repos",
-              subject: r,
-              title: `Actions cache "${c.key}"`,
-              at: c.created_at,
-              evidence: { kind: "api", ref: `repos/${r}/actions/caches?key=${c.key}` }
-            })
-          );
+      for (const m0 of M.cache) {
+        const caches = await gh.paged(`repos/${r}/actions/caches?key=${encodeURIComponent(m0.indicator.value)}`, {
+          pick: (b) => b.actions_caches ?? [],
+          maxPages: 5
+        });
+        for (const c of caches.data ?? []) {
+          const m = firstMatch(M.cache, c.key);
+          if (m)
+            add2(
+              hit(m, {
+                surface: "github:repos",
+                subject: r,
+                title: `Actions cache "${c.key}"`,
+                at: c.created_at,
+                evidence: { kind: "api", ref: `repos/${r}/actions/caches?key=${encodeURIComponent(c.key)}` }
+              })
+            );
+        }
       }
     }
     if (M.artifact.length) {
-      const arts = await gh.api(`repos/${r}/actions/artifacts?per_page=100`);
-      for (const a of arts.data?.artifacts ?? []) {
+      const arts = await gh.paged(`repos/${r}/actions/artifacts`, { pick: (b) => b.artifacts ?? [], maxPages: 5 });
+      for (const a of arts.data ?? []) {
         const m = firstMatch(M.artifact, a.name);
         if (m)
           add2(
@@ -12061,8 +12178,9 @@ async function scanGithub(iocs, runner2, opts = {}) {
         );
     }
     if (M.content.length && Array.isArray(wf.data)) {
+      if (wf.data.length > 25) contentCapped.push(`${r} (${wf.data.length} workflow files)`);
       for (const f of wf.data.slice(0, 25)) {
-        const body = await gh.api(`repos/${r}/contents/${f.path}`);
+        const body = await gh.api(`repos/${r}/contents/${String(f.path).split("/").map(encodeURIComponent).join("/")}`);
         const text = body.data?.content ? Buffer.from(body.data.content, "base64").toString("utf8") : "";
         const lines = text.split("\n");
         for (const m of M.content) {
@@ -12166,11 +12284,41 @@ async function scanGithub(iocs, runner2, opts = {}) {
     repG.push({
       surface: "github:repos",
       what: `${inactive} repositories with no push since ${sinceDay}`,
-      why: "only their pull requests were checked: branches, runs and files cannot have changed without a push"
+      why: "only their pull requests were checked; their branches, commits and files cannot have changed without a push, but scheduled or manual runs, caches, artifacts, webhooks and deploy keys were not read"
+    });
+  if (contentCapped.length)
+    repG.push({
+      surface: "github:repos",
+      what: `workflow files past the first 25 in ${contentCapped.join(", ")}`,
+      why: "their contents were not read for string, IP, domain or URL indicators"
     });
   if (noAdmin)
     repG.push({ surface: "github:repos", what: `webhooks and deploy keys of ${noAdmin} repositories`, why: "they need admin rights on the repository" });
   if (truncated.length) repG.push({ surface: "github:repos", what: truncated.join("; "), why: "more than 300 items in the window: the oldest were not read" });
+  const handled = /* @__PURE__ */ new Set(["user/keys", "user/gpg_keys", "user", "rate_limit"]);
+  const failed = gh.failures.filter((f) => !handled.has(f.path) && !/rate limit/i.test(f.error ?? ""));
+  for (const [surface, list] of [
+    ["github:account", failed.filter((f) => !/^(repos\/|user\/repos)/.test(f.path))],
+    ["github:repos", failed.filter((f) => /^(repos\/|user\/repos)/.test(f.path))]
+  ]) {
+    if (!list.length) continue;
+    const byStatus = /* @__PURE__ */ new Map();
+    for (const f of list) byStatus.set(f.status, (byStatus.get(f.status) ?? 0) + 1);
+    const where = [...new Set(list.map((f) => f.path.split("?")[0]?.split("/").slice(0, 3).join("/")))].slice(0, 6);
+    (surface === "github:account" ? accG : repG).push({
+      surface,
+      what: `${list.length} GitHub API read(s) that failed (${[...byStatus].map(([st, n]) => `${n}x ${st ? `HTTP ${st}` : "error"}`).join(", ")}), e.g. ${where.join(", ")}`,
+      why: `what they would have read was not checked: ${list[0]?.error ?? ""}`.slice(0, 300),
+      fix: "check the token's scopes and permissions (gh auth status), then re-run scan github"
+    });
+  }
+  const cut = gh.truncated.filter((p) => !/actions\/runs|\/commits\?/.test(p));
+  if (cut.length)
+    (cut.some((p) => p.startsWith("repos/") || p.startsWith("user/repos")) ? repG : accG).push({
+      surface: cut.some((p) => p.startsWith("repos/") || p.startsWith("user/repos")) ? "github:repos" : "github:account",
+      what: `${cut.length} list(s) cut by the page cap: ${cut.slice(0, 5).map((p) => p.split("?")[0]).join(", ")}`,
+      why: "their oldest items were not read"
+    });
   repG.push({
     surface: "github:repos",
     what: "branches other than the default branch, for commits and files",
@@ -12247,7 +12395,8 @@ var KNOWN_HIDDEN = /* @__PURE__ */ new Set([
   ".gradle",
   ".m2"
 ]);
-function riskSignals(command2, executable, home) {
+function riskSignals(rawCommand, executable, home) {
+  const command2 = rawCommand.length > 4e3 ? rawCommand.slice(0, 4e3) : rawCommand;
   const out2 = [];
   for (const [re, label] of STRONG) if (re.test(command2)) out2.push(label);
   for (const p of [executable, ...command2.split(/\s+/)].filter(Boolean)) {
@@ -12317,7 +12466,8 @@ function shellStartupFindings(home) {
     } catch {
       continue;
     }
-    text.split("\n").forEach((line, i) => {
+    text.split("\n").forEach((rawLine, i) => {
+      const line = rawLine.length > 4e3 ? rawLine.slice(0, 4e3) : rawLine;
       if (/^\s*#/.test(line)) return;
       for (const [re, signal] of SHELL_RISK) {
         if (!re.test(line)) continue;
@@ -12467,12 +12617,12 @@ function recentExtensions(home, reviewSinceMs) {
   }
   return { findings, list };
 }
-async function processFindings(runner2, home) {
-  const ps = await runner2("ps", ["-axo", "pid=,comm="], { timeoutMs: 1e4 });
+async function processFindings(runner2, home, os = process.platform) {
+  const ps = await runner2("ps", os === "darwin" ? ["-axo", "pid=,comm="] : ["-eo", "pid=,args="], { timeoutMs: 1e4 });
   if (!ps.ok) return [];
   const out2 = [];
   for (const line of ps.stdout.split("\n")) {
-    const m = /^\s*(\d+)\s+(\/.+)$/.exec(line);
+    const m = os === "darwin" ? /^\s*(\d+)\s+(\/.+)$/.exec(line) : /^\s*(\d+)\s+(\/\S+)/.exec(line);
     if (!m) continue;
     const exe = m[2];
     const signals = riskSignals("", exe, home);
@@ -12675,6 +12825,10 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
       const m = M.content.find((x) => x.test(text)) ?? (hashes.size ? hashes.get(sha256File(p) ?? "") : void 0);
       const { command: command2, executable } = startupCommand(text);
       const item = { path: p, mtime: st.mtime.toISOString(), command: command2, executable, signals: riskSignals(command2, executable, home) };
+      if (!command2) {
+        for (const l of text.split("\n").slice(0, 2e3)) if (l.trim() && !/^\s*#/.test(l)) item.signals.push(...riskSignals(l, void 0, home));
+      }
+      item.signals = [...new Set(item.signals)];
       if (executable?.startsWith("/")) {
         item.exists = existsSync11(executable);
         if (!item.exists) item.signals.push("points to a program that no longer exists");
@@ -12726,9 +12880,7 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
   findings.push(...rc.findings);
   inventory.shellStartup = rc.lines;
   findings.push(...configFindings(home, sinceMs));
-  const traces = [".zsh_history", ".bash_history", ".local/share/fish/fish_history", ".python_history", ".zshrc", ".bashrc", ".profile", ".zprofile"].map(
-    (f) => join13(home, f)
-  );
+  const traces = [".zsh_history", ".bash_history", ".local/share/fish/fish_history", ".python_history", ...SHELL_STARTUP].map((f) => join13(home, f));
   traces.push("/etc/hosts");
   for (const p of traces) {
     const text = existsSync11(p) ? readText(p, 20 * 1024 * 1024) : void 0;
@@ -12763,12 +12915,12 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
       continue;
     }
     for (const name of names) {
-      const mm = /^(.+?)-(\d+\.\d+\.\d+.*)$/.exec(name);
+      const mm = /^(.+?)-(\d+\.\d+\.\d+)(-.+)?$/.exec(name);
       if (!mm) continue;
       extensions++;
       const [, id, version] = mm;
       const m = M.pkg.find(
-        (x) => x.indicator.value.toLowerCase() === id.toLowerCase() && (!x.indicator.versions?.length || x.indicator.versions.includes(version))
+        (x) => x.indicator.value.toLowerCase() === id.toLowerCase() && (!x.indicator.versions?.length || x.indicator.versions.some((v) => v.replace(/^v/, "") === version || v === `${version}${mm[3] ?? ""}`))
       );
       if (m)
         findings.push(
@@ -12785,7 +12937,7 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
     for (const dir of tree.gitDirs) {
       const cfg = readText(join13(dir, ".git/config")) ?? "";
       const urls = [...cfg.matchAll(/url\s*=\s*(\S+)/g)].map((x) => x[1] ?? "");
-      const repo = urls.map((u) => /github\.com[:/]([^/]+\/[^/.]+?)(?:\.git)?$/.exec(u)?.[1]?.toLowerCase()).find((r) => r && wanted.has(r));
+      const repo = urls.map((u) => /github\.com[:/]([^/]+\/[^/]+?)(?:\.git)?\/?$/.exec(u)?.[1]?.toLowerCase()).find((r) => r && wanted.has(r));
       if (!repo) continue;
       let fetched;
       try {
@@ -12870,7 +13022,7 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
           );
       }
     }
-    findings.push(...await processFindings(runner2, home));
+    findings.push(...await processFindings(runner2, home, os));
   } else gaps.push({ surface: "host", what: "crontab, open connections, processes and code signatures", why: "live checks were skipped" });
   inventory.credentials = credentialInventory(
     home,
@@ -12947,11 +13099,12 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
     why: "not read: they need privileges or per-browser profiles",
     fix: "System Settings > General > Login Items; each browser's extensions page"
   });
+  const pruned = Object.entries(tree.pruned ?? {}).sort((a, b) => b[1] - a[1]);
   gaps.push({
     surface: "host",
-    what: "files outside the scanned roots and deeper than the walk depth",
-    why: "the walk is bounded",
-    fix: "pass --roots and --depth to widen it"
+    what: `files outside the scanned roots${pruned.length ? `, and inside skipped folders: ${pruned.slice(0, 8).map(([n, c]) => `${n} (${c})`).join(", ")}` : ""}`,
+    why: "the walk is bounded: package folders, caches and system libraries are skipped for speed",
+    fix: "pass --roots and --depth to widen it; scan a skipped folder with --roots <it>"
   });
   result.finishedAt = (/* @__PURE__ */ new Date()).toISOString();
   return { result, findings, gaps, inventory };
@@ -12990,7 +13143,7 @@ var PRUNE = /* @__PURE__ */ new Set([
 function walk(roots, opts = {}) {
   const maxDepth = opts.maxDepth ?? 6;
   const maxEntries = opts.maxEntries ?? 4e5;
-  const out2 = { files: [], gitDirs: [], vscodeDirs: [], entries: 0, capped: false, unreadable: 0 };
+  const out2 = { files: [], gitDirs: [], vscodeDirs: [], entries: 0, capped: false, unreadable: 0, pruned: {} };
   const stack = roots.map((dir) => ({ dir, depth: 0 }));
   while (stack.length) {
     const { dir, depth } = stack.pop();
@@ -13021,7 +13174,14 @@ function walk(roots, opts = {}) {
       }
       if (st.isSymbolicLink()) continue;
       if (st.isDirectory()) {
-        if (PRUNE.has(name) || depth + 1 > maxDepth) continue;
+        if (PRUNE.has(name)) {
+          out2.pruned[name] = (out2.pruned[name] ?? 0) + 1;
+          continue;
+        }
+        if (depth + 1 > maxDepth) {
+          out2.pruned["(deeper than --depth)"] = (out2.pruned["(deeper than --depth)"] ?? 0) + 1;
+          continue;
+        }
         stack.push({ dir: p, depth: depth + 1 });
       } else if (st.isFile()) out2.files.push(p);
     }
@@ -13084,8 +13244,12 @@ async function watchCommit(dir, run, opts = {}) {
   const urlOf = Object.fromEntries(sources.map((s) => [s.id, s.url]));
   const byId = new Map(state.campaigns.map((c) => [c.id, c]));
   for (const c of run.iocs()?.campaigns ?? []) byId.set(c.id, { ...c, sourceUrls: Object.fromEntries(c.sources.map((s) => [s, urlOf[s] ?? ""])) });
+  const findingsNow = run.findings();
+  const incompleteNow = verdicts(findingsNow, run.gaps(), run.surfaces()).some((v) => v.verdict === "UNKNOWN");
   const handled = new Map(state.handled.map((h) => [safeCanonical(h.url), h]));
-  for (const s of sources) if (s.origin === "web" && !s.error) handled.set(safeCanonical(s.url), { url: s.url, at: now.toISOString() });
+  if (!incompleteNow) {
+    for (const s of sources) if (s.origin === "web" && !s.error) handled.set(safeCanonical(s.url), { url: s.url, at: now.toISOString() });
+  }
   const findings = run.findings();
   const alerted = new Set(state.alerted);
   const newFindings = findings.filter((f) => (f.severity === "compromised" || f.severity === "exposed") && !alerted.has(f.key));
@@ -13098,7 +13262,7 @@ async function watchCommit(dir, run, opts = {}) {
     campaigns: [...byId.values()],
     alerted: [...alerted],
     lastSweep: now.toISOString(),
-    lastFullSweep: plan?.resweep || !state.lastFullSweep ? now.toISOString() : state.lastFullSweep
+    lastFullSweep: !incompleteNow && (plan?.resweep || !state.lastFullSweep) ? now.toISOString() : state.lastFullSweep
   };
   store.write("state.json", next);
   const lines = alert ? newFindings.map(
@@ -13258,8 +13422,13 @@ function needRun(a) {
   return new Run(dir);
 }
 function needIocs(run) {
-  const iocs = run.iocs();
-  if (!iocs) throw new UsageError(`no iocs.json in ${run.dir}: run \`ultraguard ioc set --file <iocs.json> --out ${run.dir}\` first`);
+  const raw = run.iocs();
+  if (!raw) throw new UsageError(`no iocs.json in ${run.dir}: run \`ultraguard ioc set --file <iocs.json> --out ${run.dir}\` first`);
+  const { iocs, problems } = validateIocs(raw, run.sources());
+  if (!iocs)
+    throw new UsageError(
+      `iocs.json in ${run.dir} does not validate (${problems.length} problem(s), first: ${problems[0]?.path}: ${problems[0]?.message}); fix it and run ioc set again`
+    );
   return iocs;
 }
 function walkFor(a) {

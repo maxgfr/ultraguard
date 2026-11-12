@@ -34,6 +34,18 @@ export async function scanCloud(
   const result: SurfaceResult = { surface: "cloud", scanned: false, stats: {}, startedAt: (opts.now ?? new Date()).toISOString() };
   const findings: NewFinding[] = [];
   const gaps: Gap[] = [];
+  // A listing the CLI refuses (AccessDenied, a missing permission, a timeout) is a gap, never an empty answer.
+  const denied = new Map<string, { n: number; why: string }>();
+  const read = async <T>(what: string, cmd: string, args: string[], timeoutMs = T): Promise<T | undefined> => {
+    const res = await runner(cmd, args, { timeoutMs });
+    const data = parseJsonOutput<T>(res);
+    if (data === undefined) {
+      const d = denied.get(what) ?? { n: 0, why: (res.stderr || res.stdout).trim().split("\n")[0]?.slice(0, 200) || `exit ${res.status}` };
+      d.n++;
+      denied.set(what, d);
+    }
+    return data;
+  };
   const fedPrefix = matchers(iocs, "azure_fedcred_prefix");
 
   // ---- AWS -------------------------------------------------------------------
@@ -44,7 +56,7 @@ export async function scanCloud(
   else {
     result.scanned = true;
     const account = parseJsonOutput<{ Account: string }>(who)?.Account ?? "?";
-    const roles = parseJsonOutput<{ Roles: any[] }>(await runner("aws", ["iam", "list-roles", "--output", "json"], { timeoutMs: T }))?.Roles ?? [];
+    const roles = (await read<{ Roles: any[] }>("AWS IAM roles", "aws", ["iam", "list-roles", "--output", "json"]))?.Roles ?? [];
     result.stats.awsRoles = roles.length;
     for (const role of roles) {
       let doc = role.AssumeRolePolicyDocument;
@@ -60,13 +72,12 @@ export async function scanCloud(
         key: `cloud|aws|${account}|trust|${role.RoleName}`,
       });
     }
-    const users = parseJsonOutput<{ Users: any[] }>(await runner("aws", ["iam", "list-users", "--output", "json"], { timeoutMs: T }))?.Users ?? [];
+    const users = (await read<{ Users: any[] }>("AWS IAM users", "aws", ["iam", "list-users", "--output", "json"]))?.Users ?? [];
     result.stats.awsUsers = users.length;
     await mapPool(users, 4, async (u) => {
       const keys =
-        parseJsonOutput<{ AccessKeyMetadata: any[] }>(
-          await runner("aws", ["iam", "list-access-keys", "--user-name", u.UserName, "--output", "json"], { timeoutMs: T }),
-        )?.AccessKeyMetadata ?? [];
+        (await read<{ AccessKeyMetadata: any[] }>("AWS access keys", "aws", ["iam", "list-access-keys", "--user-name", u.UserName, "--output", "json"]))
+          ?.AccessKeyMetadata ?? [];
       for (const k of keys) {
         if (!k.CreateDate || k.CreateDate < since) continue;
         findings.push({
@@ -96,15 +107,19 @@ export async function scanCloud(
     gaps.push({ surface: "cloud", what: "GCP", why: "gcloud has no account or project set", fix: "gcloud auth login && gcloud config set project <id>" });
   else {
     result.scanned = true;
-    const sas = parseJsonOutput<any[]>(await runner("gcloud", ["iam", "service-accounts", "list", "--format=json"], { timeoutMs: T })) ?? [];
+    const sas = (await read<any[]>("GCP service accounts", "gcloud", ["iam", "service-accounts", "list", "--format=json"])) ?? [];
     result.stats.gcpServiceAccounts = sas.length;
     await mapPool(sas, 4, async (sa) => {
       const keys =
-        parseJsonOutput<any[]>(
-          await runner("gcloud", ["iam", "service-accounts", "keys", "list", `--iam-account=${sa.email}`, "--managed-by=user", "--format=json"], {
-            timeoutMs: T,
-          }),
-        ) ?? [];
+        (await read<any[]>("GCP service-account keys", "gcloud", [
+          "iam",
+          "service-accounts",
+          "keys",
+          "list",
+          `--iam-account=${sa.email}`,
+          "--managed-by=user",
+          "--format=json",
+        ])) ?? [];
       for (const k of keys) {
         if (!k.validAfterTime || k.validAfterTime < since) continue;
         findings.push({
@@ -150,12 +165,11 @@ export async function scanCloud(
   else if (!az.ok) gaps.push({ surface: "cloud", what: "Azure", why: "the az CLI is not logged in", fix: "az login" });
   else {
     result.scanned = true;
-    const apps = parseJsonOutput<any[]>(await runner("az", ["ad", "app", "list", "--show-mine", "--output", "json"], { timeoutMs: T })) ?? [];
+    const apps = (await read<any[]>("Azure app registrations", "az", ["ad", "app", "list", "--show-mine", "--output", "json"])) ?? [];
     result.stats.azureApps = apps.length;
     await mapPool(apps, 4, async (app) => {
       const creds =
-        parseJsonOutput<any[]>(await runner("az", ["ad", "app", "federated-credential", "list", "--id", app.appId, "--output", "json"], { timeoutMs: T })) ??
-        [];
+        (await read<any[]>("Azure federated credentials", "az", ["ad", "app", "federated-credential", "list", "--id", app.appId, "--output", "json"])) ?? [];
       for (const c of creds) {
         const m = fedPrefix.find((x) => x.test(c.name ?? ""));
         if (!m && !/github|token\.actions/.test(String(c.issuer ?? ""))) continue;
@@ -174,6 +188,13 @@ export async function scanCloud(
     });
   }
 
+  for (const [what, d] of denied)
+    gaps.push({
+      surface: "cloud",
+      what: `${d.n} listing(s) of ${what}`,
+      why: `the CLI refused or failed: ${d.why}`,
+      fix: "check the role's read permissions, then re-run scan cloud",
+    });
   result.finishedAt = new Date().toISOString();
   return { result, findings, gaps };
 }

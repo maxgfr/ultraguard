@@ -13,6 +13,7 @@ import { type Matcher, matchers, reviewStart } from "../ioc.js";
 import type { Runner } from "../runner.js";
 import type { Finding, Gap, IocFile, SurfaceResult } from "../types.js";
 import {
+  SHELL_STARTUP,
   configFindings,
   credentialInventory,
   type HostInventory,
@@ -238,6 +239,9 @@ export async function scanHost(
       const m = M.content.find((x) => x.test(text)) ?? (hashes.size ? hashes.get(sha256File(p) ?? "") : undefined);
       const { command, executable } = startupCommand(text);
       const item: StartupItem = { path: p, mtime: st.mtime.toISOString(), command, executable, signals: riskSignals(command, executable, home) };
+      // No program key (a /etc/cron.d file, a shell snippet): every non-comment line is a command.
+      if (!command) for (const l of text.split("\n").slice(0, 2000)) if (l.trim() && !/^\s*#/.test(l)) item.signals.push(...riskSignals(l, undefined, home));
+      item.signals = [...new Set(item.signals)];
       if (executable?.startsWith("/")) {
         item.exists = existsSync(executable);
         if (!item.exists) item.signals.push("points to a program that no longer exists");
@@ -295,9 +299,7 @@ export async function scanHost(
   findings.push(...configFindings(home, sinceMs));
 
   // 5. Shell history, startup files and /etc/hosts: a C2 address typed, pinned or wired in.
-  const traces = [".zsh_history", ".bash_history", ".local/share/fish/fish_history", ".python_history", ".zshrc", ".bashrc", ".profile", ".zprofile"].map((f) =>
-    join(home, f),
-  );
+  const traces = [".zsh_history", ".bash_history", ".local/share/fish/fish_history", ".python_history", ...SHELL_STARTUP].map((f) => join(home, f));
   traces.push("/etc/hosts");
   for (const p of traces) {
     const text = existsSync(p) ? readText(p, 20 * 1024 * 1024) : undefined;
@@ -337,12 +339,15 @@ export async function scanHost(
       continue;
     }
     for (const name of names) {
-      const mm = /^(.+?)-(\d+\.\d+\.\d+.*)$/.exec(name);
+      // "publisher.name-1.2.3" or, for platform builds, "publisher.name-1.2.3-darwin-arm64".
+      const mm = /^(.+?)-(\d+\.\d+\.\d+)(-.+)?$/.exec(name);
       if (!mm) continue;
       extensions++;
       const [, id, version] = mm as unknown as [string, string, string];
       const m = M.pkg.find(
-        (x) => x.indicator.value.toLowerCase() === id.toLowerCase() && (!x.indicator.versions?.length || x.indicator.versions.includes(version)),
+        (x) =>
+          x.indicator.value.toLowerCase() === id.toLowerCase() &&
+          (!x.indicator.versions?.length || x.indicator.versions.some((v) => v.replace(/^v/, "") === version || v === `${version}${mm[3] ?? ""}`)),
       );
       if (m)
         findings.push(
@@ -361,7 +366,7 @@ export async function scanHost(
     for (const dir of tree.gitDirs) {
       const cfg = readText(join(dir, ".git/config")) ?? "";
       const urls = [...cfg.matchAll(/url\s*=\s*(\S+)/g)].map((x) => x[1] ?? "");
-      const repo = urls.map((u) => /github\.com[:/]([^/]+\/[^/.]+?)(?:\.git)?$/.exec(u)?.[1]?.toLowerCase()).find((r) => r && wanted.has(r));
+      const repo = urls.map((u) => /github\.com[:/]([^/]+\/[^/]+?)(?:\.git)?\/?$/.exec(u)?.[1]?.toLowerCase()).find((r) => r && wanted.has(r));
       if (!repo) continue;
       let fetched: string | undefined;
       try {
@@ -447,7 +452,7 @@ export async function scanHost(
           );
       }
     }
-    findings.push(...(await processFindings(runner, home)));
+    findings.push(...(await processFindings(runner, home, os)));
   } else gaps.push({ surface: "host", what: "crontab, open connections, processes and code signatures", why: "live checks were skipped" });
 
   // 8. What a stealer here would take: the credential stores, by path.
@@ -530,11 +535,19 @@ export async function scanHost(
     fix: "System Settings > General > Login Items; each browser's extensions page",
   });
 
+  const pruned = Object.entries(tree.pruned ?? {}).sort((a, b) => b[1] - a[1]);
   gaps.push({
     surface: "host",
-    what: "files outside the scanned roots and deeper than the walk depth",
-    why: "the walk is bounded",
-    fix: "pass --roots and --depth to widen it",
+    what: `files outside the scanned roots${
+      pruned.length
+        ? `, and inside skipped folders: ${pruned
+            .slice(0, 8)
+            .map(([n, c]) => `${n} (${c})`)
+            .join(", ")}`
+        : ""
+    }`,
+    why: "the walk is bounded: package folders, caches and system libraries are skipped for speed",
+    fix: "pass --roots and --depth to widen it; scan a skipped folder with --roots <it>",
   });
   result.finishedAt = new Date().toISOString();
   return { result, findings, gaps, inventory };

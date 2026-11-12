@@ -20,6 +20,7 @@ const finding = (over: Partial<Finding>): Omit<Finding, "id"> => ({
   title: 'Workflow "Deploy" ran on main ("chore: add ci helper"), success, triggered by victim',
   actor: "victim",
   scope: "other",
+  ciRun: "attacker",
   campaign: "wfx-loot-2026-11",
   source: "S1",
   evidence: { kind: "url", ref: "https://github.com/org/site/actions/runs/1" },
@@ -54,9 +55,17 @@ describe("iocs", () => {
     );
     expect(problems.map((p) => p.message)).toEqual([
       "S9 is not a fetched source of this run",
+      'S9 is not one of this campaign\'s sources (S1): add it to "sources"',
       "a sha256 is 64 hex characters",
       "required for a package indicator",
     ]);
+    // The template's placeholder id is refused: the routine remembers campaigns by id.
+    expect(
+      validateIocs(
+        { campaigns: [{ id: "campaign-1", title: "t", since: "2026-11-10", sources: ["S1"], indicators: [{ type: "branch", value: "x", source: "S1" }] }] },
+        [{ id: "S1", url: "u", fetchedAt: "", origin: "web" }],
+      ).problems[0]?.message,
+    ).toMatch(/template's placeholder/);
     const failed = validateIocs(
       { campaigns: [{ id: "c", title: "t", since: "2026-11-10", sources: ["S1"], indicators: [{ type: "branch", value: "x", source: "S1" }] }] },
       [{ id: "S1", url: "u", fetchedAt: "", origin: "web", error: "HTTP 404" }],
@@ -123,7 +132,13 @@ describe("verdicts and report", () => {
     const run = aikidoRun();
     run.recordSurface(
       { surface: "github:repos", scanned: true, stats: {}, startedAt: "" },
-      [finding({ subject: "org/p", title: 'Workflow "CI" ran on wfx-docs ("docs: x"), success, triggered by victim; the commit only changes docs (a probe)' })],
+      [
+        finding({
+          subject: "org/p",
+          title: 'Workflow "CI" ran on wfx-docs ("docs: x"), success, triggered by victim; the commit only changes docs (a probe)',
+          ciRun: "probe",
+        }),
+      ],
       [],
     );
     expect(renderReport(run).report).toContain("### org/p: probe only, no attacker run seen");
@@ -133,7 +148,7 @@ describe("verdicts and report", () => {
     const run = aikidoRun();
     run.recordSurface(
       { surface: "github:repos", scanned: true, stats: {}, startedAt: "" },
-      [finding({}), finding({ subject: "org/docs", title: 'PR #3 "docs: dependency audit notes" (branch wfx-docs) by victim' })],
+      [finding({}), finding({ subject: "org/docs", title: 'PR #3 "docs: dependency audit notes" (branch wfx-docs) by victim', ciRun: undefined })],
       [],
     );
     const { report, remediation } = renderReport(run, new Date("2026-11-12T12:00:00Z"));
@@ -184,6 +199,17 @@ describe("cloud", () => {
     expect(r.gaps.map((g) => g.what)).toEqual(["AWS", "GCP", "Azure"]);
   });
 
+  it("a listing the CLI refuses is a gap, not an empty clean answer", async () => {
+    const runner = async (cmd: string, args: string[]) => {
+      if (cmd !== "aws") return { ok: false, status: 1, stdout: "", stderr: "", missing: true };
+      if (args[0] === "sts") return { ok: true, status: 0, stdout: '{"Account":"123"}', stderr: "" };
+      return { ok: false, status: 254, stdout: "", stderr: "An error occurred (AccessDenied) when calling the ListRoles operation" };
+    };
+    const r = await scanCloud(AIKIDO_IOCS, runner);
+    expect(r.gaps.some((g) => g.what === "1 listing(s) of AWS IAM roles" && g.why.includes("AccessDenied"))).toBe(true);
+    expect(r.gaps.some((g) => g.what.includes("AWS IAM users"))).toBe(true);
+  });
+
   it("flags wildcard roles and fresh access keys through the aws CLI", async () => {
     const runner = async (cmd: string, args: string[]) => {
       if (cmd !== "aws") return { ok: false, status: 1, stdout: "", stderr: "", missing: true };
@@ -202,7 +228,25 @@ describe("cloud", () => {
   });
 });
 
+/** Every surface scanned, nothing found: a complete run. */
+function scanAll(run: Run) {
+  for (const surface of ["github:account", "github:repos", "host", "deps", "cloud"] as const)
+    run.recordSurface({ surface, scanned: true, stats: {}, startedAt: "" }, [], []);
+}
+
 describe("watch", () => {
+  it("an incomplete run (a surface UNKNOWN) leaves its sources pending for the next run", async () => {
+    const state = tmp("ug-state2-");
+    const fetcher = async (url: string) => ({ text: "y".repeat(500), title: "t", status: 200, finalUrl: url });
+    const hits = [{ url: "https://example.org/campaign" }];
+    const run1 = new Run(tmp());
+    await watchPlan(state, run1, hits, { fetcher });
+    run1.recordSurface({ surface: "deps", scanned: true, stats: {}, startedAt: "" }, [], []);
+    const c1 = await watchCommit(state, run1);
+    expect(c1.incomplete).toBe(true);
+    expect((await watchPlan(state, new Run(tmp()), hits, { fetcher })).newSources).toBe(1);
+  });
+
   it("dedups sources across runs and alerts once per finding, with exit codes", async () => {
     const state = tmp("ug-state-");
     const fetcher = async (url: string) => ({ text: "y".repeat(500), title: "wfx-loot", status: 200, finalUrl: url });
@@ -212,6 +256,7 @@ describe("watch", () => {
     const p1 = await watchPlan(state, run1, hits, { fetcher });
     expect(p1).toMatchObject({ newSources: 1, nothingNew: false, resweep: false });
     run1.write("iocs.json", { campaigns: [{ ...AIKIDO_IOCS.campaigns[0], sources: ["S1"] }] });
+    scanAll(run1);
     run1.recordSurface({ surface: "github:repos", scanned: true, stats: {}, startedAt: "" }, [finding({ key: "stable" })], []);
     const c1 = await watchCommit(state, run1);
     expect(c1.alert).toBe(true);
@@ -221,6 +266,7 @@ describe("watch", () => {
     const run2 = new Run(tmp());
     const p2 = await watchPlan(state, run2, hits, { fetcher, resweepDays: 7 });
     expect(p2).toMatchObject({ newSources: 0, skipped: 1, nothingNew: true });
+    scanAll(run2);
     run2.recordSurface({ surface: "github:repos", scanned: true, stats: {}, startedAt: "" }, [finding({ key: "stable" })], []);
     const c2 = await watchCommit(state, run2);
     expect(c2.alert).toBe(false);

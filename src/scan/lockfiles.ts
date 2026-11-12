@@ -95,8 +95,9 @@ function npmLock(text: string): Locked[] {
 function pnpmLock(text: string): Locked[] {
   const out: Locked[] = [];
   // v6+: "  /name@1.2.3:" or "  name@1.2.3:" or "  '@scope/name@1.2.3(peer)':"; v5: "  /name/1.2.3:"
+  // pnpm v5 appends peer resolutions with "_": 1.2.3_react@17.0.2 is version 1.2.3.
   for (const m of text.matchAll(/^ {2}['"]?\/?((?:@[^/@\s]+\/)?[^/@\s:'"(]+)[@/](\d[^:'"(\s]*)/gm))
-    out.push({ ecosystem: "npm", name: m[1] as string, version: m[2] as string });
+    out.push({ ecosystem: "npm", name: m[1] as string, version: (m[2] as string).replace(/_.*$/, "") });
   return uniq(out);
 }
 
@@ -144,7 +145,9 @@ function requirements(text: string): Locked[] {
 
 function goSum(text: string): Locked[] {
   const out: Locked[] = [];
-  for (const m of text.matchAll(/^(\S+)\s+(v[^\s/]+?)(?:\/go\.mod)?\s+h1:/gm)) out.push({ ecosystem: "go", name: m[1] as string, version: m[2] as string });
+  // Only module zip lines: a "/go.mod"-only line is a version the build graph considered, not one it uses.
+  for (const m of text.matchAll(/^(\S+)\s+(v\S+)\s+h1:/gm))
+    if (!(m[2] as string).endsWith("/go.mod")) out.push({ ecosystem: "go", name: m[1] as string, version: m[2] as string });
   return uniq(out);
 }
 
@@ -158,7 +161,13 @@ function composerLock(text: string): Locked[] {
 
 function gemfileLock(text: string): Locked[] {
   const out: Locked[] = [];
-  for (const m of text.matchAll(/^ {4}([A-Za-z0-9_.-]+) \(([^)]+)\)$/gm)) out.push({ ecosystem: "rubygems", name: m[1] as string, version: m[2] as string });
+  // Native gems carry their platform: "nokogiri (1.16.0-arm64-darwin)" is version 1.16.0.
+  for (const m of text.matchAll(/^ {4}([A-Za-z0-9_.-]+) \(([^)]+)\)$/gm))
+    out.push({
+      ecosystem: "rubygems",
+      name: m[1] as string,
+      version: (m[2] as string).replace(/-(x86|x64|arm|aarch|universal|java|mingw|mswin|i386|i686|ppc|s390)[\w-]*$/i, ""),
+    });
   return uniq(out);
 }
 

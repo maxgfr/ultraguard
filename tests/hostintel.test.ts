@@ -128,7 +128,15 @@ describe("machine checks without IOCs", () => {
       stdout: "  10 /usr/bin/ssh\n  11 /private/tmp/.x/miner\n  12 /Users/u/.nvm/node\n  13 /Users/u/.sys/upd\n",
       stderr: "",
     });
-    expect((await processFindings(ps, "/Users/u")).map((f) => f.subject)).toEqual(["/private/tmp/.x/miner", "/Users/u/.sys/upd"]);
+    expect((await processFindings(ps, "/Users/u", "darwin")).map((f) => f.subject)).toEqual(["/private/tmp/.x/miner", "/Users/u/.sys/upd"]);
+    // Linux: the command line, since comm holds no path there.
+    const calls: string[][] = [];
+    const linux = async (_c: string, args: string[]) => {
+      calls.push(args);
+      return { ok: true, status: 0, stdout: "  7 /tmp/.x/miner --pool x\n  8 sshd: user\n", stderr: "" };
+    };
+    expect((await processFindings(linux, "/home/u", "linux")).map((f) => f.subject)).toEqual(["/tmp/.x/miner"]);
+    expect(calls[0]).toEqual(["-eo", "pid=,args="]);
   });
 
   it("inventories credential stores by path, without reading values", () => {

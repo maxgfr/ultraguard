@@ -171,6 +171,14 @@ export async function antivirusPass(
       what: `${errors.length || "some"} antivirus target(s)`,
       why: `${engine.name} could not read them: ${(errors[0] ?? res.stderr.trim().split("\n")[0] ?? "").slice(0, 160)}`,
     });
+  // 0 clean, 1 found, 2 errors: anything else (a timeout, a kill) means the pass did not finish.
+  if (res.status !== 0 && res.status !== 1 && res.status !== 2)
+    gaps.push({
+      surface: "host",
+      what: "part of the antivirus pass",
+      why: `${engine.name} did not finish (exit ${res.status}): files after the stop were not scanned`,
+      fix: "re-run scan host, or narrow --roots",
+    });
   if (!opts.full)
     gaps.push({
       surface: "host",

@@ -173,8 +173,14 @@ function needRun(a: CommandArgs): Run {
 }
 
 function needIocs(run: Run): IocFile {
-  const iocs = run.iocs();
-  if (!iocs) throw new UsageError(`no iocs.json in ${run.dir}: run \`ultraguard ioc set --file <iocs.json> --out ${run.dir}\` first`);
+  const raw = run.iocs();
+  if (!raw) throw new UsageError(`no iocs.json in ${run.dir}: run \`ultraguard ioc set --file <iocs.json> --out ${run.dir}\` first`);
+  // The agent may edit iocs.json after ioc set refused it: re-validate, never sweep an unchecked file.
+  const { iocs, problems } = validateIocs(raw, run.sources());
+  if (!iocs)
+    throw new UsageError(
+      `iocs.json in ${run.dir} does not validate (${problems.length} problem(s), first: ${problems[0]?.path}: ${problems[0]?.message}); fix it and run ioc set again`,
+    );
   return iocs;
 }
 

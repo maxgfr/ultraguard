@@ -145,6 +145,14 @@ export async function scanDeps(
     }
   }
   result.stats.lockfiles = lockfiles;
+  if (tree.capped)
+    gaps.push({
+      surface: "deps",
+      what: `lockfiles past the first ${tree.entries} entries of the walk`,
+      why: "the walk is capped",
+      fix: "re-run with --roots narrowed to your code folders",
+    });
+  if (tree.unreadable) gaps.push({ surface: "deps", what: `lockfiles in ${tree.unreadable} unreadable directories`, why: "permission denied" });
   result.stats.packages = where.size;
   if (unreadable) gaps.push({ surface: "deps", what: `${unreadable} lockfiles`, why: "could not be parsed or were over 64 MB" });
 

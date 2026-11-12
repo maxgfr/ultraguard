@@ -159,7 +159,9 @@ describe("report and check wording", () => {
   });
   it("a workflow FILE named like an IOC is not a run", () => {
     expect(payloadRan([f("Workflow file .github/workflows/lint.yml on main")], "r")).toBe(false);
-    expect(payloadRan([f('Workflow "CI" ran on wfx-docs')], "r")).toBe(true);
+    expect(payloadRan([{ ...f('Workflow "CI" ran on wfx-docs'), ciRun: "attacker" }], "r")).toBe(true);
+    // A title the attacker wrote cannot flip the label: only the structured kind counts.
+    expect(payloadRan([{ ...f('Workflow "only changes docs" ran on main'), ciRun: "attacker" }], "r")).toBe(true);
   });
 
   it("citations in nested sub-items ground the parent bullet; coverage sections make no claim", () => {
@@ -203,5 +205,33 @@ describe("report and check wording", () => {
         "org/cron",
       ),
     ).toBe(false);
+  });
+});
+
+describe("check: false clean claims", () => {
+  function compromisedHost() {
+    const run = aikidoRun();
+    for (const surface of ["github:account", "github:repos", "deps", "cloud"] as const)
+      run.recordSurface({ surface, scanned: true, stats: {}, startedAt: "" }, [], []);
+    run.recordSurface(
+      { surface: "host", scanned: true, stats: {}, startedAt: "" },
+      [{ surface: "host", severity: "compromised", subject: "/x", title: "File /x", evidence: { kind: "file", ref: "/x" }, key: "k" }],
+      [],
+    );
+    return run;
+  }
+  const rules = (text: string) => checkAnswer(compromisedHost(), `${text} [F1]\n\n## Coverage\nnone`).filter((p) => p.rule === "wrong-clean");
+
+  it("catches clean claims hidden by a 'but', by two surfaces, or by 'nothing found'", () => {
+    expect(rules("Your machine is clean, but keep an eye on it.")).toHaveLength(1);
+    expect(rules("Your machine and your dependencies are clean.")).toHaveLength(1);
+    expect(rules("Nothing was found on your machine.")).toHaveLength(1);
+    expect(rules("No IOC matched on the host.")).toHaveLength(1);
+  });
+
+  it("accepts true statements", () => {
+    expect(rules("Your account is clean and your machine is COMPROMISED.")).toHaveLength(0);
+    expect(rules("Your machine is not clean.")).toHaveLength(0);
+    expect(rules("Your dependencies are clean.")).toHaveLength(0);
   });
 });
