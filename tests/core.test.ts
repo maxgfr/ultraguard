@@ -254,4 +254,16 @@ describe("cli", () => {
     );
     expect(await main(["ioc", "set", "--file", file, "--out", run.dir])).toBe(1);
   });
+
+  it("doctor names the key scopes the account scan needs", async () => {
+    const { doctor } = await import("../src/doctor.js");
+    const runner = async (cmd: string, args: string[]) => {
+      if (cmd !== "gh") return { ok: false, status: 1, stdout: "", stderr: "", missing: true };
+      if (args[1] === "-i") return { ok: true, status: 0, stdout: "HTTP/2.0 200 OK\nX-Oauth-Scopes: repo, read:org, admin:gpg_key\n\n{}", stderr: "" };
+      return { ok: true, status: 0, stdout: '{"login":"me"}', stderr: "" };
+    };
+    const gh = (await doctor(runner)).find((l) => l.check === "gh");
+    expect(gh?.ok).toBe(false);
+    expect(gh?.fix).toBe("gh auth refresh -s read:public_key");
+  });
 });
