@@ -115,7 +115,12 @@ export async function scanHost(
     // A weak name (one ordinary files also have) is only suspicious on its own;
     // its hash, when the campaign publishes it, settles it.
     const campaignHashes = M.hash.filter((h) => h.campaign.id === m.campaign.id).length;
-    const nameOnly = !hashHit && !!m.indicator.weak;
+    // An exact file name (no wildcard) from a campaign that publishes hashes is
+    // identified by those hashes: matching the name but none of them is most
+    // likely the ordinary file of that name. A wildcard pattern (a random-named
+    // dropper like `.ci-*.sh`) stays strong.
+    const exactName = !/[*?]/.test(m.indicator.value) && !m.indicator.regex;
+    const nameOnly = !hashHit && (!!m.indicator.weak || (exactName && campaignHashes > 0));
     findings.push(
       hitOf(hashHit ?? m, {
         subject: p,
@@ -123,7 +128,7 @@ export async function scanHost(
         title: hashHit
           ? `File ${p} matches the sha256`
           : nameOnly
-            ? `File ${p} is named like "${m.indicator.value}" (a common name)${campaignHashes ? `, and its sha256 matches none of the campaign's ${campaignHashes} hash(es)` : ""}`
+            ? `File ${p} is named like "${m.indicator.value}"${m.indicator.weak ? " (a common name)" : ""}${campaignHashes ? `, but its sha256 matches none of the campaign's ${campaignHashes} hash(es)` : ""}`
             : `File ${p} matches "${m.indicator.value}"`,
         evidence: { kind: "file", ref: p, excerpt: digest ? `sha256=${digest}` : undefined },
       }),

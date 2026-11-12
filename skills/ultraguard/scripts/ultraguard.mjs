@@ -12117,12 +12117,13 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
     const digest = sha256File(p);
     const hashHit = digest ? hashes.get(digest) : void 0;
     const campaignHashes = M.hash.filter((h) => h.campaign.id === m.campaign.id).length;
-    const nameOnly = !hashHit && !!m.indicator.weak;
+    const exactName = !/[*?]/.test(m.indicator.value) && !m.indicator.regex;
+    const nameOnly = !hashHit && (!!m.indicator.weak || exactName && campaignHashes > 0);
     findings.push(
       hitOf(hashHit ?? m, {
         subject: p,
         severity: nameOnly ? "suspicious" : "compromised",
-        title: hashHit ? `File ${p} matches the sha256` : nameOnly ? `File ${p} is named like "${m.indicator.value}" (a common name)${campaignHashes ? `, and its sha256 matches none of the campaign's ${campaignHashes} hash(es)` : ""}` : `File ${p} matches "${m.indicator.value}"`,
+        title: hashHit ? `File ${p} matches the sha256` : nameOnly ? `File ${p} is named like "${m.indicator.value}"${m.indicator.weak ? " (a common name)" : ""}${campaignHashes ? `, but its sha256 matches none of the campaign's ${campaignHashes} hash(es)` : ""}` : `File ${p} matches "${m.indicator.value}"`,
         evidence: { kind: "file", ref: p, excerpt: digest ? `sha256=${digest}` : void 0 }
       })
     );

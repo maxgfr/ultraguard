@@ -161,4 +161,25 @@ describe("host scan integration", () => {
     expect(t.some((x) => x.startsWith("compromised:") && x.includes(".zshrc line 2"))).toBe(true);
     expect(r.inventory.startupItems).toHaveLength(2);
   });
+
+  it("an exact file name whose campaign publishes hashes needs the hash; a wildcard dropper name does not", async () => {
+    const home = tmp("ug-exact-");
+    put(home, "cache/pkg/Math_Symbol.js", "ordinary table");
+    put(home, "proj/.ci-ab12cd.sh", "dropper");
+    const iocs = {
+      campaigns: [
+        {
+          ...(AIKIDO_IOCS.campaigns[0] as (typeof AIKIDO_IOCS.campaigns)[0]),
+          indicators: [
+            { type: "file" as const, value: "Math_Symbol.js", source: "S1" },
+            { type: "file" as const, value: ".ci-*.sh", source: "S1" },
+            { type: "sha256" as const, value: "b".repeat(64), source: "S1" },
+          ],
+        },
+      ],
+    };
+    const r = await scanHost(iocs, walk([home]), none, { home, startupDirs: [], skipLive: true, now: NOW });
+    const sev = Object.fromEntries(r.findings.filter((f) => f.subject.includes("/")).map((f) => [f.subject.split("/").pop(), f.severity]));
+    expect(sev).toEqual({ "Math_Symbol.js": "suspicious", ".ci-ab12cd.sh": "compromised" });
+  });
 });
