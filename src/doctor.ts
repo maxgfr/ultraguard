@@ -28,7 +28,9 @@ export async function doctor(runner: Runner, opts: { probe?: boolean } = {}): Pr
     });
   else {
     const scopes = await gh.scopes();
-    const missing = scopes ? ["repo", "read:org"].filter((s) => !scopes.includes(s)) : [];
+    // admin:* includes read:*; the key scopes let the scan see keys added to the account.
+    const need = ["repo", "read:org", "read:public_key", "read:gpg_key"];
+    const missing = scopes ? need.filter((s) => !scopes.includes(s) && !scopes.includes(s.replace(/^read:/, "admin:"))) : [];
     out.push({
       check: "gh",
       ok: missing.length === 0,

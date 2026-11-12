@@ -10466,7 +10466,8 @@ async function doctor(runner2, opts = {}) {
     });
   else {
     const scopes = await gh.scopes();
-    const missing = scopes ? ["repo", "read:org"].filter((s) => !scopes.includes(s)) : [];
+    const need = ["repo", "read:org", "read:public_key", "read:gpg_key"];
+    const missing = scopes ? need.filter((s) => !scopes.includes(s) && !scopes.includes(s.replace(/^read:/, "admin:"))) : [];
     out2.push({
       check: "gh",
       ok: missing.length === 0,
