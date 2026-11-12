@@ -84,7 +84,9 @@ export function renderReport(run: Run, now = new Date()): { report: string; reme
       }
       continue;
     }
-    for (const sev of SEV_ORDER) for (const f of fs.filter((x) => x.severity === sev)) out.push(findingLine(f));
+    // Within a severity, the items with a risk signal ("Risky ...") come first.
+    const risky = (f: Finding) => (/^Risky |not Apple's|downloads and runs|reverse shell|encoded payload/.test(f.title) ? 0 : 1);
+    for (const sev of SEV_ORDER) for (const f of fs.filter((x) => x.severity === sev).sort((a, b) => risky(a) - risky(b))) out.push(findingLine(f));
     out.push("");
   }
 
@@ -217,7 +219,9 @@ export function renderRemediation(findings: Finding[], vs: SurfaceVerdict[], _so
     );
   }
 
-  const review = findings.filter((f) => f.severity === "suspicious");
+  const review = findings
+    .filter((f) => f.severity === "suspicious")
+    .sort((a, b) => Number(!/^Risky |not Apple's/.test(a.title)) - Number(!/^Risky |not Apple's/.test(b.title)));
   if (review.length) {
     h("To judge: changes in the window that match no IOC");
     for (const f of review) out.push(`- ${f.title} [${f.id}]: \`${f.evidence.ref}\``);

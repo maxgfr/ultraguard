@@ -216,6 +216,10 @@ export async function scanHost(
           }
         }
       }
+      // A third-party folder item named like Apple's own: Apple's live in /System.
+      const label = /<key>Label<\/key>\s*<string>([^<]+)<\/string>/.exec(text)?.[1] ?? name.replace(/\.plist$/, "");
+      if (/^com\.apple\./i.test(label) && !(item.signer ?? "").startsWith("Software Signing") && !/^\/(System|usr\/libexec|usr\/sbin)\//.test(executable ?? ""))
+        item.signals.unshift(`is named like an Apple service (${label}) but is not Apple's`);
       inventory.startupItems.push(item);
       const recent = st.mtimeMs >= sinceMs;
       const facts = [
