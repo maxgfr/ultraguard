@@ -68,7 +68,11 @@ export async function doctor(runner: Runner, opts: { probe?: boolean; state?: st
     detail: av
       ? `${av.name} ${av.version}, signatures of ${av.signatures?.slice(0, 10) ?? "?"}${av.ageDays !== undefined ? ` (${av.ageDays} days old)` : ""}`
       : "not installed (no antivirus pass)",
-    fix: !av ? "brew install clamav (or apt install clamav), then freshclam" : (av.ageDays ?? 0) > 7 ? "freshclam" : undefined,
+    fix: !av
+      ? "brew install clamav (or apt install clamav), then ultraguard rules update"
+      : (av.ageDays ?? 0) > 7
+        ? "ultraguard rules update (runs freshclam; scan host also does it)"
+        : undefined,
   });
   const yara = await runner("yara", ["--version"], { timeoutMs: 10_000 });
   out.push({

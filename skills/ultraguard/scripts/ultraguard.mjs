@@ -10427,7 +10427,7 @@ async function antivirusPass(runner2, opts) {
       surface: "host",
       what: "a signature-based antivirus pass (known malware families)",
       why: "ClamAV is not installed",
-      fix: "brew install clamav (or apt install clamav), configure freshclam, run freshclam, then re-run scan host"
+      fix: "brew install clamav (or apt install clamav), then ultraguard rules update and re-run scan host"
     });
     return { findings, gaps, stats };
   }
@@ -10436,7 +10436,7 @@ async function antivirusPass(runner2, opts) {
       surface: "host",
       what: `malware families newer than ${engine.signatures?.slice(0, 10)}`,
       why: `ClamAV's signatures are ${engine.ageDays} days old`,
-      fix: "freshclam, then re-run scan host"
+      fix: "ultraguard rules update (runs freshclam), then re-run scan host"
     });
   const targets = opts.full ?? avTargets(opts.home, opts.inventory, opts.flagged, opts.sinceMs);
   stats.avTargets = targets.length;
@@ -10699,7 +10699,7 @@ async function doctor(runner2, opts = {}) {
     check: "clamav",
     ok: !!av && (av.ageDays ?? 0) <= 7,
     detail: av ? `${av.name} ${av.version}, signatures of ${av.signatures?.slice(0, 10) ?? "?"}${av.ageDays !== void 0 ? ` (${av.ageDays} days old)` : ""}` : "not installed (no antivirus pass)",
-    fix: !av ? "brew install clamav (or apt install clamav), then freshclam" : (av.ageDays ?? 0) > 7 ? "freshclam" : void 0
+    fix: !av ? "brew install clamav (or apt install clamav), then ultraguard rules update" : (av.ageDays ?? 0) > 7 ? "ultraguard rules update (runs freshclam; scan host also does it)" : void 0
   });
   const yara = await runner2("yara", ["--version"], { timeoutMs: 1e4 });
   out2.push({
@@ -11165,6 +11165,65 @@ function renderRemediation(findings, vs, _sources, gaps, inventory) {
   }
   if (step === 0) out2.push("Nothing to do: no surface was hit.", "");
   return out2.join("\n");
+}
+
+// src/defenses.ts
+var STALE_DAYS = 7;
+function freshclamSummary(output) {
+  return output.split("\n").map((l) => l.trim()).filter((l) => /^\w+\.c[vl]d (updated|database is up-to-date)/.test(l)).map((l) => l.replace(/, builder: [^)]*/, ""));
+}
+function freshclamError(output) {
+  const lines = output.split("\n").map((l) => l.trim()).filter((l) => /^ERROR:/.test(l) && !/NULL X509 store/.test(l));
+  return (lines.at(-1) ?? output.trim().split("\n").at(-1) ?? "no output").replace(/^ERROR:\s*/, "");
+}
+async function updateClamav(runner2, opts = {}) {
+  const av = await detectAv(runner2, opts.now);
+  if (!av) return { engine: "clamav", status: "skipped", detail: "ClamAV is not installed (brew install clamav, or apt install clamav)" };
+  if (!opts.force && av.ageDays !== void 0 && av.ageDays <= STALE_DAYS)
+    return { engine: "clamav", status: "current", detail: `signatures of ${av.signatures?.slice(0, 10)} (${av.ageDays} days old)` };
+  const res = await runner2("freshclam", ["--stdout"], { timeoutMs: 6e5 });
+  const output = `${res.stdout}
+${res.stderr}`;
+  if (res.missing) return { engine: "clamav", status: "failed", detail: "freshclam is not installed next to ClamAV" };
+  if (!res.ok) {
+    const why = freshclamError(output);
+    const hint = /lock|permission|denied|Can't open/i.test(why) ? " (the freshclam service may own the database: sudo systemctl restart clamav-freshclam)" : "";
+    return { engine: "clamav", status: "failed", detail: `freshclam failed: ${why}${hint}` };
+  }
+  const after = await detectAv(runner2, opts.now);
+  const summary = freshclamSummary(output);
+  return {
+    engine: "clamav",
+    status: "updated",
+    detail: `signatures of ${after?.signatures?.slice(0, 10) ?? "?"}${summary.length ? `: ${summary.join("; ")}` : ""}`
+  };
+}
+async function updateYaraForge(state, runner2, opts = {}) {
+  const yara = await runner2("yara", ["--version"], { timeoutMs: 1e4 });
+  if (!yara.ok) return { engine: "yara-forge", status: "skipped", detail: "YARA is not installed (brew install yara, or apt install yara)" };
+  const now = opts.now ?? /* @__PURE__ */ new Date();
+  const have2 = installedRules(state);
+  if (!opts.force && have2 && (!opts.set || opts.set === have2.set) && rulesAgeDays(have2, now) <= STALE_DAYS)
+    return { engine: "yara-forge", status: "current", detail: `${have2.set} ${have2.tag}, ${have2.rules} rules (${rulesAgeDays(have2, now)} days old)` };
+  try {
+    const meta = await updateRules(state, opts.set ?? have2?.set ?? "core", runner2, opts.deps ?? defaultRulesDeps, now);
+    return {
+      engine: "yara-forge",
+      status: "updated",
+      detail: `${meta.set} ${meta.tag}: ${meta.rules} rules, ${meta.compiled ? "compiled with yarac" : "not compiled (install yarac for faster scans)"}`
+    };
+  } catch (e) {
+    return { engine: "yara-forge", status: "failed", detail: e.message };
+  }
+}
+async function refreshDefenses(state, runner2, opts = {}) {
+  const out2 = [];
+  if (opts.clamav !== false) out2.push(await updateClamav(runner2, opts));
+  if (opts.yaraForge !== false) out2.push(await updateYaraForge(state, runner2, opts));
+  return out2;
+}
+function formatDefenses(updates) {
+  return updates.map((u) => `${u.engine.padEnd(10)} ${u.status.padEnd(7)} ${u.detail}`).join("\n");
 }
 
 // src/search.ts
@@ -13718,11 +13777,13 @@ var HELP = `ultraguard v${VERSION} (webindex ${ENGINE_VERSION})
 An AI antivirus for an agent: the agent finds attack news on the web, turns
 each article into indicators of compromise (IOCs) that cite it, and ultraguard
 sweeps your GitHub account and the repositories you can push to, this machine,
-your lockfiles and your cloud for them. Read-only: it changes nothing.
+your lockfiles and your cloud for them. Read-only on what it scans: the only
+things it writes are its run folders, its state folder and the antivirus
+databases it keeps current (ClamAV signatures, YARA-Forge rules).
 
 USAGE
   ultraguard doctor [--probe] [--json]
-  ultraguard rules update [--set core|extended|full] [--state <dir>]
+  ultraguard rules update [--set core|extended|full] [--state <dir>]   freshclam + YARA-Forge
   ultraguard rules status [--state <dir>]
   ultraguard search <query> --out <run> [--limit <n>]
   ultraguard intel [<url>...] [--web-results <file.json>] --out <run>
@@ -13756,6 +13817,7 @@ SCAN FLAGS
   --yara <rules>        host: also run YARA rules (a .yar file or a folder of them)
   --yara-source <S#>    host: the source the YARA rules came from, cited by their findings
   --no-rules            host: skip the community YARA rules (YARA-Forge) installed by rules update
+  --no-update           host: do not refresh ClamAV signatures or YARA-Forge rules older than 7 days
   --set <name>          rules update: core (default, highest precision), extended or full
   --no-osv              deps: skip package-checker (OSV and GHSA feeds, malicious packages)
   --surfaces <list>     sweep: github,host,deps,cloud (default: all)
@@ -13796,7 +13858,7 @@ var VALUE_FLAGS = [
   "yara-source",
   "set"
 ];
-var BOOL_FLAGS = ["json", "probe", "skip-live", "no-osv", "no-av", "av-full", "no-rules"];
+var BOOL_FLAGS = ["json", "probe", "skip-live", "no-osv", "no-av", "av-full", "no-rules", "no-update"];
 var SCAN = [
   "out",
   "repos",
@@ -13811,6 +13873,7 @@ var SCAN = [
   "yara",
   "yara-source",
   "no-rules",
+  "no-update",
   "state",
   "json"
 ];
@@ -13834,6 +13897,10 @@ var SPEC = {
 var runner = defaultRunner;
 function setRunner(r) {
   runner = r;
+}
+var rulesDeps = defaultRulesDeps;
+function setRulesDeps(d) {
+  rulesDeps = d;
 }
 function out(text) {
   process.stdout.write(text.endsWith("\n") ? text : `${text}
@@ -13871,6 +13938,17 @@ async function runScan(surface, a, run, iocs, tree) {
     return `github: ${r2.repos.result.stats.repos ?? 0} repositories as ${r2.login ?? "?"}; ${accF.length} account finding(s), ${repF.length} repository finding(s)`;
   }
   if (surface === "host") {
+    let refreshed = "";
+    if (!argBool(a, "no-update") && !argBool(a, "skip-live")) {
+      const ups = await refreshDefenses(stateDir(argValue(a, "state")), runner, {
+        clamav: !argBool(a, "no-av"),
+        yaraForge: !argBool(a, "no-rules"),
+        deps: rulesDeps
+      });
+      const shown = ups.filter((u) => u.status === "updated" || u.status === "failed");
+      if (shown.length) refreshed = `${formatDefenses(shown)}
+`;
+    }
     const roots = argList(a, "roots").map((r3) => resolve4(r3.replace(/^~(?=$|\/)/, homedir5())));
     const r2 = await scanHost(iocs, (tree ?? (() => walkFor(a)))(), runner, {
       hitRepos: run.meta().hitRepos,
@@ -13884,7 +13962,7 @@ async function runScan(surface, a, run, iocs, tree) {
     });
     const f2 = run.recordSurface(r2.result, r2.findings, r2.gaps);
     run.write("host-inventory.json", r2.inventory);
-    return `host: ${r2.result.stats.files ?? 0} files, ${r2.result.stats.startupItems ?? 0} startup items, ${r2.result.stats.credentialFiles ?? 0} credential files; ${f2.length} finding(s)`;
+    return `${refreshed}host: ${r2.result.stats.files ?? 0} files, ${r2.result.stats.startupItems ?? 0} startup items, ${r2.result.stats.credentialFiles ?? 0} credential files; ${f2.length} finding(s)`;
   }
   if (surface === "deps") {
     const roots = argList(a, "roots").map((r3) => resolve4(r3.replace(/^~(?=$|\/)/, homedir5())));
@@ -13927,15 +14005,14 @@ ${meta2.source}` : "no community rules installed: ultraguard rules update"
         );
         return meta2 ? EXIT_OK : EXIT_FAILURE;
       }
-      if (sub !== "update") throw new UsageError("rules takes `update [--set core|extended|full]` or `status`");
+      if (sub !== "update") throw new UsageError("rules takes `update [--set core|extended|full]` (ClamAV signatures and YARA-Forge rules) or `status`");
       const set = argValue(a, "set") ?? "core";
       if (!RULE_SETS.includes(set)) throw new UsageError(`--set takes ${RULE_SETS.join(", ")}, not "${set}"`);
-      const meta = await updateRules(dir, set, runner);
-      out(
-        json2 ? jsonLine(meta) : `YARA-Forge ${meta.set} ${meta.tag}: ${meta.rules} rules (sha256 ${meta.sha256.slice(0, 16)}...), ${meta.compiled ? "compiled with yarac" : "not compiled: yarac missing, scans will parse the rules each time"}
-${meta.source}`
-      );
-      return EXIT_OK;
+      const ups = await refreshDefenses(dir, runner, { force: true, set, deps: rulesDeps });
+      const meta = installedRules(dir);
+      out(json2 ? jsonLine({ updates: ups, rules: meta ?? null }) : `${formatDefenses(ups)}${meta ? `
+${meta.source}` : ""}`);
+      return ups.some((u) => u.status === "failed") ? EXIT_FAILURE : EXIT_OK;
     }
     case "doctor": {
       const lines = await doctor(runner, { probe: argBool(a, "probe"), state: stateDir(argValue(a, "state")) });
@@ -14163,5 +14240,6 @@ export {
   SURFACES,
   VALUE_FLAGS,
   main,
+  setRulesDeps,
   setRunner
 };

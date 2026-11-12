@@ -23,7 +23,8 @@ import {
 import { intel, readWebResultsFile, type WebHit } from "./intel.js";
 import { validateIocs } from "./ioc.js";
 import { renderReport } from "./report.js";
-import { installedRules, RULE_SETS, type RuleSet, rulesAgeDays, updateRules } from "./rules.js";
+import { formatDefenses, refreshDefenses } from "./defenses.js";
+import { defaultRulesDeps, installedRules, RULE_SETS, type RuleSet, type RulesDeps, rulesAgeDays } from "./rules.js";
 import { searchInto } from "./search.js";
 import { Run } from "./run.js";
 import { defaultRunner, type Runner } from "./runner.js";
@@ -40,11 +41,13 @@ export const HELP = `ultraguard v${VERSION} (webindex ${ENGINE_VERSION})
 An AI antivirus for an agent: the agent finds attack news on the web, turns
 each article into indicators of compromise (IOCs) that cite it, and ultraguard
 sweeps your GitHub account and the repositories you can push to, this machine,
-your lockfiles and your cloud for them. Read-only: it changes nothing.
+your lockfiles and your cloud for them. Read-only on what it scans: the only
+things it writes are its run folders, its state folder and the antivirus
+databases it keeps current (ClamAV signatures, YARA-Forge rules).
 
 USAGE
   ultraguard doctor [--probe] [--json]
-  ultraguard rules update [--set core|extended|full] [--state <dir>]
+  ultraguard rules update [--set core|extended|full] [--state <dir>]   freshclam + YARA-Forge
   ultraguard rules status [--state <dir>]
   ultraguard search <query> --out <run> [--limit <n>]
   ultraguard intel [<url>...] [--web-results <file.json>] --out <run>
@@ -78,6 +81,7 @@ SCAN FLAGS
   --yara <rules>        host: also run YARA rules (a .yar file or a folder of them)
   --yara-source <S#>    host: the source the YARA rules came from, cited by their findings
   --no-rules            host: skip the community YARA rules (YARA-Forge) installed by rules update
+  --no-update           host: do not refresh ClamAV signatures or YARA-Forge rules older than 7 days
   --set <name>          rules update: core (default, highest precision), extended or full
   --no-osv              deps: skip package-checker (OSV and GHSA feeds, malicious packages)
   --surfaces <list>     sweep: github,host,deps,cloud (default: all)
@@ -119,7 +123,7 @@ export const VALUE_FLAGS = [
   "yara-source",
   "set",
 ];
-export const BOOL_FLAGS = ["json", "probe", "skip-live", "no-osv", "no-av", "av-full", "no-rules"];
+export const BOOL_FLAGS = ["json", "probe", "skip-live", "no-osv", "no-av", "av-full", "no-rules", "no-update"];
 
 const SCAN = [
   "out",
@@ -135,6 +139,7 @@ const SCAN = [
   "yara",
   "yara-source",
   "no-rules",
+  "no-update",
   "state",
   "json",
 ];
@@ -160,6 +165,11 @@ let runner: Runner = defaultRunner;
 /** Test seam: replace every external command. */
 export function setRunner(r: Runner): void {
   runner = r;
+}
+let rulesDeps: RulesDeps = defaultRulesDeps;
+/** Test seam: replace the YARA-Forge download. */
+export function setRulesDeps(d: RulesDeps): void {
+  rulesDeps = d;
 }
 
 function out(text: string): void {
@@ -202,6 +212,17 @@ async function runScan(surface: "github" | "host" | "deps" | "cloud", a: Command
     return `github: ${r.repos.result.stats.repos ?? 0} repositories as ${r.login ?? "?"}; ${accF.length} account finding(s), ${repF.length} repository finding(s)`;
   }
   if (surface === "host") {
+    // Stale signatures miss this month's malware: refresh them first (ClamAV and YARA-Forge, each only if older than 7 days).
+    let refreshed = "";
+    if (!argBool(a, "no-update") && !argBool(a, "skip-live")) {
+      const ups = await refreshDefenses(stateDir(argValue(a, "state")), runner, {
+        clamav: !argBool(a, "no-av"),
+        yaraForge: !argBool(a, "no-rules"),
+        deps: rulesDeps,
+      });
+      const shown = ups.filter((u) => u.status === "updated" || u.status === "failed");
+      if (shown.length) refreshed = `${formatDefenses(shown)}\n`;
+    }
     const roots = argList(a, "roots").map((r) => resolve(r.replace(/^~(?=$|\/)/, homedir())));
     const r = await scanHost(iocs, (tree ?? (() => walkFor(a)))(), runner, {
       hitRepos: run.meta().hitRepos,
@@ -215,7 +236,7 @@ async function runScan(surface: "github" | "host" | "deps" | "cloud", a: Command
     });
     const f = run.recordSurface(r.result, r.findings, r.gaps);
     run.write("host-inventory.json", r.inventory);
-    return `host: ${r.result.stats.files ?? 0} files, ${r.result.stats.startupItems ?? 0} startup items, ${r.result.stats.credentialFiles ?? 0} credential files; ${f.length} finding(s)`;
+    return `${refreshed}host: ${r.result.stats.files ?? 0} files, ${r.result.stats.startupItems ?? 0} startup items, ${r.result.stats.credentialFiles ?? 0} credential files; ${f.length} finding(s)`;
   }
   if (surface === "deps") {
     const roots = argList(a, "roots").map((r) => resolve(r.replace(/^~(?=$|\/)/, homedir())));
@@ -268,16 +289,14 @@ async function dispatch(a: CommandArgs): Promise<number> {
         );
         return meta ? EXIT_OK : EXIT_FAILURE;
       }
-      if (sub !== "update") throw new UsageError("rules takes `update [--set core|extended|full]` or `status`");
+      if (sub !== "update") throw new UsageError("rules takes `update [--set core|extended|full]` (ClamAV signatures and YARA-Forge rules) or `status`");
       const set = (argValue(a, "set") ?? "core") as RuleSet;
       if (!RULE_SETS.includes(set)) throw new UsageError(`--set takes ${RULE_SETS.join(", ")}, not "${set}"`);
-      const meta = await updateRules(dir, set, runner);
-      out(
-        json
-          ? jsonLine(meta)
-          : `YARA-Forge ${meta.set} ${meta.tag}: ${meta.rules} rules (sha256 ${meta.sha256.slice(0, 16)}...), ${meta.compiled ? "compiled with yarac" : "not compiled: yarac missing, scans will parse the rules each time"}\n${meta.source}`,
-      );
-      return EXIT_OK;
+      // Both databases, now: ClamAV's signatures through freshclam, and the YARA-Forge rules.
+      const ups = await refreshDefenses(dir, runner, { force: true, set, deps: rulesDeps });
+      const meta = installedRules(dir);
+      out(json ? jsonLine({ updates: ups, rules: meta ?? null }) : `${formatDefenses(ups)}${meta ? `\n${meta.source}` : ""}`);
+      return ups.some((u) => u.status === "failed") ? EXIT_FAILURE : EXIT_OK;
     }
     case "doctor": {
       const lines = await doctor(runner, { probe: argBool(a, "probe"), state: stateDir(argValue(a, "state")) });
