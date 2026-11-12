@@ -13517,8 +13517,8 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
     });
   gaps.push({
     surface: "host",
-    what: "login items, browser extensions and kernel or system extensions",
-    why: "not read: they need privileges or per-browser profiles",
+    what: "login items registered in System Settings, browser extensions, kernel and system extensions",
+    why: "not read: the background task database needs an admin (sfltool dumpbtm), and browsers keep extensions per profile",
     fix: "System Settings > General > Login Items; each browser's extensions page"
   });
   const pruned = Object.entries(tree.pruned ?? {}).sort((a, b) => b[1] - a[1]);
