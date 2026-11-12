@@ -184,3 +184,71 @@ describe("review #15: sources keep their text file", () => {
     expect(run.sources()[0]?.file).toBe("sources/S1.md");
   });
 });
+
+describe("gap analysis follow-ups", () => {
+  it("check names every compromised subject, not only the surface", async () => {
+    const { checkAnswer } = await import("../src/check.js");
+    const run = aikidoRun();
+    const f = (subject: string, key: string) => ({
+      surface: "github:repos" as const,
+      severity: "compromised" as const,
+      subject,
+      title: "PR",
+      evidence: { kind: "url" as const, ref: "u" },
+      key,
+    });
+    run.recordSurface({ surface: "github:repos", scanned: true, stats: {}, startedAt: "" }, [f("org/alpha", "a"), f("org/bravo", "b")], []);
+    const text = "The repositories are COMPROMISED: org/alpha got the probe [F1].\n\n## Coverage\nnone";
+    expect(checkAnswer(run, text).map((p) => p.rule)).toContain("omitted-subject");
+    expect(checkAnswer(run, `${text}\nAnd org/bravo too.`).map((p) => p.rule)).not.toContain("omitted-subject");
+  });
+
+  it("watch alerts once on a new suspicious item, as REVIEW", async () => {
+    const { watchCommit } = await import("../src/watch.js");
+    const state = tmp("ug-w-");
+    const run = aikidoRun();
+    for (const surface of ["github:account", "github:repos", "deps", "cloud"] as const)
+      run.recordSurface({ surface, scanned: true, stats: {}, startedAt: "" }, [], []);
+    run.recordSurface(
+      { surface: "host", scanned: true, stats: {}, startedAt: "" },
+      [
+        {
+          surface: "host",
+          severity: "suspicious",
+          subject: "/LA/x.plist",
+          title: "Risky startup item x.plist",
+          evidence: { kind: "file", ref: "/LA/x.plist" },
+          key: "x",
+        },
+      ],
+      [],
+    );
+    const c = await watchCommit(state, run);
+    expect(c.summary).toMatch(/^REVIEW: machine analysis → host SUSPICIOUS: Risky startup item/);
+    expect(c.exitCode).toBe(10);
+    expect((await watchCommit(state, run)).alert).toBe(false);
+  });
+
+  it("the activity log finds a deleted attacker branch", async () => {
+    const gh = fakeGh({
+      user: { login: "me" },
+      "search/issues": { items: [] },
+      "search/commits": { items: [] },
+      "users/me/events": [],
+      "user/keys": [],
+      "user/gpg_keys": [],
+      rate_limit: { resources: { core: { remaining: 5000 } } },
+      "user/repos": [{ full_name: "o/r", archived: false, pushed_at: "2026-11-12T00:00:00Z", default_branch: "main", permissions: { push: true } }],
+      "repos/o/r/pulls": [],
+      "repos/o/r/branches": [{ name: "main" }],
+      "repos/o/r/activity": [
+        { ref: "refs/heads/wfx-docs", activity_type: "branch_creation", actor: { login: "victim" }, timestamp: "2026-11-11T10:00:00Z" },
+        { ref: "refs/heads/main", activity_type: "push", actor: { login: "me" }, timestamp: "2026-11-11T10:00:00Z" },
+      ],
+      "repos/o/r/commits": [],
+      "repos/o/r/actions/runs": { workflow_runs: [] },
+    });
+    const r = await scanGithub(AIKIDO_IOCS, gh, { now: NOW });
+    expect(r.repos.findings.map((f) => f.title)).toContain("Branch wfx-docs: branch creation by victim");
+  });
+});

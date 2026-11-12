@@ -24,7 +24,11 @@ ultraguard watch commit --out <run>
 ```
 
 `watch commit` alerts only on findings it never alerted before, so a
-compromise already reported does not alert again every day.
+compromise already reported does not alert again every day. New suspicious
+items (a fresh startup item that fetches and runs code, a new MCP server with
+a risky command) alert as REVIEW, once each. A run that could not scan every
+surface leaves its new sources pending for the next run. Refresh the
+community YARA rules weekly: `ultraguard rules update`.
 
 Opt-in notification: `watch commit --notify-issue owner/private-repo` opens a
 GitHub issue with the report when there is an alert. It writes to GitHub, so

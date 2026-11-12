@@ -40,6 +40,12 @@ interface Repo {
 
 const firstLine = (s: string | undefined | null) => (s ?? "").split("\n")[0] ?? "";
 
+/** The smallest activity-log period that still covers the window. */
+const activityPeriod = (since: string, now: Date): string => {
+  const days = (now.getTime() - Date.parse(since)) / 86_400_000;
+  return days <= 1 ? "day" : days <= 7 ? "week" : days <= 31 ? "month" : days <= 92 ? "quarter" : "year";
+};
+
 /** The later of two ISO dates (author vs committer), or whichever exists. */
 const laterOf = (a?: string | null, b?: string | null): string | undefined => (a && b ? (a > b ? a : b) : (a ?? b ?? undefined));
 
@@ -309,6 +315,31 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
           add(
             hit(m, { surface: "github:repos", subject: r, title: `Branch ${b.name} exists`, evidence: { kind: "api", ref: `repos/${r}/branches/${b.name}` } }),
           );
+      }
+      // The repository activity log keeps branch creations, deletions and force pushes with their actor:
+      // it finds the attacker branch the cleanup deleted, which no branch list shows any more.
+      const activity = await gh.paged<any>(`repos/${r}/activity?time_period=${activityPeriod(since, now)}`, { maxPages: 3 });
+      for (const ev of activity.data ?? []) {
+        const name = String(ev.ref ?? "").replace(/^refs\/heads\//, "");
+        if (!name || (ev.timestamp && ev.timestamp < since)) continue;
+        const m = firstMatch(M.branch, name, ev.timestamp);
+        if (!m) continue;
+        const actor = ev.actor?.login;
+        add(
+          hit(m, {
+            surface: "github:repos",
+            subject: r,
+            title: `Branch ${name}: ${String(ev.activity_type ?? "activity").replace(/_/g, " ")} by ${actor ?? "?"}`,
+            actor,
+            scope: scopeOf(actor),
+            at: ev.timestamp,
+            evidence: {
+              kind: "api",
+              ref: `repos/${r}/activity?ref=${encodeURIComponent(name)}`,
+              excerpt: `${ev.activity_type} ${ev.before ?? ""}..${ev.after ?? ""}`,
+            },
+          }),
+        );
       }
     }
 

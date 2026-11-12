@@ -64,6 +64,24 @@ export function checkAnswer(run: Run, text: string): CheckProblem[] {
       });
   }
 
+  // Naming the surface is not enough: every compromised or exposed SUBJECT (a repository, a file, a
+  // cloud resource) must appear, by name or through one of its findings. Ten hit repositories cannot
+  // hide behind "the repositories are compromised [F1]".
+  const bySubject = new Map<string, string[]>();
+  for (const f of run.findings())
+    if (f.severity === "compromised" || f.severity === "exposed") bySubject.set(f.subject, [...(bySubject.get(f.subject) ?? []), f.id]);
+  for (const [subject, ids] of bySubject) {
+    const short = subject.split("/").pop() ?? subject;
+    if (text.includes(subject) || (short.length >= 4 && text.includes(short)) || ids.some((id) => text.includes(`[${id}]`))) continue;
+    problems.push({
+      rule: "omitted-subject",
+      message: `${subject} has ${ids.length} compromised or exposed finding(s) (${ids
+        .slice(0, 3)
+        .map((x) => `[${x}]`)
+        .join("")}) but the answer never names it`,
+    });
+  }
+
   // Clean claims, clause by clause: "your machine is clean. The repos were hit" names two
   // surfaces; "your machine and your dependencies are clean" claims two; "clean, but
   // keep an eye on it" still claims clean before the "but".

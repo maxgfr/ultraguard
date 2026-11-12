@@ -14,11 +14,14 @@ indicators of compromise (IOCs) that cite it, and ultraguard sweeps for them:
   IOCs, it analyses the machine the way an analyst would: who signed what
   starts at login, what the shell runs when a terminal opens, which registry
   packages come from, which extensions are new, which processes run from odd
-  places, and which credentials a stealer here would take. With ClamAV
-  installed, a targeted antivirus pass runs too, and YARA rules a write-up
-  publishes can be run over the same files;
-- your **lockfiles**: the campaign's packages, and OSV's malicious-package
-  advisories for every locked version;
+  places, which credentials a stealer here would take, and what your AI coding
+  agents run (hooks, MCP servers, base URLs, hidden characters in their
+  instruction files). With ClamAV installed, a targeted antivirus pass runs
+  too; `ultraguard rules update` adds the YARA-Forge community rules, and YARA
+  rules a write-up publishes can be run over the same files;
+- your **lockfiles**: the campaign's packages, and the OSV and GHSA feeds
+  through [package-checker.sh](https://github.com/maxgfr/package-checker.sh)
+  (12 ecosystems): malicious packages are compromises, known CVEs a backlog;
 - your **cloud**: roles that trust everyone, keys minted during the campaign,
   federated credentials.
 
@@ -74,6 +77,7 @@ A run directory with:
 
 ```bash
 ultraguard doctor --probe                                  # what this machine lets it see
+ultraguard rules update                                    # YARA-Forge community rules, weekly
 ultraguard search "<query>" --out <run>                    # keyless web search, when the host has none
 ultraguard intel <url>... --out <run>                      # or --web-results <hits.json>
 ultraguard ioc set --file iocs.json --out <run>            # every indicator must cite a fetched [S#]
