@@ -12,6 +12,18 @@ import { basename, join } from "node:path";
 import { type Matcher, matchers, reviewStart } from "../ioc.js";
 import type { Runner } from "../runner.js";
 import type { Finding, Gap, IocFile, SurfaceResult } from "../types.js";
+import {
+  configFindings,
+  credentialInventory,
+  type HostInventory,
+  processFindings,
+  recentExtensions,
+  riskSignals,
+  type StartupItem,
+  shellStartupFindings,
+  signerOf,
+  startupCommand,
+} from "./hostintel.js";
 import type { WalkResult } from "./walk.js";
 
 type NewFinding = Omit<Finding, "id">;
@@ -73,7 +85,7 @@ export async function scanHost(
   tree: WalkResult,
   runner: Runner,
   opts: HostScanOptions = {},
-): Promise<{ result: SurfaceResult; findings: NewFinding[]; gaps: Gap[] }> {
+): Promise<{ result: SurfaceResult; findings: NewFinding[]; gaps: Gap[]; inventory: HostInventory }> {
   const home = opts.home ?? homedir();
   const os = opts.platform ?? platform();
   // Startup items changed without an IOC are worth a look over the last 30 days at most.
@@ -81,6 +93,7 @@ export async function scanHost(
   const result: SurfaceResult = { surface: "host", scanned: true, stats: {}, startedAt: (opts.now ?? new Date()).toISOString() };
   const findings: NewFinding[] = [];
   const gaps: Gap[] = [];
+  const inventory: HostInventory = { startupItems: [], credentials: [], recentExtensions: [], shellStartup: [] };
 
   const M = {
     file: matchers(iocs, "file", "workflow_file"),
@@ -159,7 +172,10 @@ export async function scanHost(
   }
   result.stats.vscodeDirs = tree.vscodeDirs.length;
 
-  // 3. Startup items changed in the window, or holding an IOC.
+  // 3. Startup items: an IOC inside is a compromise. Without one, the item's
+  // facts decide: who signed what it runs, where that lives, what the command
+  // does, and whether it changed recently. A risk signal is worth a look
+  // whatever the date; a recent change is worth a look with its facts.
   let startupCount = 0;
   for (const dir of opts.startupDirs ?? startupDirs(home, os)) {
     let names: string[] = [];
@@ -180,35 +196,63 @@ export async function scanHost(
       startupCount++;
       const text = readText(p) ?? "";
       const m = M.content.find((x) => x.test(text)) ?? (hashes.size ? hashes.get(sha256File(p) ?? "") : undefined);
-      const program =
-        /<key>Program(?:Arguments)?<\/key>\s*<(?:array>\s*<)?string>([^<]+)/.exec(text)?.[1] ??
-        /^ExecStart=(.*)$/m.exec(text)?.[1] ??
-        /^Exec=(.*)$/m.exec(text)?.[1];
+      const { command, executable } = startupCommand(text);
+      const item: StartupItem = { path: p, mtime: st.mtime.toISOString(), command, executable, signals: riskSignals(command, executable, home) };
+      if (executable?.startsWith("/")) {
+        item.exists = existsSync(executable);
+        if (!item.exists) item.signals.push("points to a program that no longer exists");
+        else if (os === "darwin" && !opts.skipLive) {
+          const sig = await signerOf(runner, executable);
+          if (sig) {
+            item.signed = sig.signed;
+            item.signer = sig.signer;
+            item.team = sig.team;
+            if (!sig.signed) item.signals.push(`is not signed by any developer${sig.signer ? ` (${sig.signer})` : ""}`);
+          }
+        }
+      }
+      inventory.startupItems.push(item);
+      const recent = st.mtimeMs >= sinceMs;
+      const facts = [
+        command ? `runs ${command.slice(0, 160)}` : "no program found",
+        item.signer ? `signed by ${item.signer}${item.team ? ` (team ${item.team})` : ""}` : undefined,
+        ...item.signals,
+      ].filter(Boolean);
+      // A strong signal (fetch-and-run, reverse shell, temp folder) is suspicious at any date.
+      const strong = item.signals.some((s) => !s.startsWith("points to") && !s.startsWith("is not signed"));
       if (m)
         findings.push(
           hitOf(m, {
             subject: p,
             title: `Startup item ${p} contains "${m.indicator.value}"`,
-            at: st.mtime.toISOString(),
-            evidence: { kind: "file", ref: p, excerpt: program },
+            at: item.mtime,
+            evidence: { kind: "file", ref: p, excerpt: command },
           }),
         );
-      else if (st.mtimeMs >= sinceMs)
+      else if (strong || recent)
         findings.push({
           surface: "host",
           severity: "suspicious",
           subject: p,
-          title: `Startup item ${basename(p)} was written during the campaign window${program ? ` (runs ${program})` : ""}`,
-          at: st.mtime.toISOString(),
-          evidence: { kind: "file", ref: p, excerpt: program },
-          key: `host|${p}|startup-mtime`,
+          title: `${strong ? "Risky startup item" : "Startup item"} ${basename(p)}${recent ? " was written recently" : ""}: ${facts.join("; ")}`,
+          at: item.mtime,
+          evidence: { kind: "file", ref: p, excerpt: command.slice(0, 300) },
+          key: `host|${p}|startup`,
         });
     }
   }
   result.stats.startupItems = startupCount;
 
-  // 4. Shell history and /etc/hosts: a C2 address typed or pinned.
-  const traces = [".zsh_history", ".bash_history", ".local/share/fish/fish_history", ".python_history"].map((f) => join(home, f));
+  // 4. Shell startup files (risk signals), and package-manager, git and SSH settings.
+  const rc = shellStartupFindings(home);
+  findings.push(...rc.findings);
+  inventory.shellStartup = rc.lines;
+  findings.push(...configFindings(home, sinceMs));
+
+  // 5. Shell history, startup files and /etc/hosts: a C2 address typed, pinned or wired in.
+  const traces = [".zsh_history", ".bash_history", ".local/share/fish/fish_history", ".python_history", ".zshrc", ".bashrc", ".profile", ".zprofile"].map((f) =>
+    join(home, f),
+  );
   traces.push("/etc/hosts");
   for (const p of traces) {
     const text = existsSync(p) ? readText(p, 20 * 1024 * 1024) : undefined;
@@ -220,7 +264,8 @@ export async function scanHost(
       findings.push(
         hitOf(m, {
           subject: p,
-          severity: p === "/etc/hosts" ? "compromised" : "exposed",
+          // In history it was typed (maybe while investigating); in a startup file or /etc/hosts it is wired in.
+          severity: /_history$/.test(p) ? "exposed" : "compromised",
           title: `${p} line ${ln + 1} mentions "${m.indicator.value}"`,
           evidence: {
             kind: "file",
@@ -261,6 +306,9 @@ export async function scanHost(
     }
   }
   result.stats.extensions = extensions;
+  const ext = recentExtensions(home, sinceMs);
+  findings.push(...ext.findings);
+  inventory.recentExtensions = ext.list;
 
   // 6. Local clones of repositories the GitHub scan found hit.
   if (opts.hitRepos?.length) {
@@ -303,6 +351,19 @@ export async function scanHost(
             }),
           );
       }
+      lines.forEach((l, i) => {
+        if (/^\s*#/.test(l) || !l.trim()) return;
+        const signals = riskSignals(l, undefined, home);
+        if (signals.length)
+          findings.push({
+            surface: "host",
+            severity: "suspicious",
+            subject: "crontab",
+            title: `crontab line ${i + 1} ${signals.join("; ")}`,
+            evidence: { kind: "command", ref: "crontab -l", excerpt: l.slice(0, 200) },
+            key: `host|crontab|${i + 1}`,
+          });
+      });
     }
     const net = os === "darwin" ? await runner("lsof", ["-nPi"], { timeoutMs: 20_000 }) : await runner("ss", ["-tunap"], { timeoutMs: 20_000 });
     if (net.ok) {
@@ -341,7 +402,32 @@ export async function scanHost(
           );
       }
     }
-  } else gaps.push({ surface: "host", what: "crontab, open connections and processes", why: "live checks were skipped" });
+    findings.push(...(await processFindings(runner, home)));
+  } else gaps.push({ surface: "host", what: "crontab, open connections, processes and code signatures", why: "live checks were skipped" });
+
+  // 8. What a stealer here would take: the credential stores, by path.
+  inventory.credentials = credentialInventory(
+    home,
+    tree.files.filter((f) => /^\.env(\.[\w-]+)?$/.test(basename(f)) && !/\.(example|sample|template|dist)$/.test(f)),
+  );
+  if (inventory.credentials.length) {
+    const kinds = [...new Set(inventory.credentials.map((c) => c.kind))];
+    findings.push({
+      surface: "host",
+      severity: "info",
+      subject: "credentials",
+      title: `Credentials a stealer on this machine would take: ${kinds.join(", ")} (${inventory.credentials.length} files, listed in host-inventory.json)`,
+      evidence: { kind: "file", ref: "host-inventory.json" },
+      key: "host|credentials",
+    });
+  }
+  result.stats.credentialFiles = inventory.credentials.length;
+  gaps.push({
+    surface: "host",
+    what: "login items, browser extensions and kernel or system extensions",
+    why: "not read: they need privileges or per-browser profiles",
+    fix: "System Settings > General > Login Items; each browser's extensions page",
+  });
 
   gaps.push({
     surface: "host",
@@ -350,5 +436,5 @@ export async function scanHost(
     fix: "pass --roots and --depth to widen it",
   });
   result.finishedAt = new Date().toISOString();
-  return { result, findings, gaps };
+  return { result, findings, gaps, inventory };
 }

@@ -2,6 +2,7 @@
 // REMEDIATION.md (the commands to run, none of which ultraguard runs).
 // The agent writes its own answer on top; `check` holds that answer to these facts.
 import type { Run } from "./run.js";
+import type { HostInventory } from "./scan/hostintel.js";
 import type { Finding, Gap, Source, Surface } from "./types.js";
 import { type SurfaceVerdict, verdicts, worst } from "./verdict.js";
 
@@ -106,10 +107,11 @@ export function renderReport(run: Run, now = new Date()): { report: string; reme
     out.push(`- [${f.id}] ${f.evidence.kind}: \`${f.evidence.ref}\`${f.evidence.excerpt ? `: ${f.evidence.excerpt.replace(/`/g, "'")}` : ""}`);
   out.push("");
 
-  return { report: out.join("\n"), remediation: renderRemediation(findings, vs, sources, gaps), verdicts: vs };
+  const inventory = run.read<HostInventory | undefined>("host-inventory.json", undefined);
+  return { report: out.join("\n"), remediation: renderRemediation(findings, vs, sources, gaps, inventory), verdicts: vs };
 }
 
-export function renderRemediation(findings: Finding[], vs: SurfaceVerdict[], _sources: Source[], gaps: Gap[]): string {
+export function renderRemediation(findings: Finding[], vs: SurfaceVerdict[], _sources: Source[], gaps: Gap[], inventory?: HostInventory): string {
   const out: string[] = ["# Remediation", "", "ultraguard runs none of these commands. Read each one, then run the ones that apply.", ""];
   const v = Object.fromEntries(vs.map((x) => [x.surface, x.verdict]));
   let step = 0;
@@ -170,12 +172,23 @@ export function renderRemediation(findings: Finding[], vs: SurfaceVerdict[], _so
   const host = findings.filter((f) => f.surface === "host" && (f.severity === "compromised" || f.severity === "exposed"));
   if (host.length) {
     h("This machine");
-    if (host.some((f) => f.severity === "compromised"))
+    if (host.some((f) => f.severity === "compromised")) {
+      out.push("An IOC is on this machine. Treat every credential it holds as stolen, and rotate them from ANOTHER, clean machine:", "");
+      const creds = inventory?.credentials ?? [];
+      const envs = creds.filter((c) => c.kind.startsWith(".env"));
+      for (const c of creds.filter((x) => !x.kind.startsWith(".env"))) out.push(`- ${c.kind}: \`${c.path}\``);
+      if (envs.length) out.push(`- ${envs.length} \`.env\` file(s) with project secrets (listed in host-inventory.json)`);
+      if (!creds.length)
+        out.push(
+          "- `~/.ssh`, `~/.aws`, `~/.config/gcloud`, `~/.azure`, `~/.npmrc`, `~/.pypirc`, `~/.docker/config.json`, `~/.kube`, the gh token, `.env` files",
+        );
       out.push(
-        "An IOC is on this machine. Treat every credential it holds as stolen: browser sessions, `~/.ssh`, `~/.aws`, `~/.config/gcloud`, `~/.azure`, `~/.npmrc`, `~/.pypirc`, `~/.docker/config.json`, `~/.kube`, the gh token, `.env` files and AI provider keys.",
-        "Rotate them from ANOTHER, clean machine. Then remove the persistence below and consider a reinstall.",
+        "- browser sessions and saved passwords, and AI provider keys in your shell profile or apps",
+        "",
+        "Then remove the persistence below and consider a reinstall.",
         "",
       );
+    }
     for (const f of host) out.push(`- ${f.title} [${f.id}]: \`${f.evidence.ref}\``);
     out.push("");
   }
