@@ -119,6 +119,16 @@ describe("verdicts and report", () => {
     expect(run.findings()).toHaveLength(1);
   });
 
+  it("a run on a docs-only probe commit does not count as the attacker making CI run", () => {
+    const run = aikidoRun();
+    run.recordSurface(
+      { surface: "github:repos", scanned: true, stats: {}, startedAt: "" },
+      [finding({ subject: "org/p", title: 'Workflow "CI" ran on wfx-docs ("docs: x"), success, triggered by victim; the commit only changes docs (a probe)' })],
+      [],
+    );
+    expect(renderReport(run).report).toContain("### org/p: probe only, no attacker run seen");
+  });
+
   it("separates repos where attacker code ran from probe-only repos, and never runs a command", () => {
     const run = aikidoRun();
     run.recordSurface(

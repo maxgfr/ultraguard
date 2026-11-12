@@ -7,7 +7,7 @@
 // and the user can, so the report asks them to judge.
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { homedir, platform } from "node:os";
+import { homedir, platform, tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { type Matcher, matchers, reviewStart } from "../ioc.js";
 import type { Runner } from "../runner.js";
@@ -24,6 +24,7 @@ import {
   signerOf,
   startupCommand,
 } from "./hostintel.js";
+import { antivirusPass, avTargets, yaraPass } from "./antivirus.js";
 import type { WalkResult } from "./walk.js";
 
 type NewFinding = Omit<Finding, "id">;
@@ -38,6 +39,16 @@ export interface HostScanOptions {
   startupDirs?: string[];
   /** Skip commands that read live system state (crontab, lsof, ps): tests and sandboxes. */
   skipLive?: boolean;
+  /** Antivirus: "off", targeted (default) or every root ("full"). */
+  av?: "off" | "targeted" | "full";
+  /** Roots for a full antivirus pass. */
+  roots?: string[];
+  /** YARA rules (a file or a folder of .yar files) to run over the same targets. */
+  yara?: string;
+  /** The [S#] the YARA rules came from, when the agent saved them from a source. */
+  yaraSource?: string;
+  /** Where the scanners' target lists are written (the run directory). */
+  listDir?: string;
 }
 
 const MAX_HASH_BYTES = 50 * 1024 * 1024;
@@ -199,7 +210,12 @@ export async function scanHost(
       }
       if (!st.isFile()) continue;
       startupCount++;
-      const text = readText(p) ?? "";
+      let text = readText(p) ?? "";
+      // Binary plists (bplist00) are unreadable as text: plutil converts them, read-only.
+      if (text.startsWith("bplist") && os === "darwin" && !opts.skipLive) {
+        const xml = await runner("plutil", ["-convert", "xml1", "-o", "-", p], { timeoutMs: 10_000 });
+        if (xml.ok) text = xml.stdout;
+      }
       const m = M.content.find((x) => x.test(text)) ?? (hashes.size ? hashes.get(sha256File(p) ?? "") : undefined);
       const { command, executable } = startupCommand(text);
       const item: StartupItem = { path: p, mtime: st.mtime.toISOString(), command, executable, signals: riskSignals(command, executable, home) };
@@ -208,7 +224,8 @@ export async function scanHost(
         if (!item.exists) item.signals.push("points to a program that no longer exists");
         else if (os === "darwin" && !opts.skipLive) {
           const sig = await signerOf(runner, executable);
-          if (sig) {
+          if (!sig) item.signer = "unreadable (codesign could not read it, often a root-only helper)";
+          else {
             item.signed = sig.signed;
             item.signer = sig.signer;
             item.team = sig.team;
@@ -431,6 +448,37 @@ export async function scanHost(
     });
   }
   result.stats.credentialFiles = inventory.credentials.length;
+
+  // 9. Signature scanners over the same short list: ClamAV (known families), YARA (rules from a source).
+  const listDir = opts.listDir ?? tmpdir();
+  const flagged = findings.map((f) => f.subject).filter((s) => s.startsWith("/"));
+  if (!opts.skipLive && opts.av !== "off") {
+    const av = await antivirusPass(runner, {
+      home,
+      inventory,
+      flagged,
+      sinceMs,
+      listDir,
+      now: opts.now,
+      full: opts.av === "full" ? (opts.roots ?? [home]) : undefined,
+    });
+    findings.push(...av.findings);
+    gaps.push(...av.gaps);
+    Object.assign(result.stats, av.stats);
+  } else if (opts.av === "off") gaps.push({ surface: "host", what: "the antivirus pass", why: "--no-av" });
+  if (opts.yara) {
+    const full = opts.av === "full";
+    const y = await yaraPass(runner, {
+      rules: opts.yara,
+      targets: full ? (opts.roots ?? [home]) : avTargets(home, inventory, flagged, sinceMs),
+      recursive: full,
+      listDir,
+      source: opts.yaraSource,
+    });
+    findings.push(...y.findings);
+    gaps.push(...y.gaps);
+    Object.assign(result.stats, y.stats);
+  }
   gaps.push({
     surface: "host",
     what: "login items, browser extensions and kernel or system extensions",

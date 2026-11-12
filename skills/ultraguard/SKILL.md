@@ -52,8 +52,9 @@ ultraguard doctor --probe                    # what this machine lets ultraguard
 `gh` must be logged in (`gh auth status`). Cloud checks run only for the CLIs
 (`aws`, `gcloud`, `az`) already logged in.
 
-**GitHub API budget.** A sweep costs about 5 REST calls per repository you can
-push to (1,000 for 200 repositories) out of 5,000 an hour, and the search API
+**GitHub API budget.** A sweep costs about 10 REST calls per repository pushed
+to since the campaign started, and 1 per other repository (about 2,000 for
+200 active repositories), out of 5,000 an hour, and the search API
 allows 30 calls a minute. Run one sweep at a time, and keep some budget for
 judging the findings with `gh api` afterwards. A refused call is recorded as a
 coverage gap; `gh api rate_limit` shows what is left.
@@ -89,6 +90,15 @@ ultraguard sweep --out <run>                               # github, host, deps,
 # 4. Judge, write the answer, check it.
 ultraguard check <run>/ANSWER.md --out <run>
 ```
+
+**Antivirus.** When ClamAV is installed, `scan host` also runs it, targeted:
+the programs startup items run, the files the other checks flagged, recent
+files in temporary and shared folders and Downloads, new extensions.
+`--av-full` scans every root instead (hours on a large home), `--no-av` skips
+it. Signatures older than 7 days are a coverage gap (`freshclam` updates
+them; ultraguard never does). When a source publishes YARA rules, save them
+under `<run>/yara/` and pass `--yara <run>/yara --yara-source S#`: they run
+over the same targets, and their matches cite that source.
 
 Scan flags: `--repos owner/a,owner/b` and `--max-repos <n>` narrow GitHub;
 `--concurrency <n>` sets parallel repositories; `--roots ~/code,~/work` and

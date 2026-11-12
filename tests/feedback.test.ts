@@ -175,4 +175,33 @@ describe("report and check wording", () => {
     expect(checkAnswer(run, text)).toEqual([]);
     expect(claimBlocks(text.split("\n")).map((b) => b.line)).toEqual([1, 2]);
   });
+
+  it("a run on someone else's commit already on the default branch ran the repository's own code", async () => {
+    const routes = {
+      ...repoRoutes([
+        {
+          workflow_id: 9,
+          name: "CI",
+          run_number: 1,
+          head_branch: "chore/ab12cd34",
+          head_sha: "legit",
+          id: 5,
+          display_title: "feat: real work",
+          created_at: "2026-11-11T00:00:00Z",
+          triggering_actor: { login: "victim" },
+        },
+      ]),
+      "repos/org/cron/commits/legit": { author: { login: "teammate" }, files: [{ filename: "src/app.ts", status: "modified" }] },
+      "repos/org/cron/compare/legit...main": { status: "ahead" },
+    };
+    const r = await scanGithub(AIKIDO_IOCS, fakeGh(routes), { now: NOW });
+    const t = r.repos.findings.map((f) => f.title);
+    expect(t[0]).toMatch(/it ran main's own code \(commit by teammate, no attacker change\)$/);
+    expect(
+      payloadRan(
+        r.repos.findings.map((f, i) => ({ ...f, id: `F${i}` })),
+        "org/cron",
+      ),
+    ).toBe(false);
+  });
 });

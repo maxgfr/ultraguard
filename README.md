@@ -14,7 +14,9 @@ indicators of compromise (IOCs) that cite it, and ultraguard sweeps for them:
   IOCs, it analyses the machine the way an analyst would: who signed what
   starts at login, what the shell runs when a terminal opens, which registry
   packages come from, which extensions are new, which processes run from odd
-  places, and which credentials a stealer here would take;
+  places, and which credentials a stealer here would take. With ClamAV
+  installed, a targeted antivirus pass runs too, and YARA rules a write-up
+  publishes can be run over the same files;
 - your **lockfiles**: the campaign's packages, and OSV's malicious-package
   advisories for every locked version;
 - your **cloud**: roles that trust everyone, keys minted during the campaign,
@@ -84,7 +86,8 @@ ultraguard watch plan|commit --out <run>                   # the routine mode
 
 `ultraguard --help` lists every flag. The bundle (`scripts/ultraguard.mjs`)
 runs on Node 18+ with no install. It needs the GitHub CLI logged in, plus the
-`aws`, `gcloud` or `az` CLIs for the cloud surface.
+`aws`, `gcloud` or `az` CLIs for the cloud surface. Optional: ClamAV (with
+fresh signatures, `freshclam`) for the antivirus pass, and YARA for `--yara`.
 
 ## Routine mode
 

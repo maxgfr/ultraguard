@@ -29,8 +29,11 @@ const SEV_ORDER = ["compromised", "exposed", "suspicious", "info"] as const;
  * branch or commit, or a commit on the default branch), not just a probe PR.
  * A workflow FILE matching an IOC name is not a run.
  */
+/** Run titles that say no attacker change ran: a docs-only probe, or the default branch's own code. */
+const NOT_ATTACKER_CODE = /only changes docs|own code \(commit by/;
+
 export function payloadRan(findings: Finding[], repo: string): boolean {
-  return findings.some((f) => f.subject === repo && f.severity === "compromised" && /^(Workflow "|Commit )/.test(f.title));
+  return findings.some((f) => f.subject === repo && f.severity === "compromised" && /^(Workflow "|Commit )/.test(f.title) && !NOT_ATTACKER_CODE.test(f.title));
 }
 
 function idList(ids: string[], max = 8): string {

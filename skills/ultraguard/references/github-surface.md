@@ -11,7 +11,9 @@ credential, no write.
   indexes; capped at 1,000).
 - Branches your login created or pushed, from your public event stream
   (last 300 events).
-- SSH and GPG keys added during the window (suspicious: judge them).
+- SSH and GPG keys added in the last 30 days (suspicious: judge them). They
+  need the `read:public_key` and `read:gpg_key` scopes; without them the gap
+  says so (`gh auth refresh -s read:public_key,read:gpg_key`).
 - Not readable with a token: the security log, sessions, OAuth grants. They
   are always a coverage gap; tell the user to open
   `github.com/settings/security-log`.
@@ -42,6 +44,9 @@ member) with push rights, not archived. For each:
   - **webhooks and deploy keys** added in the window (admin rights only).
 
 Each finding carries the actor and `scope`: `own` (your login) or `other`.
+Run and commit findings also say what the commit changed: "the commit only
+changes docs (a probe)" or "the commit changes .ci-x.sh, package.json". Their
+evidence holds the full SHA and the run id (`gh api repos/<r>/actions/runs/<id>`).
 
 ## Reading the result
 

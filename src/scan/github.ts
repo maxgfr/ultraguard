@@ -40,6 +40,9 @@ interface Repo {
 
 const firstLine = (s: string | undefined | null) => (s ?? "").split("\n")[0] ?? "";
 
+/** Paths a probe commit touches: docs and text only, nothing that runs. */
+const DOCS_ONLY = /(^|\/)(docs?|documentation)\/|\.(md|mdx|txt|rst|adoc)$|(^|\/)(README|CHANGELOG|LICENSE|NOTICE)[^/]*$/i;
+
 function hit(m: Matcher, base: Omit<NewFinding, "campaign" | "source" | "indicator" | "key" | "severity"> & { severity?: Finding["severity"] }): NewFinding {
   return {
     severity: m.indicator.weak ? "suspicious" : "compromised",
@@ -200,7 +203,16 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
   ] as const) {
     const keys = await gh.api<any[]>(path);
     if (!keys.ok) {
-      accG.push({ surface: "github:account", what: `${label}s`, why: keys.error ?? `HTTP ${keys.status}` });
+      const scope = path === "user/keys" ? "read:public_key" : "read:gpg_key";
+      accG.push({
+        surface: "github:account",
+        what: `${label}s added to your account`,
+        why:
+          keys.status === 404 || keys.status === 403
+            ? `the token lacks the ${scope} scope (${keys.error ?? `HTTP ${keys.status}`})`
+            : (keys.error ?? `HTTP ${keys.status}`),
+        fix: `gh auth refresh -s ${scope}`,
+      });
       continue;
     }
     accountRes.stats[path === "user/keys" ? "sshKeys" : "gpgKeys"] = keys.data?.length ?? 0;
@@ -295,6 +307,48 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
       }
     }
 
+    // What a commit changed, once per SHA: it tells a probe (a docs file) from a payload (a script, an install hook).
+    const changed = new Map<string, Promise<{ files: string[]; author?: string } | undefined>>();
+    const commitOf = (sha: string) => {
+      if (!changed.has(sha))
+        changed.set(
+          sha,
+          gh.api<any>(`repos/${r}/commits/${sha}`).then((d) =>
+            d.ok
+              ? {
+                  files: ((d.data?.files ?? []) as { filename: string; status: string }[]).map((f) => `${f.status} ${f.filename}`),
+                  author: d.data?.author?.login as string | undefined,
+                }
+              : undefined,
+          ),
+        );
+      return changed.get(sha) as Promise<{ files: string[]; author?: string } | undefined>;
+    };
+    const filesOf = async (sha: string) => (await commitOf(sha))?.files;
+    /** The commit is already part of the default branch: a run on it executed the repository's own code. */
+    const onDefault = async (sha: string) => {
+      const cmp = await gh.api<any>(`repos/${r}/compare/${sha}...${repo.default_branch}`);
+      return cmp.ok && (cmp.data?.status === "identical" || cmp.data?.status === "ahead");
+    };
+    const describe = (files: string[] | undefined): string => {
+      if (!files) return "";
+      if (files.length && files.every((f) => DOCS_ONLY.test(f.split(" ").slice(1).join(" ")))) return "; the commit only changes docs (a probe)";
+      return files.length
+        ? `; the commit changes ${files
+            .slice(0, 4)
+            .map((f) => f.split(" ").slice(1).join(" "))
+            .join(", ")}${files.length > 4 ? ", ..." : ""}`
+        : "";
+    };
+    /** For a run: what it executed. Someone else's commit already on the default branch is the repository's own code. */
+    const describeRun = async (sha: string | undefined, actor: string | undefined): Promise<string> => {
+      if (!sha) return "";
+      const c = await commitOf(sha);
+      if (c?.author && actor && c.author.toLowerCase() !== actor.toLowerCase() && (await onDefault(sha)))
+        return `; it ran ${repo.default_branch}'s own code (commit by ${c.author}, no attacker change)`;
+      return describe(c?.files);
+    };
+
     if (M.commit.length || M.file.length) {
       const commits = await gh.paged<any>(`repos/${r}/commits?since=${since}`, { maxPages: 3 });
       if (commits.truncated) truncated.push(`${r} commits`);
@@ -303,17 +357,13 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
         const m = firstMatch(M.commit, msg, c.commit?.author?.date);
         if (!m) continue;
         const actor = c.author?.login ?? c.commit?.author?.name;
-        let excerpt: string | undefined;
-        const detail = await gh.api<any>(`repos/${r}/commits/${c.sha}`);
-        if (detail.ok) {
-          const files = (detail.data?.files ?? []) as { filename: string; status: string }[];
-          excerpt = files.map((f) => `${f.status} ${f.filename}`).join(", ");
-        }
+        const files = await filesOf(c.sha);
+        const excerpt = `sha=${c.sha}${files ? `; ${files.join(", ")}` : ""}`.slice(0, 600);
         add(
           hit(m, {
             surface: "github:repos",
             subject: r,
-            title: `Commit ${String(c.sha).slice(0, 8)} "${msg}" on ${repo.default_branch} by ${actor}`,
+            title: `Commit ${String(c.sha).slice(0, 8)} "${msg}" on ${repo.default_branch} by ${actor}${describe(files)}`,
             actor,
             scope: scopeOf(actor),
             at: c.commit?.author?.date,
@@ -337,15 +387,16 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
         firstMatch(M.pr, run.display_title, run.created_at);
       if (!m) continue;
       const actor = run.triggering_actor?.login ?? run.actor?.login;
+      const what = await describeRun(run.head_sha, actor);
       add(
         hit(m, {
           surface: "github:repos",
           subject: r,
-          title: `Workflow "${run.name}" ran on ${run.head_branch} ("${firstLine(run.display_title)}"), ${run.conclusion ?? run.status}, triggered by ${actor}`,
+          title: `Workflow "${run.name}" ran on ${run.head_branch} ("${firstLine(run.display_title)}"), ${run.conclusion ?? run.status}, triggered by ${actor}${what}`,
           actor,
           scope: scopeOf(actor),
           at: run.created_at,
-          evidence: { kind: "url", ref: run.html_url },
+          evidence: { kind: "url", ref: run.html_url, excerpt: `run_id=${run.id} head_sha=${run.head_sha}; gh api repos/${r}/actions/runs/${run.id}` },
         }),
       );
     }

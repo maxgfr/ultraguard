@@ -76,6 +76,18 @@ Ecosystems: `npm`, `pypi`, `crates.io`, `go`, `packagist`, `rubygems`, `vscode`.
   On disk, an exact file name (no wildcard) from a campaign that publishes
   hashes is treated as weak automatically until its hash matches. Keep a
   distinctive pattern (`.ci-*.sh`, `wfx-docs`) strong.
+- **`weak` works for every type.** On a `commit_message` or `pr_title` it
+  turns matches into suspicious ones: use it only for messages ordinary
+  projects also write, never for the campaign's own (`chore: add ci helper`).
+- **A hash identifies one sample.** Payloads are often rebuilt per victim
+  (different callback, different token), so a published sha256 may match
+  nothing even on a hit repository. Keep the hash, and keep the name and
+  string indicators that survive rebuilds (`WF_CTOKEN`, `wfx-loot-`).
+- **Vague dates.** A source that says "in October" gives `since`: the 1st of
+  that month. Say in the answer that the date is approximate.
+- **YARA rules a source publishes** are worth more than any single hash:
+  save them verbatim to `<run>/yara/<name>.yar` and pass `--yara` (see the
+  host reference).
 - **Versions are listed one by one.** Expand a range a source writes as
   `0.0.16-18` into `["0.0.16", "0.0.17", "0.0.18"]`, after checking the source
   means a range. A package listed with no version flags every version: use

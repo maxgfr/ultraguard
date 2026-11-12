@@ -64,6 +64,7 @@ function collaboratorCase(extra: Record<string, unknown> = {}) {
     ],
     "repos/org/site/commits/eeafd44d0000": { files: [{ filename: ".ci-gvwxh6.sh", status: "added" }] },
     "repos/org/site/commits/a93213fe0000": { files: [{ filename: ".ci-gvwxh6.sh", status: "removed" }] },
+    "repos/org/site/commits/probe0001": { files: [{ filename: "docs/wfx-audit.md", status: "added" }] },
     "repos/org/site/actions/runs": {
       workflow_runs: [
         {
@@ -76,6 +77,19 @@ function collaboratorCase(extra: Record<string, unknown> = {}) {
           triggering_actor: { login: "victim" },
           created_at: "2026-11-11T11:20:39Z",
           html_url: "r21",
+        },
+        {
+          workflow_id: 7,
+          name: "Docs",
+          run_number: 4,
+          head_branch: "wfx-docs",
+          head_sha: "probe0001",
+          id: 99,
+          display_title: "docs: dependency audit notes",
+          conclusion: "success",
+          triggering_actor: { login: "victim" },
+          created_at: "2026-11-11T11:19:00Z",
+          html_url: "r4",
         },
         {
           workflow_id: 5,
@@ -123,6 +137,9 @@ describe("scan github", () => {
     expect(r.repos.findings.find((f) => f.severity === "suspicious")?.title).toMatch(/missing 1 run\(s\).*#22/);
     // Every attacker action is attributed to the other account, not to you.
     expect(r.repos.findings.filter((f) => f.actor).every((f) => f.scope === "other")).toBe(true);
+    // A probe run (docs-only commit) says so, and the commit of a payload names its files.
+    expect(titles.some((t) => t.startsWith('Workflow "Docs" ran on wfx-docs') && t.endsWith("the commit only changes docs (a probe)"))).toBe(true);
+    expect(titles.some((t) => t.startsWith("Commit eeafd44d") && t.includes("the commit changes .ci-gvwxh6.sh"))).toBe(true);
     // An ordinary "ci: cleanup workflows" is not the IOC "ci: cleanup".
     expect(titles.some((t) => t.includes("cleanup workflows"))).toBe(false);
   });
