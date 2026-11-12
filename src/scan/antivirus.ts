@@ -8,7 +8,7 @@
 // `--av-full` scans every root. ultraguard never installs ClamAV; it refreshes
 // stale signatures before a scan (defenses.ts), and if that fails, they are a
 // coverage gap.
-import { readdirSync, statSync } from "node:fs";
+import { accessSync, constants, readdirSync, realpathSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { writeFileAtomic } from "../engine.js";
 import type { Runner } from "../runner.js";
@@ -88,14 +88,36 @@ export function avTargets(home: string, inventory: HostInventory, flagged: strin
   for (const e of inventory.recentExtensions) add(e.path);
   for (const dir of ["/tmp", "/private/tmp", "/var/tmp", "/Users/Shared", "/dev/shm", join(home, "Downloads")])
     for (const p of recentFiles(dir, sinceMs, 2000)) add(p);
+  // One entry per real file: on macOS /tmp is /private/tmp, and a file listed twice is scanned twice.
+  const real = new Set<string>();
   return [...set].filter((p) => {
     try {
       statSync(p);
+      const r = realpathSync(p);
+      if (real.has(r)) return false;
+      real.add(r);
       return true;
     } catch {
       return false;
     }
   });
+}
+
+/** Split targets by whether this user can read them: clamscan --infected says nothing about the others. */
+export function readableTargets(targets: string[]): { readable: string[]; unreadable: string[] } {
+  const readable: string[] = [];
+  const unreadable: string[] = [];
+  for (const t of targets) {
+    try {
+      accessSync(t, constants.R_OK);
+      readable.push(t);
+    } catch (e) {
+      // Only a refusal: a path that vanished is clamscan's to report.
+      if ((e as NodeJS.ErrnoException).code === "EACCES" || (e as NodeJS.ErrnoException).code === "EPERM") unreadable.push(t);
+      else readable.push(t);
+    }
+  }
+  return { readable, unreadable };
 }
 
 /** `<path>: <Signature> FOUND` lines. */
@@ -133,8 +155,18 @@ export async function antivirusPass(
       fix: "ultraguard rules update (runs freshclam), then re-run scan host",
     });
 
-  const targets = opts.full ?? avTargets(opts.home, opts.inventory, opts.flagged, opts.sinceMs);
+  const { readable: targets, unreadable } = readableTargets(opts.full ?? avTargets(opts.home, opts.inventory, opts.flagged, opts.sinceMs));
   stats.avTargets = targets.length;
+  if (unreadable.length)
+    gaps.push({
+      surface: "host",
+      what: `${unreadable.length} antivirus target(s): ${unreadable.slice(0, 3).join(", ")}${unreadable.length > 3 ? ", ..." : ""}`,
+      why: "this user cannot read them (owned by root or another user)",
+      fix: `sudo clamscan ${unreadable
+        .slice(0, 3)
+        .map((u) => JSON.stringify(u))
+        .join(" ")}`,
+    });
   if (!targets.length) return { findings, gaps, stats, engine };
   // A list file is one path per line: a name with a line break (a hiding trick) goes as an argument instead.
   const { listed, odd } = splitTargets(targets);
@@ -165,12 +197,15 @@ export async function antivirusPass(
   }
   stats.avDetections = hits.length;
   // Warnings (an old database, a skipped archive) are not errors; unreadable files are.
-  const errors = res.stderr.split("\n").filter((l) => /ERROR|Can't open|Access denied|Permission denied|Not supported/i.test(l) && !/Warning/i.test(l));
+  // --stdout sends clamscan's error lines to stdout, next to the FOUND ones.
+  const errors = `${res.stdout}\n${res.stderr}`
+    .split("\n")
+    .filter((l) => /ERROR|Can't open|Access denied|Permission denied|Not supported/i.test(l) && !/Warning/i.test(l) && !/ FOUND$/.test(l));
   if (errors.length || (!res.ok && res.status !== 1 && !hits.length && !/Warning/i.test(res.stderr)))
     gaps.push({
       surface: "host",
       what: `${errors.length || "some"} antivirus target(s)`,
-      why: `${engine.name} could not read them: ${(errors[0] ?? res.stderr.trim().split("\n")[0] ?? "").slice(0, 160)}`,
+      why: `${engine.name} could not read them: ${(errors[0] ?? res.stderr.trim().split("\n")[0] ?? "").slice(0, 160) || `it exited with status ${res.status} without naming the file`}`,
     });
   // 0 clean, 1 found, 2 errors: anything else (a timeout, a kill) means the pass did not finish.
   if (res.status !== 0 && res.status !== 1 && res.status !== 2)
