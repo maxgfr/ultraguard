@@ -13091,6 +13091,7 @@ function ruleFiles(dir) {
 }
 
 // src/scan/host.ts
+var hasControlChar = (s) => [...s].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127);
 var MAX_HASH_BYTES = 50 * 1024 * 1024;
 function sha256File(p) {
   try {
@@ -13174,7 +13175,7 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
   if (hashes.size) gaps.push({ surface: "host", what: "sha256 of every file", why: "only files named like an IOC and startup items are hashed" });
   let oddNames = 0;
   for (const p of tree.files) {
-    if (!/[\x00-\x1f\x7f]/.test(basename6(p)) || basename6(p) === "Icon\r" || oddNames >= 50) continue;
+    if (!hasControlChar(basename6(p)) || basename6(p) === "Icon\r" || oddNames >= 50) continue;
     oddNames++;
     findings.push({
       surface: "host",
