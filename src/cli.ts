@@ -23,6 +23,7 @@ import {
 import { intel, readWebResultsFile, type WebHit } from "./intel.js";
 import { validateIocs } from "./ioc.js";
 import { renderReport } from "./report.js";
+import { searchInto } from "./search.js";
 import { Run } from "./run.js";
 import { defaultRunner, type Runner } from "./runner.js";
 import { scanCloud } from "./scan/cloud.js";
@@ -42,6 +43,7 @@ your lockfiles and your cloud for them. Read-only: it changes nothing.
 
 USAGE
   ultraguard doctor [--probe] [--json]
+  ultraguard search <query> --out <run> [--limit <n>]
   ultraguard intel [<url>...] [--web-results <file.json>] --out <run>
   ultraguard ioc set --file <iocs.json> --out <run>
   ultraguard ioc show --out <run> [--json]
@@ -53,7 +55,8 @@ USAGE
   ultraguard watch commit --out <run> [--state <dir>] [--notify-issue <owner/repo>]
 
 THE LOOP
-  1. You search the web for attacks; save the hits as JSON.
+  1. You search the web for attacks: with your own search tool (save the hits
+     as JSON), or with search, keyless, into <run>/search-hits.json.
   2. intel        fetch each page once: sources [S1], [S2]... and iocs.todo.json
   3. ioc set      validate your IOC file: every indicator cites a fetched [S#]
   4. sweep        run every scan: findings [F1], [F2]... and coverage gaps
@@ -69,6 +72,7 @@ SCAN FLAGS
   --skip-live           host: skip crontab, open connections and processes
   --no-osv              deps: skip the OSV malicious-package advisories
   --surfaces <list>     sweep: github,host,deps,cloud (default: all)
+  --limit <n>           search: hits to aim for (default 10)
 
 ROUTINE (watch)
   watch plan drops sources already handled in --state (default ~/.ultraguard,
@@ -87,7 +91,7 @@ VERDICTS (per surface)
   --help, --version
 `;
 
-export const COMMANDS = ["doctor", "intel", "ioc", "scan", "sweep", "report", "check", "watch"];
+export const COMMANDS = ["doctor", "search", "intel", "ioc", "scan", "sweep", "report", "check", "watch"];
 export const VALUE_FLAGS = [
   "out",
   "web-results",
@@ -101,6 +105,7 @@ export const VALUE_FLAGS = [
   "state",
   "resweep-days",
   "notify-issue",
+  "limit",
 ];
 export const BOOL_FLAGS = ["json", "probe", "skip-live", "no-osv"];
 
@@ -111,6 +116,7 @@ const SPEC: CliSpec = {
   boolFlags: BOOL_FLAGS,
   commandFlags: {
     doctor: ["probe", "json"],
+    search: ["out", "limit", "json"],
     intel: ["out", "web-results", "json"],
     ioc: ["out", "file", "json"],
     scan: SCAN,
@@ -184,6 +190,21 @@ async function dispatch(a: CommandArgs): Promise<number> {
       const lines = await doctor(runner, { probe: argBool(a, "probe") });
       out(json ? jsonLine(lines) : formatDoctor(lines));
       return lines.find((l) => l.check === "gh" && !l.ok) ? EXIT_FAILURE : EXIT_OK;
+    }
+    case "search": {
+      const run = needRun(a);
+      const query = a.positional.join(" ").trim();
+      if (!query) throw new UsageError('search needs a query: ultraguard search "malicious npm packages november 2026" --out <run>');
+      const r = await searchInto(run, query, { limit: argInt(a, "limit", { min: 1, max: 50 }) });
+      if (json) out(jsonLine(r));
+      else {
+        for (const h of r.added) out(`- ${h.title ?? ""} <${h.url}>${h.snippet ? `\n    ${h.snippet}` : ""}`);
+        if (!r.searched) out(`search could not reach any engine: ${r.notes.join("; ")}`);
+        out(
+          `\n${r.added.length} new hit(s), ${r.total} in ${run.path("search-hits.json")}. Keep the primary write-ups, then: ultraguard intel --web-results <that file, trimmed> --out ${run.dir}`,
+        );
+      }
+      return r.searched ? EXIT_OK : EXIT_FAILURE;
     }
     case "intel": {
       const run = needRun(a);

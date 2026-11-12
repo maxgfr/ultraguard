@@ -56,7 +56,7 @@ ultraguard doctor --probe                    # what this machine lets ultraguard
 | The user says | Do | Read |
 |---|---|---|
 | "am I affected by <url>" | `intel <url>`, then the loop below | [ioc-extraction](references/ioc-extraction.md) |
-| "ultraguard", "check I wasn't hacked" (no article) | Search for attacks of the last 30 days, shortlist the ones that can reach this user, `intel` them, then the loop | [threat-intel-sources](references/threat-intel-sources.md) |
+| "ultraguard", "check I wasn't hacked" (no article) | Search for attacks of the last 30 days (your search tool, or `ultraguard search`), shortlist the ones that can reach this user, `intel` them, then the loop | [threat-intel-sources](references/threat-intel-sources.md) |
 | "am I hit by <campaign name>" | Search for that name, keep the primary write-ups, then the loop | [threat-intel-sources](references/threat-intel-sources.md) |
 | "check only GitHub" / "only this machine" | the loop with `sweep --surfaces github` (or host, deps, cloud) | [github-surface](references/github-surface.md), [host](references/host.md) |
 | "set it up as a routine", "watch every day" | `watch plan` / `watch commit` | [routine](references/routine.md) |
@@ -65,8 +65,10 @@ ultraguard doctor --probe                    # what this machine lets ultraguard
 ## The loop
 
 ```bash
-# 1. Search: use your web search tool. Save the hits you keep as JSON:
-#    [{"url": "...", "title": "..."}]  (a list of URLs works too)
+# 1. Search. With your own web search tool, save the hits you keep as JSON:
+#    [{"url": "...", "title": "..."}]  (a list of URLs works too).
+#    With none (a headless routine, a cloud runner), search keyless:
+ultraguard search "<query>" --out <run> --limit 10           # → <run>/search-hits.json, one call per query
 ultraguard intel --web-results <hits.json> --out <run>     # or: intel <url> <url> --out <run>
 # → sources [S1], [S2]... with their text in <run>/sources/S#.md, and <run>/iocs.todo.json
 
@@ -134,8 +136,9 @@ finding before answering. Without subagents, do the same steps in order.
 - Guess an IOC the sources do not state, or call a surface clean because a
   scan could not reach it.
 - Read secrets' values: `gh secret list` names them, which is enough to rotate.
-- Upload anything: the only network calls are `gh` (GitHub API), page fetches
-  of your sources, and OSV queries of package names and versions.
+- Upload anything: the only network calls are `gh` (GitHub API), your search
+  queries, page fetches of your sources, and OSV queries of package names and
+  versions.
 
 ## References
 
