@@ -2,6 +2,7 @@
 // surface that will come back UNKNOWN, and the fix is printed next to it.
 import { httpJson } from "./engine.js";
 import type { Runner } from "./runner.js";
+import { installedRules, rulesAgeDays } from "./rules.js";
 import { detectAv } from "./scan/antivirus.js";
 import { Gh } from "./scan/gh.js";
 
@@ -12,7 +13,7 @@ export interface DoctorLine {
   fix?: string;
 }
 
-export async function doctor(runner: Runner, opts: { probe?: boolean } = {}): Promise<DoctorLine[]> {
+export async function doctor(runner: Runner, opts: { probe?: boolean; state?: string } = {}): Promise<DoctorLine[]> {
   const out: DoctorLine[] = [];
   const major = Number(process.versions.node.split(".")[0]);
   out.push({ check: "node", ok: major >= 18, detail: process.versions.node, fix: major >= 18 ? undefined : "install Node 18 or newer" });
@@ -70,17 +71,39 @@ export async function doctor(runner: Runner, opts: { probe?: boolean } = {}): Pr
     fix: !av ? "brew install clamav (or apt install clamav), then freshclam" : (av.ageDays ?? 0) > 7 ? "freshclam" : undefined,
   });
   const yara = await runner("yara", ["--version"], { timeoutMs: 10_000 });
-  out.push({ check: "yara", ok: yara.ok, detail: yara.ok ? `yara ${yara.stdout.trim()} (used with --yara <rules>)` : "not installed (optional)" });
+  out.push({
+    check: "yara",
+    ok: yara.ok,
+    detail: yara.ok ? `yara ${yara.stdout.trim()}` : "not installed (no YARA pass)",
+    fix: yara.ok ? undefined : "brew install yara (or apt install yara)",
+  });
+  if (opts.state) {
+    const meta = installedRules(opts.state);
+    const age = meta ? rulesAgeDays(meta) : 0;
+    out.push({
+      check: "rules",
+      ok: !!meta && age <= 14,
+      detail: meta
+        ? `YARA-Forge ${meta.set} ${meta.tag}, ${meta.rules} rules, ${age} days old${meta.compiled ? "" : ", not compiled"}`
+        : "no community YARA rules",
+      fix: !meta || age > 14 ? "ultraguard rules update" : undefined,
+    });
+  }
 
   if (opts.probe) {
     try {
-      const res = (await httpJson(
+      const res = await httpJson(
         "POST",
         "https://api.osv.dev/v1/query",
         { package: { ecosystem: "npm", name: "left-pad" }, version: "1.3.0" },
         { timeoutMs: 20_000 },
-      )) as unknown;
-      out.push({ check: "osv.dev", ok: !!res, detail: "reachable" });
+      );
+      out.push({
+        check: "osv.dev",
+        ok: res.ok,
+        detail: res.ok ? "reachable" : (res.error ?? `HTTP ${res.status}`),
+        fix: res.ok ? undefined : "check the network; scan deps --no-osv works offline",
+      });
     } catch (e) {
       out.push({ check: "osv.dev", ok: false, detail: (e as Error).message, fix: "check the network; scan deps --no-osv works offline" });
     }

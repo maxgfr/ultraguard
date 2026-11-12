@@ -23,6 +23,7 @@ import {
 import { intel, readWebResultsFile, type WebHit } from "./intel.js";
 import { validateIocs } from "./ioc.js";
 import { renderReport } from "./report.js";
+import { installedRules, RULE_SETS, type RuleSet, rulesAgeDays, updateRules } from "./rules.js";
 import { searchInto } from "./search.js";
 import { Run } from "./run.js";
 import { defaultRunner, type Runner } from "./runner.js";
@@ -43,6 +44,8 @@ your lockfiles and your cloud for them. Read-only: it changes nothing.
 
 USAGE
   ultraguard doctor [--probe] [--json]
+  ultraguard rules update [--set core|extended|full] [--state <dir>]
+  ultraguard rules status [--state <dir>]
   ultraguard search <query> --out <run> [--limit <n>]
   ultraguard intel [<url>...] [--web-results <file.json>] --out <run>
   ultraguard ioc set --file <iocs.json> --out <run>
@@ -74,6 +77,8 @@ SCAN FLAGS
   --av-full             host: ClamAV over every root instead of the targeted list (slow)
   --yara <rules>        host: also run YARA rules (a .yar file or a folder of them)
   --yara-source <S#>    host: the source the YARA rules came from, cited by their findings
+  --no-rules            host: skip the community YARA rules (YARA-Forge) installed by rules update
+  --set <name>          rules update: core (default, highest precision), extended or full
   --no-osv              deps: skip the OSV malicious-package advisories
   --surfaces <list>     sweep: github,host,deps,cloud (default: all)
   --limit <n>           search: hits to aim for (default 10)
@@ -95,7 +100,7 @@ VERDICTS (per surface)
   --help, --version
 `;
 
-export const COMMANDS = ["doctor", "search", "intel", "ioc", "scan", "sweep", "report", "check", "watch"];
+export const COMMANDS = ["doctor", "rules", "search", "intel", "ioc", "scan", "sweep", "report", "check", "watch"];
 export const VALUE_FLAGS = [
   "out",
   "web-results",
@@ -112,16 +117,34 @@ export const VALUE_FLAGS = [
   "limit",
   "yara",
   "yara-source",
+  "set",
 ];
-export const BOOL_FLAGS = ["json", "probe", "skip-live", "no-osv", "no-av", "av-full"];
+export const BOOL_FLAGS = ["json", "probe", "skip-live", "no-osv", "no-av", "av-full", "no-rules"];
 
-const SCAN = ["out", "repos", "max-repos", "concurrency", "roots", "depth", "skip-live", "no-osv", "no-av", "av-full", "yara", "yara-source", "json"];
+const SCAN = [
+  "out",
+  "repos",
+  "max-repos",
+  "concurrency",
+  "roots",
+  "depth",
+  "skip-live",
+  "no-osv",
+  "no-av",
+  "av-full",
+  "yara",
+  "yara-source",
+  "no-rules",
+  "state",
+  "json",
+];
 const SPEC: CliSpec = {
   commands: COMMANDS,
   valueFlags: VALUE_FLAGS,
   boolFlags: BOOL_FLAGS,
   commandFlags: {
-    doctor: ["probe", "json"],
+    doctor: ["probe", "state", "json"],
+    rules: ["set", "state", "json"],
     search: ["out", "limit", "json"],
     intel: ["out", "web-results", "json"],
     ioc: ["out", "file", "json"],
@@ -182,6 +205,7 @@ async function runScan(surface: "github" | "host" | "deps" | "cloud", a: Command
       yara: argValue(a, "yara"),
       yaraSource: argValue(a, "yara-source"),
       listDir: run.dir,
+      ...communityRules(a, run),
     });
     const f = run.recordSurface(r.result, r.findings, r.gaps);
     run.write("host-inventory.json", r.inventory);
@@ -197,13 +221,55 @@ async function runScan(surface: "github" | "host" | "deps" | "cloud", a: Command
   return `cloud: ${r.result.scanned ? "scanned" : "no logged-in CLI"}; ${f.length} finding(s)`;
 }
 
+/** The installed YARA-Forge rules for scan host, registered as a source of the run so their findings cite it. */
+function communityRules(
+  a: CommandArgs,
+  run: Run,
+): { community?: { source: string; compiled?: string; label: string; sourceId?: string; ageDays: number }; communityMissing?: boolean } {
+  if (argBool(a, "no-rules")) return {};
+  const meta = installedRules(stateDir(argValue(a, "state")));
+  if (!meta) return { communityMissing: true };
+  const src = run.addSource({
+    url: meta.url,
+    title: `YARA-Forge ${meta.set} rules ${meta.tag} (${meta.rules} rules)`,
+    fetchedAt: meta.fetchedAt,
+    origin: "rules",
+  });
+  return { community: { source: meta.source, compiled: meta.compiled, label: `YARA-Forge ${meta.set}`, sourceId: src.id, ageDays: rulesAgeDays(meta) } };
+}
+
 const SURFACE_OF: Record<string, Surface[]> = { github: ["github:account", "github:repos"], host: ["host"], deps: ["deps"], cloud: ["cloud"] };
 
 async function dispatch(a: CommandArgs): Promise<number> {
   const json = argBool(a, "json");
   switch (a.command) {
+    case "rules": {
+      const sub = a.positional[0];
+      const dir = stateDir(argValue(a, "state"));
+      if (sub === "status") {
+        const meta = installedRules(dir);
+        out(
+          json
+            ? jsonLine(meta ?? null)
+            : meta
+              ? `YARA-Forge ${meta.set} ${meta.tag}: ${meta.rules} rules, ${rulesAgeDays(meta)} days old, ${meta.compiled ? "compiled" : "not compiled (install yarac for faster scans)"}\n${meta.source}`
+              : "no community rules installed: ultraguard rules update",
+        );
+        return meta ? EXIT_OK : EXIT_FAILURE;
+      }
+      if (sub !== "update") throw new UsageError("rules takes `update [--set core|extended|full]` or `status`");
+      const set = (argValue(a, "set") ?? "core") as RuleSet;
+      if (!RULE_SETS.includes(set)) throw new UsageError(`--set takes ${RULE_SETS.join(", ")}, not "${set}"`);
+      const meta = await updateRules(dir, set, runner);
+      out(
+        json
+          ? jsonLine(meta)
+          : `YARA-Forge ${meta.set} ${meta.tag}: ${meta.rules} rules (sha256 ${meta.sha256.slice(0, 16)}...), ${meta.compiled ? "compiled with yarac" : "not compiled: yarac missing, scans will parse the rules each time"}\n${meta.source}`,
+      );
+      return EXIT_OK;
+    }
     case "doctor": {
-      const lines = await doctor(runner, { probe: argBool(a, "probe") });
+      const lines = await doctor(runner, { probe: argBool(a, "probe"), state: stateDir(argValue(a, "state")) });
       out(json ? jsonLine(lines) : formatDoctor(lines));
       return lines.find((l) => l.check === "gh" && !l.ok) ? EXIT_FAILURE : EXIT_OK;
     }

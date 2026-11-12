@@ -135,20 +135,25 @@ export async function antivirusPass(
   const targets = opts.full ?? avTargets(opts.home, opts.inventory, opts.flagged, opts.sinceMs);
   stats.avTargets = targets.length;
   if (!targets.length) return { findings, gaps, stats, engine };
+  // A list file is one path per line: a name with a line break (a hiding trick) goes as an argument instead.
+  const { listed, odd } = splitTargets(targets);
   const list = join(opts.listDir, "av-targets.txt");
-  writeFileAtomic(list, `${targets.join("\n")}\n`);
+  writeFileAtomic(list, `${listed.join("\n")}\n`);
   const args = ["--infected", "--no-summary", `--file-list=${list}`];
-  if (engine.name === "clamscan") args.push("--recursive", "--stdout", "--max-filesize=100M", "--max-scansize=400M");
+  if (engine.name === "clamscan") args.push("--recursive", "--stdout", "--max-filesize=100M", "--max-scansize=400M", "--detect-pua=yes");
   else args.push("--fdpass", "--multiscan");
+  args.push(...odd);
   const res = await runner(engine.name, args, { timeoutMs: opts.full ? 3 * 60 * 60_000 : 20 * 60_000 });
   // Exit 0: clean. 1: something found. 2: errors (unreadable files), possibly with findings.
   const hits = parseClamOutput(res.stdout);
-  for (const h of hits)
+  for (const h of hits) {
+    // PUA.* is ClamAV's "potentially unwanted": adware, bundlers, hacking tools. Worth a look, not proof.
+    const pua = /^PUA\./i.test(h.signature);
     findings.push({
       surface: "host",
-      severity: "compromised",
+      severity: pua ? "suspicious" : "compromised",
       subject: h.path,
-      title: `ClamAV detects ${h.signature} in ${h.path}`,
+      title: `ClamAV detects ${h.signature} in ${h.path}${pua ? " (potentially unwanted program)" : ""}`,
       evidence: {
         kind: "command",
         ref: `${engine.name} --no-summary ${h.path}`,
@@ -156,6 +161,7 @@ export async function antivirusPass(
       },
       key: `host|av|${h.path}|${h.signature}`,
     });
+  }
   stats.avDetections = hits.length;
   // Warnings (an old database, a skipped archive) are not errors; unreadable files are.
   const errors = res.stderr.split("\n").filter((l) => /ERROR|Can't open|Access denied|Permission denied|Not supported/i.test(l) && !/Warning/i.test(l));
@@ -190,55 +196,121 @@ export function yaraRuleFiles(path: string): string[] {
   }
 }
 
-/** `<RuleName> <path>` lines from `yara`. */
-export function parseYaraOutput(stdout: string): { rule: string; path: string }[] {
-  const out: { rule: string; path: string }[] = [];
+/** Paths a one-per-line list can hold, and the ones with a line break in their name. */
+export function splitTargets(targets: string[]): { listed: string[]; odd: string[] } {
+  const listed: string[] = [];
+  const odd: string[] = [];
+  for (const t of targets) (/[\r\n]/.test(t) ? odd : listed).push(t);
+  return { listed, odd };
+}
+
+export interface YaraHit {
+  rule: string;
+  path: string;
+  score?: number;
+  description?: string;
+}
+
+/** `<Rule> <path>`, or with -m `<Rule> [k="v",score=75,...] <path>`, lines from `yara`. */
+export function parseYaraOutput(stdout: string): YaraHit[] {
+  const out: YaraHit[] = [];
   for (const line of stdout.split("\n")) {
-    const m = /^(\S+)\s+(\/.*)$/.exec(line.trim());
-    if (m) out.push({ rule: m[1] as string, path: m[2] as string });
+    const t = line.trim();
+    const meta = /^(\S+)\s+\[(.*)\]\s+(\/.*)$/.exec(t);
+    if (meta) {
+      const m = meta[2] as string;
+      // yara prints integer metadata as `score =75`: allow spaces around "=".
+      const score = /(?:^|,)score\s*=\s*(\d+)/.exec(m)?.[1];
+      const description = /(?:^|,)description\s*=\s*"((?:[^"\\]|\\.)*)"/.exec(m)?.[1];
+      out.push({ rule: meta[1] as string, path: meta[3] as string, score: score ? Number(score) : undefined, description });
+      continue;
+    }
+    const plain = /^(\S+)\s+(\/.*)$/.exec(t);
+    if (plain) out.push({ rule: plain[1] as string, path: plain[2] as string });
   }
   return out;
 }
 
+/** Community rules score their own confidence (YARA-Forge: 0 to 100, 75 by default, below 70 for hunting rules). Below this, a match is worth a look, not proof. */
+export const COMMUNITY_SCORE = 75;
+
 /**
- * A YARA pass with rules the agent saved from a source (write-ups often
- * publish them) or a community set. Same targets as the antivirus pass.
+ * A YARA pass, over the same targets as the antivirus pass, with either rules
+ * the agent saved from a source (`--yara`, findings cite that source: a match
+ * is a compromise) or a community set (YARA-Forge: the rule's own score sets
+ * the severity). A compiled set (.yarc) loads in a fraction of a second.
  */
 export async function yaraPass(
   runner: Runner,
-  opts: { rules: string; targets: string[]; listDir: string; source?: string; recursive?: boolean },
+  opts: {
+    rules: string;
+    targets: string[];
+    listDir: string;
+    source?: string;
+    recursive?: boolean;
+    /** The rules are a community set: severity follows each rule's score. */
+    community?: boolean;
+    compiled?: boolean;
+    label?: string;
+  },
 ): Promise<{ findings: NewFinding[]; gaps: Gap[]; stats: Record<string, number> }> {
   const findings: NewFinding[] = [];
   const gaps: Gap[] = [];
-  const files = yaraRuleFiles(opts.rules);
+  const label = opts.label ?? "YARA";
+  const files = opts.compiled ? [opts.rules] : yaraRuleFiles(opts.rules);
   if (!files.length) {
-    gaps.push({ surface: "host", what: "the YARA pass", why: `no .yar or .yara rule file at ${opts.rules}` });
+    gaps.push({ surface: "host", what: `the ${label} pass`, why: `no .yar or .yara rule file at ${opts.rules}` });
     return { findings, gaps, stats: {} };
   }
-  const list = join(opts.listDir, "yara-targets.txt");
-  writeFileAtomic(list, `${opts.targets.join("\n")}\n`);
-  const res = await runner("yara", ["--no-warnings", ...(opts.recursive ? ["--recursive"] : []), "--scan-list", ...files, list], {
-    timeoutMs: opts.recursive ? 3 * 60 * 60_000 : 30 * 60_000,
-  });
+  const { listed, odd } = splitTargets(opts.targets);
+  const list = join(opts.listDir, opts.community ? "yara-community-targets.txt" : "yara-targets.txt");
+  writeFileAtomic(list, `${listed.join("\n")}\n`);
+  const base = ["--no-warnings", "--print-meta", ...(opts.recursive ? ["--recursive"] : []), ...(opts.compiled ? ["-C"] : [])];
+  const timeoutMs = opts.recursive ? 3 * 60 * 60_000 : 30 * 60_000;
+  const res = await runner("yara", [...base, "--scan-list", ...files, list], { timeoutMs });
   if (res.missing) {
-    gaps.push({ surface: "host", what: "the YARA pass", why: "yara is not installed", fix: "brew install yara (or apt install yara)" });
+    gaps.push({ surface: "host", what: `the ${label} pass`, why: "yara is not installed", fix: "brew install yara (or apt install yara)" });
     return { findings, gaps, stats: {} };
   }
-  if (!res.ok && !res.stdout.trim()) {
-    gaps.push({ surface: "host", what: "the YARA pass", why: `yara failed: ${(res.stderr.trim().split("\n")[0] ?? "").slice(0, 200)}` });
+  let stdout = res.stdout;
+  let stderr = res.stderr;
+  // yara takes one target per call outside a list: names with a line break get their own call.
+  for (const t of odd.slice(0, 50)) {
+    const one = await runner("yara", [...base, ...files, t], { timeoutMs: 60_000 });
+    stdout += `\n${one.stdout}`;
+    stderr += `\n${one.stderr}`;
+  }
+  const unreadable = stderr.split("\n").filter((l) => /could not open file|can not open file/i.test(l)).length;
+  const fatal = stderr.split("\n").find((l) => l.trim() && !/could not open file|can not open file|warning/i.test(l));
+  if (!stdout.trim() && fatal && !res.ok) {
+    gaps.push({ surface: "host", what: `the ${label} pass`, why: `yara failed: ${fatal.slice(0, 200)}` });
     return { findings, gaps, stats: { yaraRules: files.length } };
   }
+  if (unreadable) gaps.push({ surface: "host", what: `${unreadable} ${label} target(s)`, why: "yara could not open them (permissions, or the file vanished)" });
   // The rule files contain the strings they look for: never report them.
   const ruleSet = new Set(files);
-  for (const h of parseYaraOutput(res.stdout).filter((x) => !ruleSet.has(x.path)))
+  for (const h of parseYaraOutput(stdout).filter((x) => !ruleSet.has(x.path))) {
+    const weak = opts.community && (h.score ?? 0) < COMMUNITY_SCORE;
     findings.push({
       surface: "host",
-      severity: "compromised",
+      severity: weak ? "suspicious" : "compromised",
       subject: h.path,
-      title: `YARA rule ${h.rule} matches ${h.path}`,
+      title: `${label} rule ${h.rule} matches ${h.path}${h.score !== undefined ? ` (score ${h.score})` : ""}${h.description ? `: ${h.description.slice(0, 140)}` : ""}`,
       ...(opts.source ? { source: opts.source } : {}),
-      evidence: { kind: "command", ref: `yara ${files.length === 1 ? files[0] : `<${files.length} rule files in ${opts.rules}>`} ${h.path}` },
+      evidence: {
+        kind: "command",
+        ref: `yara ${opts.compiled ? "-C " : ""}${files.length === 1 ? files[0] : `<${files.length} rule files in ${opts.rules}>`} ${h.path}`,
+      },
       key: `host|yara|${h.path}|${h.rule}`,
     });
-  return { findings, gaps, stats: { yaraRules: files.length, yaraTargets: opts.targets.length, yaraMatches: findings.length } };
+  }
+  return {
+    findings,
+    gaps,
+    stats: {
+      [opts.community ? "communityRules" : "yaraRules"]: files.length,
+      yaraTargets: opts.targets.length,
+      [opts.community ? "communityMatches" : "yaraMatches"]: findings.length,
+    },
+  };
 }
