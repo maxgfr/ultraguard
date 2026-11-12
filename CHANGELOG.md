@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here, generated automatically from the [Conventional Commits](https://www.conventionalcommits.org/) by [semantic-release](https://github.com/semantic-release/semantic-release).
 
+## [1.1.1](https://github.com/maxgfr/ultraguard/compare/v1.1.0...v1.1.1) (2026-11-12)
+
+
+### Bug Fixes
+
+* per-campaign windows, quieter noise and clearer docs from cold-start runs ([#4](https://github.com/maxgfr/ultraguard/issues/4)) ([0122597](https://github.com/maxgfr/ultraguard/commit/01225971b28f9e146a4081d832b279d0df8f327d))
+
 # [1.1.0](https://github.com/maxgfr/ultraguard/compare/v1.0.0...v1.1.0) (2026-11-12)
 
 

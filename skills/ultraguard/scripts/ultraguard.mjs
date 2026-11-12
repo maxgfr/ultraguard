@@ -12068,7 +12068,7 @@ function walk(roots, opts = {}) {
 }
 
 // src/version.ts
-var VERSION = "1.1.0";
+var VERSION = "1.1.1";
 
 // src/watch.ts
 import { mkdirSync as mkdirSync5 } from "fs";
