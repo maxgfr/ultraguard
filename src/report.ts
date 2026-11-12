@@ -23,9 +23,13 @@ function findingLine(f: Finding): string {
 
 const SEV_ORDER = ["compromised", "exposed", "suspicious", "info"] as const;
 
-/** A repository where attacker code reached CI (a run or a default-branch commit), not just a probe PR. */
+/**
+ * A repository where the attacker made CI run (a workflow run on an attacker
+ * branch or commit, or a commit on the default branch), not just a probe PR.
+ * A workflow FILE matching an IOC name is not a run.
+ */
 export function payloadRan(findings: Finding[], repo: string): boolean {
-  return findings.some((f) => f.subject === repo && f.severity === "compromised" && /^(Workflow|Commit) /.test(f.title));
+  return findings.some((f) => f.subject === repo && f.severity === "compromised" && /^(Workflow "|Commit )/.test(f.title));
 }
 
 function idList(ids: string[], max = 8): string {
@@ -73,7 +77,7 @@ export function renderReport(run: Run, now = new Date()): { report: string; reme
         const own = fs.filter((f) => f.subject === r);
         const ran = payloadRan(fs, r);
         const hitRepo = own.some((f) => f.severity === "compromised");
-        out.push(`### ${r}${hitRepo ? (ran ? ": attacker code ran in CI" : ": probe only, no attacker run seen") : ""}`, "");
+        out.push(`### ${r}${hitRepo ? (ran ? ": the attacker made CI run" : ": probe only, no attacker run seen") : ""}`, "");
         for (const sev of SEV_ORDER) for (const f of own.filter((x) => x.severity === sev)) out.push(findingLine(f));
         out.push("");
       }
@@ -138,7 +142,7 @@ export function renderRemediation(findings: Finding[], vs: SurfaceVerdict[], _so
     hitRepos.sort((a, b) => Number(payloadRan(findings, b)) - Number(payloadRan(findings, a)) || a.localeCompare(b));
     for (const r of hitRepos) {
       const ran = payloadRan(findings, r);
-      out.push(`### ${r}${ran ? ": attacker code ran in CI, rotate now" : ": probe PR only"}`, "");
+      out.push(`### ${r}${ran ? ": the attacker made CI run, rotate unless the run's code is provably yours" : ": probe PR only"}`, "");
       if (!ran)
         out.push(
           "The probe proves the attacker could write here. No attacker run was seen, but runs can be deleted: check the run list below for gaps, and rotate if any attacker run executed.",

@@ -32,7 +32,8 @@ member) with push rights, not archived. For each:
     files each matching commit touched;
   - **workflow runs** since the window: branch, title, and **gaps in
     `run_number`** per workflow (the attacker deletes the run that leaked).
-    A gap is suspicious, not proof;
+    A gap is reported only in a repository that also has an IOC match: alone,
+    gaps are mostly retention and re-runs, and are counted in the coverage;
   - **Actions caches and artifacts** by prefix;
   - **workflow files** on the default branch: names, and contents when the
     campaign has string, IP, domain or URL indicators;
@@ -48,7 +49,7 @@ Each finding carries the actor and `scope`: `own` (your login) or `other`.
   secrets as at risk; check the runs.
 - A run on an attacker branch, or attacker commits on the default branch: the
   payload ran in CI. Every secret, variable, OIDC role and cloud credential
-  that workflow could reach is stolen. REPORT.md says "attacker code ran in
-  CI" for these.
+  that workflow could reach is stolen. REPORT.md says "the attacker made CI
+  run" for these.
 - The account that acted is a victim too. Its owner must lock it; tell the
   org admins.

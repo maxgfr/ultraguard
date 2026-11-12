@@ -3,7 +3,7 @@
 // an access key minted the night of the theft. Each provider is checked only
 // through its own CLI, already logged in; one that is absent is a gap, never
 // a clean bill.
-import { matchers, windowStart } from "../ioc.js";
+import { matchers, reviewStart } from "../ioc.js";
 import { mapPool } from "../pool.js";
 import { parseJsonOutput, type Runner } from "../runner.js";
 import type { Finding, Gap, IocFile, SurfaceResult } from "../types.js";
@@ -29,7 +29,8 @@ export async function scanCloud(
   runner: Runner,
   opts: { now?: Date } = {},
 ): Promise<{ result: SurfaceResult; findings: NewFinding[]; gaps: Gap[] }> {
-  const since = windowStart(iocs);
+  // Keys minted without an IOC to tie them to: the last 30 days at most.
+  const since = reviewStart(iocs, opts.now);
   const result: SurfaceResult = { surface: "cloud", scanned: false, stats: {}, startedAt: (opts.now ?? new Date()).toISOString() };
   const findings: NewFinding[] = [];
   const gaps: Gap[] = [];

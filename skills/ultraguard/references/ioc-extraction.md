@@ -32,11 +32,17 @@ The full worked example, with all 27 indicators of that article, is
 
 ## Fields
 
+- One campaign per **attack**, not per article. `intel` writes
+  `iocs.todo.json` with one placeholder per source: merge the sources that
+  describe the same attack into one campaign that cites them all.
 - `id`: short and stable (`<name>-<yyyy>-<mm>`). The routine remembers
   campaigns by id.
-- `since`: the earliest date the source gives for the campaign. Every scan
-  reads activity from this date on. When the source gives none, use its
-  publication date minus 7 days and say so.
+- `since` (and optional `until`): the window the source gives for THIS
+  campaign. An indicator only matches activity inside its own campaign's
+  window, so an old wave in the file does not flag this month's commits.
+  Changes that match no IOC (new keys, startup items, webhooks, deleted runs)
+  are reviewed over the last 30 days at most. When the source gives no date,
+  use its publication date minus 7 days and say so.
 - `sources`: every `[S#]` that describes the campaign.
 - `source` (per indicator): the `[S#]` that states this indicator. Required.
 
@@ -62,6 +68,21 @@ The full worked example, with all 27 indicators of that article, is
 Ecosystems: `npm`, `pypi`, `crates.io`, `go`, `packagist`, `rubygems`, `vscode`.
 
 ## Rules of thumb
+
+- **Mark common names `"weak": true`.** A file, workflow or message that
+  ordinary projects also have (`bundle.js`, `setup.js`, `.vscode/tasks.json`,
+  `lint.yml`, `codeql.yml`) is only suspicious on a name match. Add the
+  campaign's sha256 values when it publishes them: a hash match settles it.
+  Keep a distinctive name (`.ci-*.sh`, `wfx-docs`) strong.
+- **Versions are listed one by one.** Expand a range a source writes as
+  `0.0.16-18` into `["0.0.16", "0.0.17", "0.0.18"]`, after checking the source
+  means a range. A package listed with no version flags every version: use
+  another source that lists versions, or mark it `"weak": true`.
+- **Long package tables:** extract them with a short script from
+  `<run>/sources/S#.md` rather than by hand, and spot-check a few rows against
+  the page. Tables vary (`,`, `;` or `|` separators, bullet lists), so print
+  what you parsed before `ioc set`. Raw IOC files a write-up links to (CSV, a
+  GitHub repo) can be fetched with `intel` too: they become sources.
 
 - **Exact by default.** `commit_message` and `pr_title` match the whole first
   line, case-insensitive: `ci: cleanup` must not flag every `ci: cleanup

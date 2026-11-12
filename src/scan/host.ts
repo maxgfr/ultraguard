@@ -9,7 +9,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { basename, join } from "node:path";
-import { type Matcher, matchers, windowStart } from "../ioc.js";
+import { type Matcher, matchers, reviewStart } from "../ioc.js";
 import type { Runner } from "../runner.js";
 import type { Finding, Gap, IocFile, SurfaceResult } from "../types.js";
 import type { WalkResult } from "./walk.js";
@@ -76,8 +76,8 @@ export async function scanHost(
 ): Promise<{ result: SurfaceResult; findings: NewFinding[]; gaps: Gap[] }> {
   const home = opts.home ?? homedir();
   const os = opts.platform ?? platform();
-  const since = windowStart(iocs);
-  const sinceMs = Date.parse(since);
+  // Startup items changed without an IOC are worth a look over the last 30 days at most.
+  const sinceMs = Date.parse(reviewStart(iocs, opts.now));
   const result: SurfaceResult = { surface: "host", scanned: true, stats: {}, startedAt: (opts.now ?? new Date()).toISOString() };
   const findings: NewFinding[] = [];
   const gaps: Gap[] = [];
@@ -99,10 +99,19 @@ export async function scanHost(
     if (!m) continue;
     const digest = sha256File(p);
     const hashHit = digest ? hashes.get(digest) : undefined;
+    // A weak name (one ordinary files also have) is only suspicious on its own;
+    // its hash, when the campaign publishes it, settles it.
+    const campaignHashes = M.hash.filter((h) => h.campaign.id === m.campaign.id).length;
+    const nameOnly = !hashHit && !!m.indicator.weak;
     findings.push(
       hitOf(hashHit ?? m, {
         subject: p,
-        title: `File ${p} matches ${hashHit ? "the sha256" : `"${m.indicator.value}"`}`,
+        severity: nameOnly ? "suspicious" : "compromised",
+        title: hashHit
+          ? `File ${p} matches the sha256`
+          : nameOnly
+            ? `File ${p} is named like "${m.indicator.value}" (a common name)${campaignHashes ? `, and its sha256 matches none of the campaign's ${campaignHashes} hash(es)` : ""}`
+            : `File ${p} matches "${m.indicator.value}"`,
         evidence: { kind: "file", ref: p, excerpt: digest ? `sha256=${digest}` : undefined },
       }),
     );

@@ -37,5 +37,7 @@ export async function searchInto(run: Run, query: string, opts: { limit?: number
   }
   const all = [...existing, ...added];
   run.write("search-hits.json", all);
-  return { query, added, total: all.length, searched: res.searched !== false, notes: res.notes };
+  // The engine's notes name webindex's own commands (`searxng up`); say it in ultraguard's terms.
+  const notes = res.notes.map((n) => n.replace(/`?(webindex|ultraguard) (searxng|stack|firecrawl) [a-z]+`?/g, "a SearXNG instance (ULTRAGUARD_SEARXNG)"));
+  return { query, added, total: all.length, searched: res.searched !== false, notes };
 }

@@ -4,7 +4,7 @@
 //  3. Every surface whose verdict is COMPROMISED or EXPOSED is named in the answer.
 //  4. A surface the answer calls clean must have the CLEAN verdict.
 //  5. When the run has coverage gaps, the answer says so.
-import { citationTokensIn, danglingTokens, extractClaimUnits, unitTexts } from "./engine.js";
+import { citationTokensIn, danglingTokens } from "./engine.js";
 import type { Run } from "./run.js";
 import { SURFACES, type Surface } from "./types.js";
 import { verdicts } from "./verdict.js";
@@ -34,20 +34,16 @@ export function checkAnswer(run: Run, text: string): CheckProblem[] {
   for (const t of danglingTokens(citationTokensIn(text, isCitation), known))
     problems.push({ rule: "dangling", message: `[${t}] is not a source or finding of this run`, line: lineOf(`[${t}]`) });
 
-  // A claim is a sentence; its citation may sit anywhere in the same paragraph or list item.
-  for (const unit of extractClaimUnits(text)) {
-    for (const block of unitTexts(unit)) {
-      const cited = citationTokensIn(block, (t) => /^F\d+$/.test(t) && known.includes(t)).length > 0;
-      if (cited) continue;
-      for (const s of block.split(/(?<=[.!?])\s+/)) {
-        if (!/\b(compromised|exposed|infected|hit by|touché|compromis|exposé)/i.test(s)) continue;
-        if (/\b(not|no|never|pas|aucun|aucune|ni)\b[^.]{0,40}\b(compromised|exposed|infected|hit|touché|compromis|exposé)/i.test(s)) continue;
-        problems.push({
-          rule: "uncited-claim",
-          message: `claims a compromise without citing a finding [F#]: "${s.slice(0, 120)}"`,
-          line: lineOf(s.slice(0, 40)),
-        });
-      }
+  // A claim is a sentence. Its citation may sit anywhere in the same paragraph,
+  // or in the same list item including its nested sub-items. Coverage and
+  // Sources sections state what was NOT looked at, so they make no claim.
+  const isKnownF = (t: string) => /^F\d+$/.test(t) && known.includes(t);
+  for (const b of claimBlocks(lines)) {
+    if (citationTokensIn(b.text, isKnownF).length > 0) continue;
+    for (const sentence of b.own.split(/(?<=[.!?])\s+/)) {
+      if (!/\b(compromised|exposed|infected|hit by|touché|compromis|exposé)/i.test(sentence)) continue;
+      if (/\b(not|no|never|pas|aucun|aucune|ni)\b[^.]{0,40}\b(compromised|exposed|infected|hit|touché|compromis|exposé)/i.test(sentence)) continue;
+      problems.push({ rule: "uncited-claim", message: `claims a compromise without citing a finding [F#]: "${sentence.trim().slice(0, 140)}"`, line: b.line });
     }
   }
 
@@ -90,4 +86,63 @@ export function checkAnswer(run: Run, text: string): CheckProblem[] {
     });
 
   return problems;
+}
+
+const NO_CLAIM_SECTION = /\b(coverage|couverture|sources?|gaps?|angles? morts?|non vérifié|not checked|limites|limits)\b/i;
+
+/**
+ * Paragraphs and list items of a Markdown answer, as raw text. `own` is what
+ * the block itself says; `text` adds its nested sub-items, whose citations
+ * ground it. Code fences and no-claim sections are left out.
+ */
+export function claimBlocks(lines: string[]): { line: number; own: string; text: string }[] {
+  const out: { line: number; own: string; text: string }[] = [];
+  let fence = false;
+  let skip = false;
+  const indent = (l: string) => l.length - l.trimStart().length;
+  const bullet = /^\s*([-*+]|\d+[.)])\s+/;
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i] as string;
+    if (/^\s*```/.test(l)) {
+      fence = !fence;
+      continue;
+    }
+    if (fence || !l.trim()) continue;
+    const h = /^#{1,6}\s+(.*)$/.exec(l);
+    if (h) {
+      skip = NO_CLAIM_SECTION.test(h[1] ?? "");
+      continue;
+    }
+    if (skip) continue;
+    if (bullet.test(l)) {
+      const own: string[] = [l.replace(bullet, "")];
+      const all: string[] = [...own];
+      const base = indent(l);
+      let j = i + 1;
+      for (; j < lines.length; j++) {
+        const n = lines[j] as string;
+        if (!n.trim()) break;
+        if (indent(n) <= base && (bullet.test(n) || /^#/.test(n))) break;
+        all.push(n.trim());
+        if (!bullet.test(n)) own.push(n.trim());
+        else break;
+      }
+      // Children (more-indented bullets) ground the parent too.
+      for (let k = j; k < lines.length; k++) {
+        const n = lines[k] as string;
+        if (!n.trim() || indent(n) <= base) break;
+        all.push(n.trim());
+      }
+      out.push({ line: i + 1, own: own.join(" "), text: all.join(" ") });
+      continue;
+    }
+    // A paragraph: consecutive non-bullet, non-heading lines.
+    const para: string[] = [l.trim()];
+    let j = i + 1;
+    while (j < lines.length && (lines[j] as string).trim() && !bullet.test(lines[j] as string) && !/^#/.test(lines[j] as string))
+      para.push((lines[j++] as string).trim());
+    out.push({ line: i + 1, own: para.join(" "), text: para.join(" ") });
+    i = j - 1;
+  }
+  return out;
 }

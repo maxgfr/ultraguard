@@ -42,7 +42,8 @@ proves that the verdict cites only real findings and hides none.
 Node 18 or newer, no install, no key. `<skill-dir>` is the directory holding
 this file; every `ultraguard …` below stands for
 `node <skill-dir>/scripts/ultraguard.mjs …`. Pick one absolute run directory
-per investigation and pass it as `--out` to every command.
+per investigation and pass it as `--out` to every command that works on a run
+(all but `doctor`).
 
 ```bash
 ultraguard doctor --probe                    # what this machine lets ultraguard see
@@ -50,6 +51,12 @@ ultraguard doctor --probe                    # what this machine lets ultraguard
 
 `gh` must be logged in (`gh auth status`). Cloud checks run only for the CLIs
 (`aws`, `gcloud`, `az`) already logged in.
+
+**GitHub API budget.** A sweep costs about 5 REST calls per repository you can
+push to (1,000 for 200 repositories) out of 5,000 an hour, and the search API
+allows 30 calls a minute. Run one sweep at a time, and keep some budget for
+judging the findings with `gh api` afterwards. A refused call is recorded as a
+coverage gap; `gh api rate_limit` shows what is left.
 
 ## Routing
 
@@ -103,13 +110,17 @@ Your job is what the engine cannot do:
 
 1. **Rule out false positives.** Read every COMPROMISED finding. A regex
    branch like `^chore/[a-z0-9]{8}$` can match a real branch. Open the
-   evidence (`gh api …`, the URL) and say so if it is the user's own work.
+   evidence (`gh api …`, the URL, the commit diff) and say so if it is the
+   user's own work. A finding stays in the data; your answer says it is a
+   false positive and cites it.
 2. **Resolve REVIEW findings.** A LaunchAgent written during the window is
    either an install the user made or persistence. Look (read-only: `ls -l`,
    `codesign -dv`, `plutil -p`, the package that owns it), then say which, and
    ask the user when only they can know.
-3. **Rank by what ran.** REPORT.md separates repositories where attacker code
-   ran in CI (rotate those secrets now) from probe-only ones.
+3. **Rank by what ran.** REPORT.md separates repositories where the attacker
+   made CI run from probe-only ones. Open the run or commit: a probe run that
+   only executed the repository's own workflows on a docs change leaked
+   nothing; a run of the attacker's script leaked everything it could read.
 4. **Name who acted.** When another account did it, say so: its owner must
    lock it, and the org admins must know.
 

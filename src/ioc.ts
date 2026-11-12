@@ -57,6 +57,7 @@ function validateIndicator(ind: Indicator, at: string, usable: Set<string>, push
       push(`${at}.value`, `invalid regex: ${(e as Error).message}`);
     }
   }
+  if (ind.weak !== undefined && typeof ind.weak !== "boolean") push(`${at}.weak`, "true or false");
   if (ind.type === "package" && !ind.ecosystem) push(`${at}.ecosystem`, "required for a package indicator");
   if (ind.type === "sha256" && !/^[a-f0-9]{64}$/i.test(ind.value)) push(`${at}.value`, "a sha256 is 64 hex characters");
   if (ind.type === "ip" && !/^[\d.]+$|^[a-f0-9:]+$/i.test(defang(ind.value))) push(`${at}.value`, "an IPv4 or IPv6 address");
@@ -129,6 +130,25 @@ export function matchers(iocs: IocFile, ...types: Indicator["type"][]): Matcher[
 export function windowStart(iocs: IocFile): string {
   const times = iocs.campaigns.map((c) => Date.parse(c.since)).filter((t) => !Number.isNaN(t));
   return new Date(times.length ? Math.min(...times) : Date.now() - 30 * 86_400_000).toISOString();
+}
+
+/**
+ * Where changes that match NO indicator (a new key, a fresh startup item, a
+ * webhook) are worth a look: from the window start, but never more than 30
+ * days back. An old campaign in the file must not turn a year of ordinary
+ * installs into REVIEW items.
+ */
+export function reviewStart(iocs: IocFile, now = new Date(), days = 30): string {
+  return new Date(Math.max(Date.parse(windowStart(iocs)), now.getTime() - days * 86_400_000)).toISOString();
+}
+
+/** Whether an event at `at` falls in the matcher's own campaign window. No date: yes. */
+export function inWindow(m: Matcher, at: string | undefined | null): boolean {
+  if (!at) return true;
+  const t = Date.parse(at);
+  if (Number.isNaN(t)) return true;
+  if (t < Date.parse(m.campaign.since)) return false;
+  return !m.campaign.until || t <= Date.parse(m.campaign.until) + 86_400_000;
 }
 
 /** A package indicator matches a locked (name, version) when the name matches and the version is listed (or none are). */

@@ -40,6 +40,12 @@ export interface Indicator {
   /** The literal, glob (file, workflow_file) or regex (when `regex` is true). Package: the package name. */
   value: string;
   regex?: boolean;
+  /**
+   * A name that ordinary files also have (`bundle.js`, `tasks.json`, `lint.yml`):
+   * a match alone is "suspicious", not "compromised". A matching sha256 still
+   * makes the file compromised.
+   */
+  weak?: boolean;
   /** The [S#] that states this indicator. Required: no IOC from memory. */
   source: string;
   /** package only: npm, pypi, crates.io, go, packagist, rubygems, vscode. */
