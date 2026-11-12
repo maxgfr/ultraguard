@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here, generated automatically from the [Conventional Commits](https://www.conventionalcommits.org/) by [semantic-release](https://github.com/semantic-release/semantic-release).
 
+# [1.3.0](https://github.com/maxgfr/ultraguard/compare/v1.2.0...v1.3.0) (2026-11-12)
+
+
+### Features
+
+* ClamAV and YARA passes, and tell probes from payloads ([#6](https://github.com/maxgfr/ultraguard/issues/6)) ([6e31160](https://github.com/maxgfr/ultraguard/commit/6e31160a41d9eda7598ed7d8f44cc8c2571cee14))
+
 # [1.2.0](https://github.com/maxgfr/ultraguard/compare/v1.1.1...v1.2.0) (2026-11-12)
 
 
