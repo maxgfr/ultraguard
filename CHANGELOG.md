@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented here, generated automatically from the [Conventional Commits](https://www.conventionalcommits.org/) by [semantic-release](https://github.com/semantic-release/semantic-release).
 
+# [1.5.0](https://github.com/maxgfr/ultraguard/compare/v1.4.0...v1.5.0) (2026-11-12)
+
+
+### Bug Fixes
+
+* **antivirus:** name the targets ClamAV cannot read, scan each file once ([d39c48f](https://github.com/maxgfr/ultraguard/commit/d39c48ffdc56304aed74b192f76ff02737564756))
+
+
+### Features
+
+* **rules:** keep ClamAV signatures and YARA-Forge rules current ([cb8db63](https://github.com/maxgfr/ultraguard/commit/cb8db635ff2bec1335969bd05ee9fb2b97880192))
+
 # [1.4.0](https://github.com/maxgfr/ultraguard/compare/v1.3.1...v1.4.0) (2026-11-12)
 
 
