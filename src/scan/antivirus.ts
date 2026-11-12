@@ -5,8 +5,9 @@
 // Targeted by default, because a whole home directory takes hours: the
 // programs startup items run, the files the other checks flagged, temporary
 // and shared folders, recent downloads and newly installed extensions.
-// `--av-full` scans every root. ultraguard never installs ClamAV nor updates
-// its signatures (read-only); stale signatures are a coverage gap.
+// `--av-full` scans every root. ultraguard never installs ClamAV; it refreshes
+// stale signatures before a scan (defenses.ts), and if that fails, they are a
+// coverage gap.
 import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { writeFileAtomic } from "../engine.js";
@@ -120,7 +121,7 @@ export async function antivirusPass(
       surface: "host",
       what: "a signature-based antivirus pass (known malware families)",
       why: "ClamAV is not installed",
-      fix: "brew install clamav (or apt install clamav), configure freshclam, run freshclam, then re-run scan host",
+      fix: "brew install clamav (or apt install clamav), then ultraguard rules update and re-run scan host",
     });
     return { findings, gaps, stats };
   }
@@ -129,7 +130,7 @@ export async function antivirusPass(
       surface: "host",
       what: `malware families newer than ${engine.signatures?.slice(0, 10)}`,
       why: `ClamAV's signatures are ${engine.ageDays} days old`,
-      fix: "freshclam, then re-run scan host",
+      fix: "ultraguard rules update (runs freshclam), then re-run scan host",
     });
 
   const targets = opts.full ?? avTargets(opts.home, opts.inventory, opts.flagged, opts.sinceMs);

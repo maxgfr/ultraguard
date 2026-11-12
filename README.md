@@ -17,7 +17,7 @@ indicators of compromise (IOCs) that cite it, and ultraguard sweeps for them:
   places, which credentials a stealer here would take, and what your AI coding
   agents run (hooks, MCP servers, base URLs, hidden characters in their
   instruction files). With ClamAV installed, a targeted antivirus pass runs
-  too; `ultraguard rules update` adds the YARA-Forge community rules, and YARA
+  too, with the YARA-Forge community rules; ultraguard keeps both current, and YARA
   rules a write-up publishes can be run over the same files;
 - your **lockfiles**: the campaign's packages, and the OSV and GHSA feeds
   through [package-checker.sh](https://github.com/maxgfr/package-checker.sh)
@@ -28,8 +28,9 @@ indicators of compromise (IOCs) that cite it, and ultraguard sweeps for them:
 Then the agent judges what an IOC cannot settle alone and writes a verdict
 per surface. `ultraguard check` refuses an answer that cites a finding that
 does not exist, claims a compromise without evidence, or calls a surface
-clean when it is not. ultraguard is read-only: it prints the remediation, the
-user runs it.
+clean when it is not. ultraguard is read-only on what it scans: it prints the
+remediation, the user runs it. The only thing it maintains itself is its
+antivirus (ClamAV signatures, YARA-Forge rules).
 
 ```bash
 npx skills add maxgfr/ultraguard
@@ -77,7 +78,7 @@ A run directory with:
 
 ```bash
 ultraguard doctor --probe                                  # what this machine lets it see
-ultraguard rules update                                    # YARA-Forge community rules, weekly
+ultraguard rules update                                    # ClamAV signatures (freshclam) and YARA-Forge rules, now
 ultraguard search "<query>" --out <run>                    # keyless web search, when the host has none
 ultraguard intel <url>... --out <run>                      # or --web-results <hits.json>
 ultraguard ioc set --file iocs.json --out <run>            # every indicator must cite a fetched [S#]
@@ -90,8 +91,10 @@ ultraguard watch plan|commit --out <run>                   # the routine mode
 
 `ultraguard --help` lists every flag. The bundle (`scripts/ultraguard.mjs`)
 runs on Node 18+ with no install. It needs the GitHub CLI logged in, plus the
-`aws`, `gcloud` or `az` CLIs for the cloud surface. Optional: ClamAV (with
-fresh signatures, `freshclam`) for the antivirus pass, and YARA for `--yara`.
+`aws`, `gcloud` or `az` CLIs for the cloud surface. Optional: ClamAV for the
+antivirus pass, and YARA for the community rules and `--yara`. ultraguard keeps
+both current itself: `scan host` runs `freshclam` and refreshes the YARA-Forge
+rules when they are older than 7 days (`--no-update` skips that).
 
 ## Routine mode
 

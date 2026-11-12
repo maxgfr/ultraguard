@@ -55,7 +55,9 @@ Both scan the same targeted list: startup items and the programs they run,
 the files the other checks flagged, files changed in the last 30 days in
 `/tmp`, `/var/tmp`, `/Users/Shared` and `~/Downloads`, and newly installed
 extensions. `--av-full` scans every `--roots` (or the whole home) instead.
-ClamAV signatures older than 7 days are a gap: run `freshclam`. ClamAV
+ClamAV signatures older than 7 days are refreshed first (`freshclam`, or
+`ultraguard rules update` at any time); only a refresh that failed leaves a
+gap, with freshclam's error. ClamAV
 knows common malware families; it rarely knows a supply-chain payload from
 this week, which is what the IOCs and the machine analysis are for.
 

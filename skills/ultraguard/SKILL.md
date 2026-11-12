@@ -1,6 +1,6 @@
 ---
 name: ultraguard
-description: AI antivirus and incident response. Checks whether a supply-chain attack, compromised-account campaign or malicious package reported on the web has reached the user. You search the threat-intel news and turn each article into indicators of compromise (IOCs) that cite it. ultraguard sweeps the user's GitHub account and every repository they can push to, this machine, their lockfiles and their cloud for them, read-only. You then judge the findings and write a cited verdict per surface with the remediation. Use only when the user explicitly asks for ultraguard or to check whether they were hacked, compromised or hit by an attack, e.g. "am I affected by this attack <url>", "check I wasn't hacked", "scan for the latest supply-chain attacks", "est-ce qu'on m'a hacké", "vérifie que je ne suis pas touché par cette attaque". Can also run as a routine (watch). Never changes anything on its own.
+description: AI antivirus and incident response. Checks whether a supply-chain attack, compromised-account campaign or malicious package reported on the web has reached the user. You search the threat-intel news and turn each article into indicators of compromise (IOCs) that cite it. ultraguard sweeps the user's GitHub account and every repository they can push to, this machine, their lockfiles and their cloud for them, read-only. You then judge the findings and write a cited verdict per surface with the remediation. Use only when the user explicitly asks for ultraguard or to check whether they were hacked, compromised or hit by an attack, e.g. "am I affected by this attack <url>", "check I wasn't hacked", "scan for the latest supply-chain attacks", "est-ce qu'on m'a hacké", "vérifie que je ne suis pas touché par cette attaque". Can also run as a routine (watch). Never changes the user's accounts, code or files.
 license: MIT
 metadata:
   version: 1.4.0
@@ -20,7 +20,8 @@ proves that the verdict cites only real findings and hides none.
 - **I0 Read-only.** Never delete a branch, close a PR, revoke a key, rotate a
   secret or kill a process yourself. `REMEDIATION.md` lists the commands; the
   user runs them. Opening an issue (`--notify-issue`) happens only when the
-  user configured it.
+  user configured it. The one thing ultraguard does maintain itself is its
+  antivirus: ClamAV's signatures and the YARA-Forge rules (see Antivirus).
 - **I1 No IOC from memory.** Every indicator cites an `[S#]` fetched in this
   run with `intel`; `ioc set` refuses one that does not. Copy indicators
   verbatim from the source, and re-arm defanged ones (`1.2.3[.]4` becomes
@@ -112,12 +113,15 @@ malicious packages (compromised) and known CVEs (one info line, the list in
 the programs startup items run, the files the other checks flagged, recent
 files in temporary and shared folders and Downloads, new extensions.
 `--av-full` scans every root instead (hours on a large home), `--no-av` skips
-it. Signatures older than 7 days are a coverage gap (`freshclam` updates
-them; ultraguard never does), and its PUA detections are suspicious, not
-compromised. `ultraguard rules update` installs the YARA-Forge community rules
-(5,000+ rules, refreshed weekly) in ultraguard's state folder; `scan host`
-then runs them by default, and each rule's own score sets the severity
-(`--no-rules` skips them). When a source publishes YARA rules, save them
+it. Its PUA detections are suspicious, not compromised. You manage the
+antivirus, not the user: `scan host` first runs `freshclam` when ClamAV's
+signatures are older than 7 days, and installs or refreshes the YARA-Forge
+community rules (5,000+ rules, released weekly, kept in ultraguard's state
+folder) the same way; `ultraguard rules update` refreshes both now. Never
+tell the user to run `freshclam`: run `rules update` yourself, and only if it
+fails, report its error as the gap. Each YARA-Forge rule's own score sets the
+severity (`--no-rules` skips them, `--no-update` keeps the databases as
+they are). When a source publishes YARA rules, save them
 under `<run>/yara/` and pass `--yara <run>/yara --yara-source S#`: they run
 over the same targets, and their matches cite that source.
 
