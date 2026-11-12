@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here, generated automatically from the [Conventional Commits](https://www.conventionalcommits.org/) by [semantic-release](https://github.com/semantic-release/semantic-release).
 
+# [1.2.0](https://github.com/maxgfr/ultraguard/compare/v1.1.1...v1.2.0) (2026-11-12)
+
+
+### Features
+
+* analyse the machine beyond the IOCs ([#5](https://github.com/maxgfr/ultraguard/issues/5)) ([8dc66c0](https://github.com/maxgfr/ultraguard/commit/8dc66c09e43fe22a7676ccd6b312f744c2fd2be7))
+
 ## [1.1.1](https://github.com/maxgfr/ultraguard/compare/v1.1.0...v1.1.1) (2026-11-12)
 
 
