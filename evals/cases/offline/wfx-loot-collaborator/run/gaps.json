@@ -1,0 +1,4 @@
+[
+  { "surface": "github:account", "what": "the account security log (sign-ins, token creation, OAuth grants)", "why": "GitHub exposes it to the web UI, not to a personal token", "fix": "open https://github.com/settings/security-log" },
+  { "surface": "cloud", "what": "AWS", "why": "the aws CLI is not installed" }
+]

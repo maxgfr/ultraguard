@@ -1,0 +1,7 @@
+[
+  { "surface": "github:account", "scanned": true, "stats": { "prsSearched": 40 }, "startedAt": "2026-11-12T20:00:00Z" },
+  { "surface": "github:repos", "scanned": true, "stats": { "repos": 120 }, "startedAt": "2026-11-12T20:00:00Z" },
+  { "surface": "host", "scanned": true, "stats": { "files": 200000 }, "startedAt": "2026-11-12T20:02:00Z" },
+  { "surface": "deps", "scanned": true, "stats": { "lockfiles": 30 }, "startedAt": "2026-11-12T20:02:10Z" },
+  { "surface": "cloud", "scanned": false, "stats": {}, "startedAt": "2026-11-12T20:02:20Z" }
+]

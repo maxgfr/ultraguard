@@ -1,0 +1,39 @@
+{
+  "campaigns": [
+    {
+      "id": "wfx-loot-2026-11",
+      "title": "wfx-loot: compromised GitHub accounts push a CI secret stealer",
+      "sources": ["S1"],
+      "since": "2026-11-10T12:45:00Z",
+      "indicators": [
+        { "type": "branch", "value": "wfx-docs", "source": "S1" },
+        { "type": "branch", "value": "^chore/[a-z0-9]{8}$", "regex": true, "source": "S1", "note": "attacker throwaway branch; legit branches can match, so judge with the run title" },
+        { "type": "branch", "value": "^ci-check-[0-9]{4}$", "regex": true, "source": "S1" },
+        { "type": "pr_title", "value": "^docs: (add )?dependency audit notes$", "regex": true, "source": "S1" },
+        { "type": "commit_message", "value": "ci: refresh build cache", "source": "S1" },
+        { "type": "commit_message", "value": "ci: restore", "source": "S1" },
+        { "type": "commit_message", "value": "chore: add ci helper", "source": "S1" },
+        { "type": "commit_message", "value": "ci: cleanup", "source": "S1" },
+        { "type": "commit_message", "value": "chore: add dependency audit workflow", "source": "S1" },
+        { "type": "commit_message", "value": "^docs: (add )?dependency audit notes$", "regex": true, "source": "S1" },
+        { "type": "workflow_file", "value": ".github/workflows/build-audit-*.yml", "source": "S1" },
+        { "type": "file", "value": ".ci-*.sh", "source": "S1" },
+        { "type": "string", "value": "WF_CTOKEN", "source": "S1" },
+        { "type": "string", "value": "WF_CALLBACK", "source": "S1" },
+        { "type": "string", "value": "b42d70a7aab9140ca19e8249", "source": "S1" },
+        { "type": "string", "value": "<!--WFX-BEGIN-->", "source": "S1" },
+        { "type": "ip", "value": "194.150.166[.]244", "source": "S1" },
+        { "type": "ip", "value": "18.143.168[.]96", "source": "S1" },
+        { "type": "ip", "value": "193.32.204[.]199", "source": "S1" },
+        { "type": "sha256", "value": "89695abb392d5cfd4972672961e644bb46baa98aa1ed7173c2a2816c762735cf", "source": "S1" },
+        { "type": "cache_key_prefix", "value": "wfx-", "source": "S1" },
+        { "type": "artifact_prefix", "value": "wfx-loot", "source": "S1" },
+        { "type": "azure_fedcred_prefix", "value": "wfx-ci-", "source": "S1" },
+        { "type": "package", "ecosystem": "packagist", "value": "digitalelvis/neuronai-studio", "versions": ["3.14.3"], "source": "S1" },
+        { "type": "package", "ecosystem": "go", "value": "github.com/onuragtas/docker-env", "versions": ["v1.0.278", "v1.0.280"], "source": "S1" },
+        { "type": "file", "value": "public/fonts/fa-solid-400.woff2", "source": "S1", "note": "GhostActions: JavaScript disguised as a font" },
+        { "type": "cron_tag", "value": "#ghc2", "source": "S1" }
+      ]
+    }
+  ]
+}

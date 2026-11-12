@@ -1,0 +1,75 @@
+{
+  "name": "ultraguard",
+  "version": "0.0.0",
+  "description": "AI antivirus agent skill: turns threat-intel news (supply-chain campaigns, compromised accounts, malicious packages) into IOCs and sweeps your GitHub account and orgs, your machine, your lockfiles and your cloud, read-only, with a cited verdict. A skills.sh agent skill.",
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "bin": {
+    "ultraguard": "scripts/ultraguard.mjs"
+  },
+  "files": [
+    "skills",
+    "scripts",
+    "src",
+    "assets"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup && webindex skill copy",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome ci .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "check:build": "tsup && webindex skill copy && git diff --exit-code -- scripts/ultraguard.mjs skills/ultraguard/scripts/ultraguard.mjs && webindex skill check && webindex skill bundle && webindex skill vendor --check",
+    "eval": "node evals/run.mjs --suite offline",
+    "eval:network": "node evals/run.mjs --suite network",
+    "release": "semantic-release",
+    "verify:bundle": "webindex skill bundle",
+    "verify:engine": "webindex skill check && webindex skill vendor --check"
+  },
+  "keywords": [
+    "skills",
+    "agent-skill",
+    "skills.sh",
+    "security",
+    "incident-response",
+    "threat-intel",
+    "ioc",
+    "supply-chain",
+    "github-actions",
+    "antivirus",
+    "ai-agent"
+  ],
+  "license": "MIT",
+  "author": "maxgfr",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/maxgfr/ultraguard"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.6.4",
+    "@maxgfr/webindex": "https://codeload.github.com/maxgfr/webindex/tar.gz/fad60342d7f55b9e15a3bd5d07d01bf331ceae10",
+    "@semantic-release/changelog": "^7.0.0",
+    "@semantic-release/exec": "^7.1.0",
+    "@semantic-release/git": "^11.0.1",
+    "@types/node": "^20.19.43",
+    "@vitest/coverage-v8": "^4.1.11",
+    "semantic-release": "^25.0.9",
+    "tsup": "^8.5.1",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ],
+    "overrides": {
+      "esbuild": "0.28.1"
+    }
+  }
+}

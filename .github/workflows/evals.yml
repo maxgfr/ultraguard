@@ -1,0 +1,34 @@
+name: Evals (network)
+
+# Live fetches of real threat-intel write-ups: proof that intel still extracts
+# their IOC sections. Upstream pages change and some refuse datacenter
+# addresses, so this is report-only: weekly and on dispatch, never gating a PR.
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  network-evals:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - name: Network evals (report-only)
+        run: |
+          set -o pipefail
+          pnpm run eval:network 2>&1 | tee eval-network-report.txt
+      - name: Publish the report to the run summary
+        if: always()
+        run: |
+          { echo '```'; cat eval-network-report.txt 2>/dev/null || echo "no report produced"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,5 @@
+{
+  "description": "A collaborator's stolen token ran the wfx-loot stealer in an org repo; the user's own account is clean; a startup item needs review.",
+  "verdicts": { "github:account": "CLEAN", "github:repos": "COMPROMISED", "host": "REVIEW", "deps": "CLEAN", "cloud": "UNKNOWN" },
+  "badRules": ["dangling", "uncited-claim", "wrong-clean", "no-coverage"]
+}

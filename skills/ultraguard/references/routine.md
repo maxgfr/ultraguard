@@ -1,0 +1,47 @@
+# Running ultraguard as a routine
+
+`watch` is the on-demand loop, scoped to what is new since the last run. Its
+state lives in `--state` (default `~/.ultraguard`, or `ULTRAGUARD_HOME`): the
+sources already handled, the campaigns already seen, and the findings already
+alerted.
+
+```bash
+# 1. Search the news as usual, save the hits, then:
+ultraguard watch plan --web-results <hits.json> --out <run>
+#    NOTHING NEW: stop here and say so in one line.
+#    Otherwise it fetched the new sources. Every --resweep-days (default 7) it
+#    also writes <run>/iocs.carried.json so known campaigns are swept again.
+# 2. Fill <run>/iocs.json for the new sources (skip it if there are none):
+ultraguard ioc set --file <run>/iocs.json --out <run>      # carried campaigns are merged in
+# 3.
+ultraguard sweep --out <run>
+# 4.
+ultraguard watch commit --out <run>
+#    exit 0: nothing new. 10: ALERT (new findings). 20: a surface could not be scanned.
+```
+
+`watch commit` alerts only on findings it never alerted before, so a
+compromise already reported does not alert again every day.
+
+Opt-in notification: `watch commit --notify-issue owner/private-repo` opens a
+GitHub issue with the report when there is an alert. It writes to GitHub, so
+use it only when the user asked for it and named the repository. Prefer a
+private repository: the report names repositories and accounts.
+
+## Where to run it
+
+| Routine | Sees | Setup |
+|---|---|---|
+| Claude Code cloud routine (`/schedule`, daily) | web, GitHub, cloud if credentials are present | the prompt below; the host and deps surfaces are UNKNOWN, since a cloud runner is not the user's machine |
+| Local: launchd or cron running Claude Code headless | everything, this machine included | a LaunchAgent that runs `claude -p "<the prompt below>"` once a day |
+| `/loop` in an open session | everything, while the session lives | `/loop 24h <the prompt below>` |
+
+The prompt for any of them:
+
+> Run ultraguard in routine mode: search the threat-intel news of the last 3
+> days, then `watch plan`, extract IOCs for the new sources, `ioc set`,
+> `sweep`, `watch commit`. Reply in one line when there is nothing new.
+> On an alert, give the verdicts and the first remediation steps.
+
+Never schedule a routine for the user unprompted. Give them these lines and
+let them choose.

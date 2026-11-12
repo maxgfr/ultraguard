@@ -1,0 +1,5 @@
+{
+  "description": "intel still fetches and extracts the wfx-loot write-up with its IOC section intact",
+  "url": "https://www.aikido.dev/blog/compromised-github-accounts-push-ci-secret-stealer-to-tens-of-thousands-of-repositories",
+  "mustContain": ["wfx-docs", "docs: dependency audit notes", "194.150.166[.]244"]
+}
