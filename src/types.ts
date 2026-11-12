@@ -11,7 +11,7 @@ export interface Source {
   file?: string;
   /** Why the fetch failed, when it did. A source that failed cannot ground an IOC. */
   error?: string;
-  origin: "web" | "osv" | "manual";
+  origin: "web" | "osv" | "manual" | "rules";
 }
 
 export const INDICATOR_TYPES = [

@@ -49,6 +49,10 @@ export interface HostScanOptions {
   yaraSource?: string;
   /** Where the scanners' target lists are written (the run directory). */
   listDir?: string;
+  /** Installed community rules (YARA-Forge) and the run's [S#] for them. */
+  community?: { source: string; compiled?: string; label: string; sourceId?: string; ageDays: number };
+  /** yara is installed but no community rules are: say how to get them. */
+  communityMissing?: boolean;
 }
 
 const MAX_HASH_BYTES = 50 * 1024 * 1024;
@@ -159,6 +163,21 @@ export async function scanHost(
       why: "permission denied (macOS privacy protection or another user's files)",
     });
   if (hashes.size) gaps.push({ surface: "host", what: "sha256 of every file", why: "only files named like an IOC and startup items are hashed" });
+
+  // 1b. File names with a line break or another control character: a trick to hide from tools and lists.
+  let oddNames = 0;
+  for (const p of tree.files) {
+    if (!/[\x00-\x1f\x7f]/.test(basename(p)) || oddNames >= 50) continue;
+    oddNames++;
+    findings.push({
+      surface: "host",
+      severity: "suspicious",
+      subject: p,
+      title: `File name with a control character (line break or similar), a trick to hide from tools: ${JSON.stringify(basename(p))} in ${p.slice(0, p.length - basename(p).length)}`,
+      evidence: { kind: "file", ref: JSON.stringify(p) },
+      key: `host|odd-name|${p}`,
+    });
+  }
 
   // 2. VS Code tasks that run when a folder opens: how GhostActions re-runs its stealer.
   for (const dir of tree.vscodeDirs) {
@@ -466,19 +485,44 @@ export async function scanHost(
     gaps.push(...av.gaps);
     Object.assign(result.stats, av.stats);
   } else if (opts.av === "off") gaps.push({ surface: "host", what: "the antivirus pass", why: "--no-av" });
+  const full = opts.av === "full";
+  const yaraTargets = () => (full ? (opts.roots ?? [home]) : avTargets(home, inventory, flagged, sinceMs));
   if (opts.yara) {
-    const full = opts.av === "full";
-    const y = await yaraPass(runner, {
-      rules: opts.yara,
-      targets: full ? (opts.roots ?? [home]) : avTargets(home, inventory, flagged, sinceMs),
-      recursive: full,
-      listDir,
-      source: opts.yaraSource,
-    });
+    const y = await yaraPass(runner, { rules: opts.yara, targets: yaraTargets(), recursive: full, listDir, source: opts.yaraSource });
     findings.push(...y.findings);
     gaps.push(...y.gaps);
     Object.assign(result.stats, y.stats);
   }
+  // Community rules (YARA-Forge), when installed with `ultraguard rules update`.
+  if (opts.community && !opts.skipLive) {
+    const c = opts.community;
+    const y = await yaraPass(runner, {
+      rules: c.compiled ?? c.source,
+      compiled: !!c.compiled,
+      community: true,
+      label: c.label,
+      targets: yaraTargets(),
+      recursive: full,
+      listDir,
+      source: c.sourceId,
+    });
+    findings.push(...y.findings);
+    gaps.push(...y.gaps);
+    Object.assign(result.stats, y.stats);
+    if (c.ageDays > 14)
+      gaps.push({
+        surface: "host",
+        what: `threats newer than the ${c.label} rules`,
+        why: `the rules are ${c.ageDays} days old`,
+        fix: "ultraguard rules update",
+      });
+  } else if (opts.communityMissing && !opts.skipLive)
+    gaps.push({
+      surface: "host",
+      what: "community YARA rules (thousands of malware and hacking-tool families)",
+      why: "not installed",
+      fix: "ultraguard rules update (needs yara; yarac makes scans faster)",
+    });
   gaps.push({
     surface: "host",
     what: "login items, browser extensions and kernel or system extensions",

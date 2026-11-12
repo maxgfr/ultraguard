@@ -22,6 +22,22 @@ describe("clamav", () => {
     expect(parseClamOutput("/a/b: Eicar-Test-Signature FOUND\n/c: OK\nLibClamAV Warning: x\n")).toEqual([{ path: "/a/b", signature: "Eicar-Test-Signature" }]);
   });
 
+  it("a PUA detection is suspicious, not a compromise, and odd file names go as arguments", async () => {
+    const dir = tmp("ug-pua-");
+    const calls: string[][] = [];
+    const runner = async (cmd: string, args: string[]) => {
+      calls.push([cmd, ...args]);
+      if (cmd === "clamdscan") return { ok: false, status: 2, stdout: "", stderr: "" };
+      if (args[0] === "--version") return { ok: true, status: 0, stdout: "ClamAV 1.5.4/27999/Wed Nov 11 08:00:00 2026\n", stderr: "" };
+      return { ok: false, status: 1, stdout: "/x/tool: PUA.Osx.Tool.Netcat FOUND\n", stderr: "" };
+    };
+    const r = await antivirusPass(runner, { home: dir, inventory: inv(), flagged: [], sinceMs: 0, listDir: dir, now: NOW, full: ["/a", "/b\nc"] });
+    expect(r.findings.map((f) => f.severity)).toEqual(["suspicious"]);
+    expect(r.gaps).toEqual([]);
+    expect(calls.at(-1)).toContain("--detect-pua=yes");
+    expect(calls.at(-1)?.at(-1)).toBe("/b\nc");
+  });
+
   it("turns detections into compromised findings and stale signatures into a gap; warnings are not errors", async () => {
     const dir = tmp("ug-av-");
     const calls: string[][] = [];
@@ -76,5 +92,51 @@ describe("yara", () => {
     const runner = async () => ({ ok: true, status: 0, stdout: `A /p/evil.js\nA ${join(dir, "a.yar")}\n`, stderr: "" });
     const r = await yaraPass(runner, { rules: dir, targets: ["/p"], listDir: dir, source: "S2" });
     expect(r.findings.map((f) => [f.title, f.source])).toEqual([["YARA rule A matches /p/evil.js", "S2"]]);
+  });
+});
+
+describe("community rules", () => {
+  const line =
+    'RUSSIANPANDA_Supperbackdoor [description="Detects Supper backdoor",author="RussianPanda",reference="https://x/y?a=1,b",score =75,quality =85,tags=""] /p/update.bin';
+  it("reads yara's metadata line, integers printed as `score =75`", () => {
+    expect(parseYaraOutput(line)).toEqual([{ rule: "RUSSIANPANDA_Supperbackdoor", path: "/p/update.bin", score: 75, description: "Detects Supper backdoor" }]);
+  });
+
+  it("a community rule at the default score is a compromise, a hunting rule only suspicious, and both cite the rule set", async () => {
+    const dir = tmp("ug-comm-");
+    const out = `${line}\nHUNT_Generic_Thing [description="hunting",score =60] /p/other.js\n`;
+    const calls: string[][] = [];
+    const runner = async (_cmd: string, args: string[]) => {
+      calls.push(args);
+      return { ok: true, status: 0, stdout: out, stderr: "error scanning /x: could not open file\n" };
+    };
+    const r = await yaraPass(runner, {
+      rules: join(dir, "core.yarc"),
+      compiled: true,
+      community: true,
+      label: "YARA-Forge core",
+      targets: ["/p"],
+      listDir: dir,
+      source: "S3",
+    });
+    expect(r.findings.map((f) => [f.severity, f.source])).toEqual([
+      ["compromised", "S3"],
+      ["suspicious", "S3"],
+    ]);
+    expect(r.findings[0]?.title).toBe("YARA-Forge core rule RUSSIANPANDA_Supperbackdoor matches /p/update.bin (score 75): Detects Supper backdoor");
+    expect(calls[0]).toContain("-C");
+    expect(r.gaps.map((g) => g.what)).toEqual(["1 YARA-Forge core target(s)"]);
+  });
+
+  it("scans a file whose name holds a line break on its own, outside the list", async () => {
+    const dir = tmp("ug-nl-");
+    const calls: string[][] = [];
+    const runner = async (_cmd: string, args: string[]) => {
+      calls.push(args);
+      return { ok: true, status: 0, stdout: "", stderr: "" };
+    };
+    await yaraPass(runner, { rules: join(dir, "r.yarc"), compiled: true, targets: ["/ok", "/bad\nname"], listDir: dir });
+    expect(calls).toHaveLength(2);
+    expect(calls[1]?.at(-1)).toBe("/bad\nname");
   });
 });

@@ -20,13 +20,12 @@ export type OsvBatch = (
 
 export const defaultOsvBatch: OsvBatch = async (queries) => {
   try {
-    const res = (await httpJson(
-      "POST",
-      "https://api.osv.dev/v1/querybatch",
-      { queries },
-      { timeoutMs: 60_000, retries: 2, maxBytes: 32 * 1024 * 1024 },
-    )) as any;
-    return { ok: true, results: res?.results ?? [] };
+    // httpJson answers { ok, status, data }: the batch results are in data.
+    const res = await httpJson("POST", "https://api.osv.dev/v1/querybatch", { queries }, { timeoutMs: 60_000, retries: 2, maxBytes: 32 * 1024 * 1024 });
+    if (!res.ok || !Array.isArray(res.data?.results)) return { ok: false, results: [], error: res.error ?? `HTTP ${res.status}` };
+    if (res.data.results.length !== queries.length)
+      return { ok: false, results: [], error: `OSV answered ${res.data.results.length} results for ${queries.length} queries` };
+    return { ok: true, results: res.data.results };
   } catch (e) {
     return { ok: false, results: [], error: (e as Error).message };
   }
