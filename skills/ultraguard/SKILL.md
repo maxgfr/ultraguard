@@ -3,7 +3,7 @@ name: ultraguard
 description: AI antivirus and incident response. Checks whether a supply-chain attack, compromised-account campaign or malicious package reported on the web has reached the user. You search the threat-intel news and turn each article into indicators of compromise (IOCs) that cite it. ultraguard sweeps the user's GitHub account and every repository they can push to, this machine, their lockfiles and their cloud for them, read-only. You then judge the findings and write a cited verdict per surface with the remediation. Use only when the user explicitly asks for ultraguard or to check whether they were hacked, compromised or hit by an attack, e.g. "am I affected by this attack <url>", "check I wasn't hacked", "scan for the latest supply-chain attacks", "est-ce qu'on m'a hacké", "vérifie que je ne suis pas touché par cette attaque". Can also run as a routine (watch). Never changes anything on its own.
 license: MIT
 metadata:
-  version: 1.3.1
+  version: 1.4.0
 ---
 
 # ultraguard: the AI is the antivirus

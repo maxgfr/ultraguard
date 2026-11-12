@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented here, generated automatically from the [Conventional Commits](https://www.conventionalcommits.org/) by [semantic-release](https://github.com/semantic-release/semantic-release).
 
+# [1.4.0](https://github.com/maxgfr/ultraguard/compare/v1.3.1...v1.4.0) (2026-11-12)
+
+
+### Bug Fixes
+
+* fifteen defects found by a code review, each with a regression test ([761e310](https://github.com/maxgfr/ultraguard/commit/761e310d076ca0234f7e33392948c81f57e81d5f))
+* login items gap names what it takes to read them ([b5eed97](https://github.com/maxgfr/ultraguard/commit/b5eed97c7026759f37556e7083d33553fb314623))
+* test file names for control characters without a control-character regex ([29ccecf](https://github.com/maxgfr/ultraguard/commit/29ccecf42a6bfa0741dd39e02ca9f9a078733064))
+
+
+### Features
+
+* AI agent configs, git hooks, npm cache, activity log, stricter check ([3762bba](https://github.com/maxgfr/ultraguard/commit/3762bba867e95946e92d21362a65e5436a5e510a))
+* community YARA rules (YARA-Forge), ClamAV PUA, and an OSV fix ([c4b78b6](https://github.com/maxgfr/ultraguard/commit/c4b78b61a5125108219fa4ba771109d392a8b296))
+* deps advisories through the vendored package-checker.sh ([318225e](https://github.com/maxgfr/ultraguard/commit/318225e747677f77976f5537fe9bb6adec1af018))
+
 ## [1.3.1](https://github.com/maxgfr/ultraguard/compare/v1.3.0...v1.3.1) (2026-11-12)
 
 
