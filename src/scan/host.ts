@@ -12,9 +12,13 @@ import { basename, join } from "node:path";
 import { type Matcher, matchers, reviewStart } from "../ioc.js";
 import type { Runner } from "../runner.js";
 import type { Finding, Gap, IocFile, SurfaceResult } from "../types.js";
+import { scanAgents } from "./agents.js";
 import {
   SHELL_STARTUP,
   configFindings,
+  gitHookFindings,
+  interpretedScript,
+  npmCacheHits,
   credentialInventory,
   type HostInventory,
   processFindings,
@@ -168,7 +172,8 @@ export async function scanHost(
   // 1b. File names with a line break or another control character: a trick to hide from tools and lists.
   let oddNames = 0;
   for (const p of tree.files) {
-    if (!/[\x00-\x1f\x7f]/.test(basename(p)) || oddNames >= 50) continue;
+    // "Icon\r" is how macOS stores a custom folder icon: the one legitimate control-character name.
+    if (!/[\x00-\x1f\x7f]/.test(basename(p)) || basename(p) === "Icon\r" || oddNames >= 50) continue;
     oddNames++;
     findings.push({
       surface: "host",
@@ -241,7 +246,10 @@ export async function scanHost(
       const item: StartupItem = { path: p, mtime: st.mtime.toISOString(), command, executable, signals: riskSignals(command, executable, home) };
       // No program key (a /etc/cron.d file, a shell snippet): every non-comment line is a command.
       if (!command) for (const l of text.split("\n").slice(0, 2000)) if (l.trim() && !/^\s*#/.test(l)) item.signals.push(...riskSignals(l, undefined, home));
-      item.signals = [...new Set(item.signals)];
+      // `/bin/bash script.sh` runs the script: read it, an Apple-signed bash says nothing.
+      const interp = interpretedScript(command, executable, home);
+      if (interp.script) item.script = interp.script;
+      item.signals = [...new Set([...item.signals, ...interp.signals])];
       if (executable?.startsWith("/")) {
         item.exists = existsSync(executable);
         if (!item.exists) item.signals.push("points to a program that no longer exists");
@@ -291,6 +299,19 @@ export async function scanHost(
     }
   }
   result.stats.startupItems = startupCount;
+
+  // 4a. AI coding agents: hooks, MCP servers, base URLs, instruction files (home and every clone).
+  const agents = scanAgents(home, tree.gitDirs, { content: M.content, pkg: matchers(iocs, "package") });
+  findings.push(...agents.findings);
+  inventory.agents = agents.inventory;
+  result.stats.agentConfigs = agents.inventory.configs.length;
+  result.stats.mcpServers = agents.inventory.mcpServers.length;
+  // 4b. Git hooks in local clones, and npm's download cache for campaign packages.
+  findings.push(...gitHookFindings(tree.gitDirs, home, sinceMs));
+  const npmPkgs = matchers(iocs, "package")
+    .filter((x) => (x.indicator.ecosystem ?? "").toLowerCase() === "npm")
+    .map((x) => ({ name: x.indicator.value, versions: x.indicator.versions, source: x.indicator.source, campaign: x.campaign.id, value: x.indicator.value }));
+  findings.push(...npmCacheHits(home, npmPkgs));
 
   // 4. Shell startup files (risk signals), and package-manager, git and SSH settings.
   const rc = shellStartupFindings(home);

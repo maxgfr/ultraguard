@@ -18,6 +18,8 @@ export interface StartupItem {
   /** The program and its arguments, as the item runs them. */
   command: string;
   executable?: string;
+  /** The script an interpreter launcher runs (`/bin/bash /path/script.sh`). */
+  script?: string;
   exists?: boolean;
   signer?: string;
   team?: string;
@@ -30,6 +32,8 @@ export interface HostInventory {
   credentials: { path: string; kind: string }[];
   recentExtensions: { path: string; id: string; installed: string }[];
   shellStartup: { path: string; line: number; signal: string; text: string }[];
+  /** AI coding agents: configs read, commands they run, MCP servers they start. */
+  agents?: import("./agents.js").AgentInventory;
 }
 
 /** Commands that fetch and run code, open a reverse shell, or decode a payload. */
@@ -90,12 +94,12 @@ const KNOWN_HIDDEN = new Set([
   ".m2",
 ]);
 
-export function riskSignals(rawCommand: string, executable: string | undefined, home: string): string[] {
+export function riskSignals(rawCommand: string, executable: string | undefined, home: string, opts: { location?: boolean } = {}): string[] {
   // Bounded input: these patterns scan a line more than once, and a 2 MB line must not stall the scan.
   const command = rawCommand.length > 4000 ? rawCommand.slice(0, 4000) : rawCommand;
   const out: string[] = [];
   for (const [re, label] of STRONG) if (re.test(command)) out.push(label);
-  for (const p of [executable, ...command.split(/\s+/)].filter(Boolean) as string[]) {
+  for (const p of opts.location === false ? [] : ([executable, ...command.split(/\s+/)].filter(Boolean) as string[])) {
     if (TEMP_PATH.test(p)) {
       out.push(`runs from a temporary or shared folder (${p})`);
       break;
@@ -410,5 +414,145 @@ export function credentialInventory(home: string, envFiles: string[]): HostInven
   } catch {}
   if (existsSync(join(home, ".gnupg/private-keys-v1.d"))) out.push({ path: join(home, ".gnupg"), kind: "GPG private keys" });
   for (const p of envFiles.slice(0, 200)) out.push({ path: p, kind: ".env file (project secrets)" });
+  return out;
+}
+
+/**
+ * npm's download cache: every tarball npm fetched, with the time it fetched it.
+ * A malicious version installed, then removed from the lockfile, is still here,
+ * and the date says when the machine ran its install scripts.
+ */
+export function npmCacheHits(home: string, pkgs: { name: string; versions?: string[]; source: string; campaign: string; value: string }[]): NewFinding[] {
+  const dir = join(home, ".npm/_cacache/index-v5");
+  if (!pkgs.length || !existsSync(dir)) return [];
+  // Tarball URLs look like https://registry.npmjs.org/<name>/-/<basename>-<version>.tgz (scoped: @s%2fname or @s/name).
+  const wanted = pkgs.map((p) => ({ ...p, base: p.name.split("/").pop() as string }));
+  const out: NewFinding[] = [];
+  const stack = [dir];
+  let files = 0;
+  while (stack.length && files < 200_000) {
+    const d = stack.pop() as string;
+    let names: string[] = [];
+    try {
+      names = readdirSync(d);
+    } catch {
+      continue;
+    }
+    for (const n of names) {
+      const p = join(d, n);
+      let st: ReturnType<typeof statSync>;
+      try {
+        st = statSync(p);
+      } catch {
+        continue;
+      }
+      if (st.isDirectory()) {
+        stack.push(p);
+        continue;
+      }
+      files++;
+      if (st.size > 4 * 1024 * 1024) continue;
+      let text: string;
+      try {
+        text = readFileSync(p, "utf8");
+      } catch {
+        continue;
+      }
+      if (!text.includes(".tgz")) continue;
+      for (const w of wanted) {
+        if (!text.includes(`/-/${w.base}-`)) continue;
+        for (const line of text.split("\n")) {
+          const m = /"key":"[^"]*?(https:\/\/[^"]+\/-\/([^"/]+)-(\d[^"/]*)\.tgz)"/.exec(line);
+          if (!m || m[2] !== w.base) continue;
+          const url = decodeURIComponent(m[1] as string);
+          if (!url.includes(`/${w.name}/-/`) && !url.includes(`/${w.name.replace("/", "%2f")}/-/`)) continue;
+          const version = m[3] as string;
+          if (w.versions?.length && !w.versions.some((v) => v.replace(/^v/, "") === version)) continue;
+          const time = /"time":(\d+)/.exec(line)?.[1];
+          const at = time ? new Date(Number(time)).toISOString() : undefined;
+          out.push({
+            surface: "host",
+            severity: "exposed",
+            subject: "~/.npm/_cacache",
+            title: `npm downloaded ${w.name}@${version}${at ? ` on ${at.slice(0, 16).replace("T", " ")}` : ""}, named by the campaign: its install scripts likely ran on this machine`,
+            at,
+            campaign: w.campaign,
+            source: w.source,
+            indicator: { type: "package", value: w.value },
+            evidence: { kind: "file", ref: p, excerpt: url },
+            key: `host|npm-cache|${w.name}|${version}`,
+          });
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/** Interpreters whose first file argument is the code that really runs. */
+const INTERPRETERS = /^(sh|bash|zsh|dash|ksh|fish|python[\d.]*|node|perl|ruby|osascript|deno|bun)$/;
+
+/**
+ * A startup item that runs `/bin/bash script.sh` is signed by Apple and tells
+ * nothing: the script is the program. Read it (bounded) and give its signals.
+ */
+export function interpretedScript(command: string, executable: string | undefined, home: string): { script?: string; signals: string[] } {
+  const parts = command.split(/\s+/).filter(Boolean);
+  const exe = basename(executable ?? parts[0] ?? "");
+  if (!INTERPRETERS.test(exe)) return { signals: [] };
+  const script = parts.slice(1).find((a) => a.startsWith("/") && existsSync(a) && statSync(a).isFile());
+  if (!script) return { signals: [] };
+  let text = "";
+  try {
+    if (statSync(script).size <= 256 * 1024) text = readFileSync(script, "utf8");
+  } catch {}
+  const signals = new Set<string>(riskSignals("", script, home).map((s) => `its script ${s}`));
+  for (const l of text.split("\n").slice(0, 5000))
+    if (l.trim() && !/^\s*#/.test(l)) for (const s of riskSignals(l, undefined, home)) signals.add(`its script ${basename(script)} ${s}`);
+  return { script, signals: [...signals] };
+}
+
+/** Hook managers whose generated hooks are expected in a clone. */
+const HOOK_MANAGERS = /husky|lefthook|pre-commit|overcommit|git-lfs|simple-git-hooks|yorkie|lint-staged/;
+
+/** Git hooks in local clones: they run on commit, checkout or push, with the user's rights. */
+export function gitHookFindings(clones: string[], home: string, reviewSinceMs: number): NewFinding[] {
+  const out: NewFinding[] = [];
+  for (const repo of clones) {
+    const dir = join(repo, ".git/hooks");
+    let names: string[] = [];
+    try {
+      names = readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const n of names) {
+      if (n.endsWith(".sample")) continue;
+      const p = join(dir, n);
+      let st: ReturnType<typeof statSync>;
+      let text = "";
+      try {
+        st = statSync(p);
+        if (!st.isFile()) continue;
+        if (st.size <= 256 * 1024) text = readFileSync(p, "utf8");
+      } catch {
+        continue;
+      }
+      const signals = new Set<string>();
+      for (const l of text.split("\n").slice(0, 5000)) if (l.trim() && !/^\s*#/.test(l)) for (const s of riskSignals(l, undefined, home)) signals.add(s);
+      const managed = HOOK_MANAGERS.test(text);
+      const recent = st.mtimeMs >= reviewSinceMs;
+      if (!signals.size && (managed || !recent)) continue;
+      out.push({
+        surface: "host",
+        severity: "suspicious",
+        subject: p,
+        title: `Git hook ${n} in ${repo}${signals.size ? ` ${[...signals].join("; ")}` : " was written recently and is not from a known hook manager"}: it runs on every ${n.replace(/^(pre|post)-/, "")}`,
+        at: st.mtime.toISOString(),
+        evidence: { kind: "file", ref: p },
+        key: `host|git-hook|${p}`,
+      });
+    }
+  }
   return out;
 }

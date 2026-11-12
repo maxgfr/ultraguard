@@ -107,7 +107,8 @@ export async function watchCommit(dir: string, run: Run, opts: { now?: Date; not
 
   const findings = run.findings();
   const alerted = new Set(state.alerted);
-  const newFindings = findings.filter((f) => (f.severity === "compromised" || f.severity === "exposed") && !alerted.has(f.key));
+  // New suspicious items alert too (a fresh fetch-and-run LaunchAgent has no IOC): each one once, like the rest.
+  const newFindings = findings.filter((f) => f.severity !== "info" && !alerted.has(f.key));
   for (const f of newFindings) alerted.add(f.key);
   const vs = verdicts(findings, run.gaps(), run.surfaces());
   const incomplete = vs.some((v) => v.verdict === "UNKNOWN");
@@ -125,7 +126,7 @@ export async function watchCommit(dir: string, run: Run, opts: { now?: Date; not
   const lines = alert
     ? newFindings.map(
         (f) =>
-          `ALERT: ${f.campaign ?? (f.surface === "deps" ? "malicious package" : "no campaign")} → ${f.surface} ${f.severity.toUpperCase()}: ${f.title} [${f.id}]`,
+          `${f.severity === "suspicious" ? "REVIEW" : "ALERT"}: ${f.campaign ?? (f.surface === "deps" ? "malicious package" : f.severity === "suspicious" ? "machine analysis" : "no campaign")} → ${f.surface} ${f.severity.toUpperCase()}: ${f.title} [${f.id}]`,
       )
     : [`NOTHING NEW: ${vs.map((v) => `${v.surface}=${v.verdict}`).join(", ")}`];
   lines.push(`report: ${run.path("REPORT.md")}`);

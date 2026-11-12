@@ -25,7 +25,7 @@
     "lint": "biome ci .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
-    "check:build": "tsup && webindex skill copy && git diff --exit-code -- scripts/ultraguard.mjs skills/ultraguard/scripts/ultraguard.mjs && webindex skill check && webindex skill bundle && webindex skill vendor --check",
+    "check:build": "tsup && webindex skill copy && git diff --exit-code -- scripts/ultraguard.mjs skills/ultraguard/scripts/ultraguard.mjs && webindex skill check && webindex skill bundle && webindex skill vendor --check && node scripts/sync-package-checker.mjs --check",
     "eval": "node evals/run.mjs --suite offline",
     "eval:network": "node evals/run.mjs --suite network",
     "release": "semantic-release",

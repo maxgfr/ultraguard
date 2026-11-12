@@ -37,6 +37,12 @@ entries. What it skipped is a coverage gap.
 | Editor extensions (VS Code, Insiders, Cursor, Windsurf, VSCodium) | first installed in the last 30 days (updates are ignored), with the publisher; flagged harder when sideloaded from a `.vsix` |
 | crontab | a line fetches and runs code or opens a socket |
 | Running processes | the executable lives in a temporary folder or an unknown hidden folder of your home |
+| Startup items run by an interpreter (`/bin/bash script.sh`) | the script itself fetches and runs code, opens a socket, or lives in a temp folder |
+| AI coding agents: `~/.claude/settings.json`, `~/.claude.json`, `.mcp.json`, Cursor, Codex, Gemini, Windsurf, Claude Desktop, VS Code `mcp.json` (home and every clone) | a hook, status line or API key helper (or the script it runs) fetches and runs code; an MCP server runs a campaign package (compromised) or a risky command; a base URL sends prompts to a non-vendor host. Unpinned `npx -y` MCP packages are listed as info |
+| Agent instruction files (CLAUDE.md, AGENTS.md, GEMINI.md, .cursorrules, .cursor/rules, copilot instructions) | they hold invisible characters (zero-width, bidi, tag characters): a prompt-injection trick |
+| Git hooks in local clones | a hook fetches and runs code, or is recent and not from a known hook manager (husky, lefthook, pre-commit...) |
+| npm's download cache (`~/.npm/_cacache`) | npm downloaded a campaign package (exposed, with the date): installed then removed still counts |
+| File names | a name holds a line break or another control character (macOS's `Icon\r` excepted) |
 
 ## Signature scanners
 
@@ -59,8 +65,9 @@ files), recorded by path and kind, never by value. It is what a stealer here
 would take, and REMEDIATION.md lists exactly these when the host is
 compromised.
 
-Not read: login items, browser extensions, kernel and system extensions.
-They are a coverage gap.
+Not read: login items registered through System Settings (the background
+task database needs `sfltool dumpbtm` as an admin), browser extensions, kernel
+and system extensions. They are a coverage gap.
 
 ## Judging a suspicious item
 

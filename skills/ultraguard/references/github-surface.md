@@ -29,7 +29,9 @@ member) with push rights, not archived. For each:
 - **PRs** created in the window, by anyone: title and head branch. Checked on
   every repository, because a PR from a fork does not move `pushed_at`.
 - Then, only if the repository was pushed to since the window:
-  - **branches** by name;
+  - **branches** by name, and the repository **activity log** (branch
+    creations, deletions and force pushes, with their actor): it finds the
+    attacker branch the cleanup already deleted;
   - **commits** on the default branch since the window, by anyone, with the
     files each matching commit touched;
   - **workflow runs** since the window: branch, title, and **gaps in

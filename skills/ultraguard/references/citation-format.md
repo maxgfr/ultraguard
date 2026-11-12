@@ -14,6 +14,7 @@ Two kinds of tokens, both numbered by the run:
 | `dangling` | a `[S#]` or `[F#]` that is not in the run |
 | `uncited-claim` | a sentence calls something compromised, exposed, infected or hit, and its paragraph cites no real `[F#]` |
 | `omitted-surface` | a COMPROMISED or EXPOSED surface the answer never mentions |
+| `omitted-subject` | a compromised or exposed repository, file or resource the answer never names nor cites |
 | `wrong-clean` | a sentence calls a surface clean (or "everything is clean") when its verdict is not CLEAN |
 | `no-coverage` | the run has coverage gaps and the answer mentions none |
 
