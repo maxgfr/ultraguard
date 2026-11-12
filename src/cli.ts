@@ -69,7 +69,11 @@ SCAN FLAGS
   --concurrency <n>     github: parallel repositories (default 8)
   --roots <dir,dir>     host, deps: where to walk (default: your home directory)
   --depth <n>           host, deps: walk depth (default 6)
-  --skip-live           host: skip crontab, open connections and processes
+  --skip-live           host: skip crontab, open connections, processes, signatures, antivirus
+  --no-av               host: skip the ClamAV pass (on by default when ClamAV is installed)
+  --av-full             host: ClamAV over every root instead of the targeted list (slow)
+  --yara <rules>        host: also run YARA rules (a .yar file or a folder of them)
+  --yara-source <S#>    host: the source the YARA rules came from, cited by their findings
   --no-osv              deps: skip the OSV malicious-package advisories
   --surfaces <list>     sweep: github,host,deps,cloud (default: all)
   --limit <n>           search: hits to aim for (default 10)
@@ -106,10 +110,12 @@ export const VALUE_FLAGS = [
   "resweep-days",
   "notify-issue",
   "limit",
+  "yara",
+  "yara-source",
 ];
-export const BOOL_FLAGS = ["json", "probe", "skip-live", "no-osv"];
+export const BOOL_FLAGS = ["json", "probe", "skip-live", "no-osv", "no-av", "av-full"];
 
-const SCAN = ["out", "repos", "max-repos", "concurrency", "roots", "depth", "skip-live", "no-osv", "json"];
+const SCAN = ["out", "repos", "max-repos", "concurrency", "roots", "depth", "skip-live", "no-osv", "no-av", "av-full", "yara", "yara-source", "json"];
 const SPEC: CliSpec = {
   commands: COMMANDS,
   valueFlags: VALUE_FLAGS,
@@ -167,7 +173,16 @@ async function runScan(surface: "github" | "host" | "deps" | "cloud", a: Command
     return `github: ${r.repos.result.stats.repos ?? 0} repositories as ${r.login ?? "?"}; ${accF.length} account finding(s), ${repF.length} repository finding(s)`;
   }
   if (surface === "host") {
-    const r = await scanHost(iocs, (tree ?? (() => walkFor(a)))(), runner, { hitRepos: run.meta().hitRepos, skipLive: argBool(a, "skip-live") });
+    const roots = argList(a, "roots").map((r) => resolve(r.replace(/^~(?=$|\/)/, homedir())));
+    const r = await scanHost(iocs, (tree ?? (() => walkFor(a)))(), runner, {
+      hitRepos: run.meta().hitRepos,
+      skipLive: argBool(a, "skip-live"),
+      av: argBool(a, "no-av") ? "off" : argBool(a, "av-full") ? "full" : "targeted",
+      roots: roots.length ? roots : undefined,
+      yara: argValue(a, "yara"),
+      yaraSource: argValue(a, "yara-source"),
+      listDir: run.dir,
+    });
     const f = run.recordSurface(r.result, r.findings, r.gaps);
     run.write("host-inventory.json", r.inventory);
     return `host: ${r.result.stats.files ?? 0} files, ${r.result.stats.startupItems ?? 0} startup items, ${r.result.stats.credentialFiles ?? 0} credential files; ${f.length} finding(s)`;
@@ -236,8 +251,16 @@ async function dispatch(a: CommandArgs): Promise<number> {
           json
             ? jsonLine(iocs)
             : iocs.campaigns
-                .map((c) => `${c.id}: ${c.title} (since ${c.since}, ${c.indicators.length} indicators) ${c.sources.map((s) => `[${s}]`).join("")}`)
-                .join("\n"),
+                .map((c) =>
+                  [
+                    `${c.id}: ${c.title} (since ${c.since}${c.until ? `, until ${c.until}` : ""}, ${c.indicators.length} indicators) ${c.sources.map((s) => `[${s}]`).join("")}`,
+                    ...c.indicators.map(
+                      (i) =>
+                        `  ${i.type.padEnd(20)} ${i.ecosystem ? `${i.ecosystem}:` : ""}${i.value}${i.versions?.length ? `@${i.versions.join(",")}` : ""}${i.regex ? " (regex)" : ""}${i.weak ? " (weak)" : ""} [${i.source}]`,
+                    ),
+                  ].join("\n"),
+                )
+                .join("\n\n"),
         );
         return EXIT_OK;
       }

@@ -38,6 +38,21 @@ entries. What it skipped is a coverage gap.
 | crontab | a line fetches and runs code or opens a socket |
 | Running processes | the executable lives in a temporary folder or an unknown hidden folder of your home |
 
+## Signature scanners
+
+| Scanner | When | Severity on a match |
+|---|---|---|
+| ClamAV (`clamdscan` when clamd runs, else `clamscan`) | installed; on by default, `--no-av` to skip | compromised |
+| YARA | `--yara <file or folder of .yar>`, rules saved from a source or a community set | compromised, citing `--yara-source` |
+
+Both scan the same targeted list: startup items and the programs they run,
+the files the other checks flagged, files changed in the last 30 days in
+`/tmp`, `/var/tmp`, `/Users/Shared` and `~/Downloads`, and newly installed
+extensions. `--av-full` scans every `--roots` (or the whole home) instead.
+ClamAV signatures older than 7 days are a gap: run `freshclam`. ClamAV
+knows common malware families; it rarely knows a supply-chain payload from
+this week, which is what the IOCs and the machine analysis are for.
+
 Plus one `info` finding: the **credential stores** on the machine (AWS, GCP,
 Azure, npm, PyPI, Docker, Kubernetes, gh, git, SSH and GPG keys, `.env`
 files), recorded by path and kind, never by value. It is what a stealer here

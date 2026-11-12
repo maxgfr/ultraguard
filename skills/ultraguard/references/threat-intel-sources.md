@@ -6,6 +6,12 @@ webindex engine, every hit appended to `<run>/search-hits.json`. Keep the
 primary write-ups (the research team that found the attack), drop the
 aggregators that only repeat them, then pass the kept ones to `intel`.
 
+If both fail (the keyless engines throttle some addresses, and a host
+search can refuse a query), retry `search` a few minutes later, fetch the
+pages the primary article itself links to with `intel`, or ask the user for
+the article. Never fill the gap from memory: an indicator needs a fetched
+source.
+
 A secondary write-up is still worth a source when it adds indicators the
 primary one lacks (another vendor saw a second variant). Keep it, and cite it
 for those indicators only.

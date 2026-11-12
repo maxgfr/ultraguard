@@ -10205,6 +10205,198 @@ function claimBlocks(lines) {
   return out2;
 }
 
+// src/scan/antivirus.ts
+import { readdirSync as readdirSync4, statSync as statSync6 } from "fs";
+import { join } from "path";
+var MAX_TARGETS = 5e3;
+function parseClamVersion(line, now = /* @__PURE__ */ new Date()) {
+  const m = /ClamAV\s+([\d.]+)(?:\/(\d+)\/(.+))?/.exec(line.trim());
+  if (!m) return void 0;
+  const built = m[3] ? /* @__PURE__ */ new Date(`${m[3]} UTC`) : void 0;
+  const ok = built && !Number.isNaN(built.getTime());
+  return {
+    version: m[1],
+    signatures: ok ? built.toISOString() : void 0,
+    ageDays: ok ? Math.floor((now.getTime() - built.getTime()) / 864e5) : void 0
+  };
+}
+async function detectAv(runner2, now = /* @__PURE__ */ new Date()) {
+  const ping = await runner2("clamdscan", ["--ping", "1"], { timeoutMs: 5e3 });
+  const name = ping.ok ? "clamdscan" : "clamscan";
+  const v = await runner2(name, ["--version"], { timeoutMs: 15e3 });
+  if (!v.ok) return void 0;
+  const parsed = parseClamVersion(v.stdout, now);
+  return parsed ? { name, ...parsed } : void 0;
+}
+function recentFiles(dir, sinceMs, cap, depth = 3) {
+  const out2 = [];
+  const walk2 = (d, left) => {
+    let names = [];
+    try {
+      names = readdirSync4(d);
+    } catch {
+      return;
+    }
+    for (const n of names) {
+      if (out2.length >= cap) return;
+      const p = join(d, n);
+      try {
+        const st = statSync6(p);
+        if (st.isDirectory()) {
+          if (left > 0 && n !== "node_modules" && n !== ".git") walk2(p, left - 1);
+        } else if (st.isFile() && st.mtimeMs >= sinceMs) out2.push(p);
+      } catch {
+      }
+    }
+  };
+  walk2(dir, depth);
+  return out2;
+}
+function avTargets(home, inventory, flagged2, sinceMs) {
+  const set = /* @__PURE__ */ new Set();
+  const add2 = (p) => {
+    if (p?.startsWith("/") && set.size < MAX_TARGETS) set.add(p);
+  };
+  for (const s of inventory.startupItems) {
+    add2(s.path);
+    if (s.exists) add2(s.executable);
+  }
+  for (const p of flagged2) add2(p);
+  for (const e of inventory.recentExtensions) add2(e.path);
+  for (const dir of ["/tmp", "/private/tmp", "/var/tmp", "/Users/Shared", "/dev/shm", join(home, "Downloads")])
+    for (const p of recentFiles(dir, sinceMs, 2e3)) add2(p);
+  return [...set].filter((p) => {
+    try {
+      statSync6(p);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+}
+function parseClamOutput(stdout) {
+  const out2 = [];
+  for (const line of stdout.split("\n")) {
+    const m = /^(.*): (.+) FOUND$/.exec(line.trim());
+    if (m) out2.push({ path: m[1], signature: m[2] });
+  }
+  return out2;
+}
+async function antivirusPass(runner2, opts) {
+  const findings = [];
+  const gaps = [];
+  const stats = {};
+  const engine = await detectAv(runner2, opts.now);
+  if (!engine) {
+    gaps.push({
+      surface: "host",
+      what: "a signature-based antivirus pass (known malware families)",
+      why: "ClamAV is not installed",
+      fix: "brew install clamav (or apt install clamav), configure freshclam, run freshclam, then re-run scan host"
+    });
+    return { findings, gaps, stats };
+  }
+  if (engine.ageDays !== void 0 && engine.ageDays > 7)
+    gaps.push({
+      surface: "host",
+      what: `malware families newer than ${engine.signatures?.slice(0, 10)}`,
+      why: `ClamAV's signatures are ${engine.ageDays} days old`,
+      fix: "freshclam, then re-run scan host"
+    });
+  const targets = opts.full ?? avTargets(opts.home, opts.inventory, opts.flagged, opts.sinceMs);
+  stats.avTargets = targets.length;
+  if (!targets.length) return { findings, gaps, stats, engine };
+  const list = join(opts.listDir, "av-targets.txt");
+  writeFileAtomic(list, `${targets.join("\n")}
+`);
+  const args = ["--infected", "--no-summary", `--file-list=${list}`];
+  if (engine.name === "clamscan") args.push("--recursive", "--stdout", "--max-filesize=100M", "--max-scansize=400M");
+  else args.push("--fdpass", "--multiscan");
+  const res = await runner2(engine.name, args, { timeoutMs: opts.full ? 3 * 60 * 6e4 : 20 * 6e4 });
+  const hits = parseClamOutput(res.stdout);
+  for (const h of hits)
+    findings.push({
+      surface: "host",
+      severity: "compromised",
+      subject: h.path,
+      title: `ClamAV detects ${h.signature} in ${h.path}`,
+      evidence: {
+        kind: "command",
+        ref: `${engine.name} --no-summary ${h.path}`,
+        excerpt: `${h.signature} (ClamAV ${engine.version}, signatures of ${engine.signatures?.slice(0, 10) ?? "?"})`
+      },
+      key: `host|av|${h.path}|${h.signature}`
+    });
+  stats.avDetections = hits.length;
+  const errors = res.stderr.split("\n").filter((l) => /ERROR|Can't open|Access denied|Permission denied|Not supported/i.test(l) && !/Warning/i.test(l));
+  if (errors.length || !res.ok && res.status !== 1 && !hits.length && !/Warning/i.test(res.stderr))
+    gaps.push({
+      surface: "host",
+      what: `${errors.length || "some"} antivirus target(s)`,
+      why: `${engine.name} could not read them: ${(errors[0] ?? res.stderr.trim().split("\n")[0] ?? "").slice(0, 160)}`
+    });
+  if (!opts.full)
+    gaps.push({
+      surface: "host",
+      what: "an antivirus pass over the whole disk",
+      why: `the pass is targeted: ${targets.length} files (startup items and their programs, flagged files, recent files in temp and shared folders and Downloads, new extensions)`,
+      fix: "scan host --av-full (hours on a large home directory)"
+    });
+  return { findings, gaps, stats, engine };
+}
+function yaraRuleFiles(path) {
+  try {
+    const st = statSync6(path);
+    if (st.isFile()) return [path];
+    return readdirSync4(path).filter((f) => /\.(yar|yara)$/i.test(f)).sort().slice(0, 500).map((f) => join(path, f));
+  } catch {
+    return [];
+  }
+}
+function parseYaraOutput(stdout) {
+  const out2 = [];
+  for (const line of stdout.split("\n")) {
+    const m = /^(\S+)\s+(\/.*)$/.exec(line.trim());
+    if (m) out2.push({ rule: m[1], path: m[2] });
+  }
+  return out2;
+}
+async function yaraPass(runner2, opts) {
+  const findings = [];
+  const gaps = [];
+  const files = yaraRuleFiles(opts.rules);
+  if (!files.length) {
+    gaps.push({ surface: "host", what: "the YARA pass", why: `no .yar or .yara rule file at ${opts.rules}` });
+    return { findings, gaps, stats: {} };
+  }
+  const list = join(opts.listDir, "yara-targets.txt");
+  writeFileAtomic(list, `${opts.targets.join("\n")}
+`);
+  const res = await runner2("yara", ["--no-warnings", ...opts.recursive ? ["--recursive"] : [], "--scan-list", ...files, list], {
+    timeoutMs: opts.recursive ? 3 * 60 * 6e4 : 30 * 6e4
+  });
+  if (res.missing) {
+    gaps.push({ surface: "host", what: "the YARA pass", why: "yara is not installed", fix: "brew install yara (or apt install yara)" });
+    return { findings, gaps, stats: {} };
+  }
+  if (!res.ok && !res.stdout.trim()) {
+    gaps.push({ surface: "host", what: "the YARA pass", why: `yara failed: ${(res.stderr.trim().split("\n")[0] ?? "").slice(0, 200)}` });
+    return { findings, gaps, stats: { yaraRules: files.length } };
+  }
+  const ruleSet = new Set(files);
+  for (const h of parseYaraOutput(res.stdout).filter((x) => !ruleSet.has(x.path)))
+    findings.push({
+      surface: "host",
+      severity: "compromised",
+      subject: h.path,
+      title: `YARA rule ${h.rule} matches ${h.path}`,
+      ...opts.source ? { source: opts.source } : {},
+      evidence: { kind: "command", ref: `yara ${files.length === 1 ? files[0] : `<${files.length} rule files in ${opts.rules}>`} ${h.path}` },
+      key: `host|yara|${h.path}|${h.rule}`
+    });
+  return { findings, gaps, stats: { yaraRules: files.length, yaraTargets: opts.targets.length, yaraMatches: findings.length } };
+}
+
 // src/scan/gh.ts
 var Gh = class {
   constructor(run, timeoutMs = 6e4) {
@@ -10301,6 +10493,15 @@ async function doctor(runner2, opts = {}) {
       fix: r.missing ? void 0 : ok ? void 0 : fix
     });
   }
+  const av = await detectAv(runner2);
+  out2.push({
+    check: "clamav",
+    ok: !!av && (av.ageDays ?? 0) <= 7,
+    detail: av ? `${av.name} ${av.version}, signatures of ${av.signatures?.slice(0, 10) ?? "?"}${av.ageDays !== void 0 ? ` (${av.ageDays} days old)` : ""}` : "not installed (no antivirus pass)",
+    fix: !av ? "brew install clamav (or apt install clamav), then freshclam" : (av.ageDays ?? 0) > 7 ? "freshclam" : void 0
+  });
+  const yara = await runner2("yara", ["--version"], { timeoutMs: 1e4 });
+  out2.push({ check: "yara", ok: yara.ok, detail: yara.ok ? `yara ${yara.stdout.trim()} (used with --yara <rules>)` : "not installed (optional)" });
   if (opts.probe) {
     try {
       const res = await httpJson(
@@ -10547,8 +10748,9 @@ function findingLine(f) {
   return `- **${f.severity}**: ${f.title}${who}${when} ${cite(f)}`;
 }
 var SEV_ORDER = ["compromised", "exposed", "suspicious", "info"];
+var NOT_ATTACKER_CODE = /only changes docs|own code \(commit by/;
 function payloadRan(findings, repo) {
-  return findings.some((f) => f.subject === repo && f.severity === "compromised" && /^(Workflow "|Commit )/.test(f.title));
+  return findings.some((f) => f.subject === repo && f.severity === "compromised" && /^(Workflow "|Commit )/.test(f.title) && !NOT_ATTACKER_CODE.test(f.title));
 }
 function idList(ids, max = 8) {
   if (!ids.length) return "none";
@@ -10753,7 +10955,7 @@ async function searchInto(run, query, opts = {}) {
 
 // src/run.ts
 import { existsSync as existsSync4, mkdirSync as mkdirSync3, readFileSync as readFileSync9 } from "fs";
-import { join, resolve } from "path";
+import { join as join5, resolve } from "path";
 var Run = class {
   dir;
   constructor(dir) {
@@ -10761,7 +10963,7 @@ var Run = class {
     mkdirSync3(this.dir, { recursive: true });
   }
   path(name) {
-    return join(this.dir, name);
+    return join5(this.dir, name);
   }
   read(name, fallback) {
     const p = this.path(name);
@@ -10998,7 +11200,7 @@ async function scanCloud(iocs, runner2, opts = {}) {
 }
 
 // src/scan/deps.ts
-import { readFileSync as readFileSync10, statSync as statSync6 } from "fs";
+import { readFileSync as readFileSync10, statSync as statSync7 } from "fs";
 
 // src/scan/lockfiles.ts
 import { basename as basename3 } from "path";
@@ -11169,7 +11371,7 @@ async function scanDeps(iocs, tree, run, opts = {}) {
     if (!lockfileKind(p)) continue;
     let locked;
     try {
-      if (statSync6(p).size > 64 * 1024 * 1024) throw new Error("too large");
+      if (statSync7(p).size > 64 * 1024 * 1024) throw new Error("too large");
       locked = parseLockfile(p, readFileSync10(p, "utf8"));
     } catch {
       unreadable++;
@@ -11259,6 +11461,7 @@ async function scanDeps(iocs, tree, run, opts = {}) {
 
 // src/scan/github.ts
 var firstLine = (s) => (s ?? "").split("\n")[0] ?? "";
+var DOCS_ONLY = /(^|\/)(docs?|documentation)\/|\.(md|mdx|txt|rst|adoc)$|(^|\/)(README|CHANGELOG|LICENSE|NOTICE)[^/]*$/i;
 function hit(m, base2) {
   return {
     severity: m.indicator.weak ? "suspicious" : "compromised",
@@ -11404,7 +11607,13 @@ async function scanGithub(iocs, runner2, opts = {}) {
   ]) {
     const keys = await gh.api(path);
     if (!keys.ok) {
-      accG.push({ surface: "github:account", what: `${label}s`, why: keys.error ?? `HTTP ${keys.status}` });
+      const scope = path === "user/keys" ? "read:public_key" : "read:gpg_key";
+      accG.push({
+        surface: "github:account",
+        what: `${label}s added to your account`,
+        why: keys.status === 404 || keys.status === 403 ? `the token lacks the ${scope} scope (${keys.error ?? `HTTP ${keys.status}`})` : keys.error ?? `HTTP ${keys.status}`,
+        fix: `gh auth refresh -s ${scope}`
+      });
       continue;
     }
     accountRes.stats[path === "user/keys" ? "sshKeys" : "gpgKeys"] = keys.data?.length ?? 0;
@@ -11491,6 +11700,37 @@ async function scanGithub(iocs, runner2, opts = {}) {
           );
       }
     }
+    const changed = /* @__PURE__ */ new Map();
+    const commitOf = (sha) => {
+      if (!changed.has(sha))
+        changed.set(
+          sha,
+          gh.api(`repos/${r}/commits/${sha}`).then(
+            (d) => d.ok ? {
+              files: (d.data?.files ?? []).map((f) => `${f.status} ${f.filename}`),
+              author: d.data?.author?.login
+            } : void 0
+          )
+        );
+      return changed.get(sha);
+    };
+    const filesOf = async (sha) => (await commitOf(sha))?.files;
+    const onDefault = async (sha) => {
+      const cmp = await gh.api(`repos/${r}/compare/${sha}...${repo.default_branch}`);
+      return cmp.ok && (cmp.data?.status === "identical" || cmp.data?.status === "ahead");
+    };
+    const describe = (files) => {
+      if (!files) return "";
+      if (files.length && files.every((f) => DOCS_ONLY.test(f.split(" ").slice(1).join(" ")))) return "; the commit only changes docs (a probe)";
+      return files.length ? `; the commit changes ${files.slice(0, 4).map((f) => f.split(" ").slice(1).join(" ")).join(", ")}${files.length > 4 ? ", ..." : ""}` : "";
+    };
+    const describeRun = async (sha, actor) => {
+      if (!sha) return "";
+      const c = await commitOf(sha);
+      if (c?.author && actor && c.author.toLowerCase() !== actor.toLowerCase() && await onDefault(sha))
+        return `; it ran ${repo.default_branch}'s own code (commit by ${c.author}, no attacker change)`;
+      return describe(c?.files);
+    };
     if (M.commit.length || M.file.length) {
       const commits = await gh.paged(`repos/${r}/commits?since=${since}`, { maxPages: 3 });
       if (commits.truncated) truncated.push(`${r} commits`);
@@ -11499,17 +11739,13 @@ async function scanGithub(iocs, runner2, opts = {}) {
         const m = firstMatch(M.commit, msg, c.commit?.author?.date);
         if (!m) continue;
         const actor = c.author?.login ?? c.commit?.author?.name;
-        let excerpt;
-        const detail = await gh.api(`repos/${r}/commits/${c.sha}`);
-        if (detail.ok) {
-          const files = detail.data?.files ?? [];
-          excerpt = files.map((f) => `${f.status} ${f.filename}`).join(", ");
-        }
+        const files = await filesOf(c.sha);
+        const excerpt = `sha=${c.sha}${files ? `; ${files.join(", ")}` : ""}`.slice(0, 600);
         add2(
           hit(m, {
             surface: "github:repos",
             subject: r,
-            title: `Commit ${String(c.sha).slice(0, 8)} "${msg}" on ${repo.default_branch} by ${actor}`,
+            title: `Commit ${String(c.sha).slice(0, 8)} "${msg}" on ${repo.default_branch} by ${actor}${describe(files)}`,
             actor,
             scope: scopeOf(actor),
             at: c.commit?.author?.date,
@@ -11528,15 +11764,16 @@ async function scanGithub(iocs, runner2, opts = {}) {
       const m = firstMatch(M.branch, run.head_branch, run.created_at) ?? firstMatch(M.commit, firstLine(run.display_title), run.created_at) ?? firstMatch(M.pr, run.display_title, run.created_at);
       if (!m) continue;
       const actor = run.triggering_actor?.login ?? run.actor?.login;
+      const what = await describeRun(run.head_sha, actor);
       add2(
         hit(m, {
           surface: "github:repos",
           subject: r,
-          title: `Workflow "${run.name}" ran on ${run.head_branch} ("${firstLine(run.display_title)}"), ${run.conclusion ?? run.status}, triggered by ${actor}`,
+          title: `Workflow "${run.name}" ran on ${run.head_branch} ("${firstLine(run.display_title)}"), ${run.conclusion ?? run.status}, triggered by ${actor}${what}`,
           actor,
           scope: scopeOf(actor),
           at: run.created_at,
-          evidence: { kind: "url", ref: run.html_url }
+          evidence: { kind: "url", ref: run.html_url, excerpt: `run_id=${run.id} head_sha=${run.head_sha}; gh api repos/${r}/actions/runs/${run.id}` }
         })
       );
     }
@@ -11721,13 +11958,13 @@ async function scanGithub(iocs, runner2, opts = {}) {
 
 // src/scan/host.ts
 import { createHash as createHash2 } from "crypto";
-import { existsSync as existsSync9, readdirSync as readdirSync6, readFileSync as readFileSync12, statSync as statSync8 } from "fs";
-import { homedir as homedir3, platform } from "os";
-import { basename as basename5, join as join6 } from "path";
+import { existsSync as existsSync9, readdirSync as readdirSync7, readFileSync as readFileSync12, statSync as statSync9 } from "fs";
+import { homedir as homedir3, platform, tmpdir } from "os";
+import { basename as basename5, join as join7 } from "path";
 
 // src/scan/hostintel.ts
-import { existsSync as existsSync8, readdirSync as readdirSync4, readFileSync as readFileSync11, statSync as statSync7 } from "fs";
-import { basename as basename4, join as join5 } from "path";
+import { existsSync as existsSync8, readdirSync as readdirSync6, readFileSync as readFileSync11, statSync as statSync8 } from "fs";
+import { basename as basename4, join as join6 } from "path";
 var STRONG = [
   [/\b(curl|wget)\b[^|;\n]*\|\s*(sudo\s+)?(ba|z|da)?sh\b/i, "downloads and runs a script"],
   [/\b(curl|wget)\b[^\n]*(-o|--output|>)\s*\S*\s*(&&|;)\s*(chmod|\.\/|sh|bash|zsh|python|node)/i, "downloads then executes a file"],
@@ -11842,10 +12079,10 @@ function shellStartupFindings(home) {
   const findings = [];
   const lines = [];
   for (const rel of SHELL_STARTUP) {
-    const p = join5(home, rel);
+    const p = join6(home, rel);
     let text;
     try {
-      if (statSync7(p).size > 2 * 1024 * 1024) continue;
+      if (statSync8(p).size > 2 * 1024 * 1024) continue;
       text = readFileSync11(p, "utf8");
     } catch {
       continue;
@@ -11871,7 +12108,7 @@ function shellStartupFindings(home) {
 }
 function readSmall(p) {
   try {
-    if (statSync7(p).size > 1024 * 1024) return void 0;
+    if (statSync8(p).size > 1024 * 1024) return void 0;
     return readFileSync11(p, "utf8");
   } catch {
     return void 0;
@@ -11888,28 +12125,28 @@ function configFindings(home, reviewSinceMs) {
     key: `host|${p}|${title}`
   });
   const lineOf = (text, re) => text.split("\n").findIndex((l) => re.test(l)) + 1;
-  const npmrc = readSmall(join5(home, ".npmrc"));
+  const npmrc = readSmall(join6(home, ".npmrc"));
   const reg = npmrc ? /^\s*registry\s*=\s*(\S+)/m.exec(npmrc)?.[1] : void 0;
   if (npmrc && reg && !/^https:\/\/registry\.(npmjs\.org|yarnpkg\.com)\/?$/.test(reg))
-    add2(join5(home, ".npmrc"), `~/.npmrc sends every npm install to another registry: ${reg}`, `registry=${reg}`, lineOf(npmrc, /^\s*registry\s*=/));
-  for (const pip of [join5(home, ".pip/pip.conf"), join5(home, ".config/pip/pip.conf"), join5(home, "Library/Application Support/pip/pip.conf")]) {
+    add2(join6(home, ".npmrc"), `~/.npmrc sends every npm install to another registry: ${reg}`, `registry=${reg}`, lineOf(npmrc, /^\s*registry\s*=/));
+  for (const pip of [join6(home, ".pip/pip.conf"), join6(home, ".config/pip/pip.conf"), join6(home, "Library/Application Support/pip/pip.conf")]) {
     const text = readSmall(pip);
     const idx = text ? /^\s*index-url\s*=\s*(\S+)/m.exec(text)?.[1] : void 0;
     if (text && idx && !/^https:\/\/pypi\.org\/simple\/?$/.test(idx))
       add2(pip, `pip installs from another index: ${idx}`, `index-url = ${idx}`, lineOf(text, /index-url/));
   }
-  const gitconfig = readSmall(join5(home, ".gitconfig"));
+  const gitconfig = readSmall(join6(home, ".gitconfig"));
   if (gitconfig) {
     const hooks = /^\s*hooksPath\s*=\s*(.+)$/m.exec(gitconfig)?.[1]?.trim();
     if (hooks) {
       const dir = hooks.replace(/^~(?=\/)/, home);
       let recent = [];
       try {
-        recent = readdirSync4(dir).filter((f) => statSync7(join5(dir, f)).mtimeMs >= reviewSinceMs);
+        recent = readdirSync6(dir).filter((f) => statSync8(join6(dir, f)).mtimeMs >= reviewSinceMs);
       } catch {
       }
       add2(
-        join5(home, ".gitconfig"),
+        join6(home, ".gitconfig"),
         `git runs global hooks from ${hooks} in every repository${recent.length ? `; changed recently: ${recent.join(", ")}` : ""}`,
         `hooksPath = ${hooks}`,
         lineOf(gitconfig, /hooksPath/)
@@ -11917,11 +12154,11 @@ function configFindings(home, reviewSinceMs) {
     }
     const sshCmd = /^\s*sshCommand\s*=\s*(.+)$/m.exec(gitconfig)?.[1]?.trim();
     if (sshCmd && !/^ssh(\s|$)/.test(sshCmd))
-      add2(join5(home, ".gitconfig"), `git runs a custom SSH command: ${sshCmd}`, sshCmd, lineOf(gitconfig, /sshCommand/));
+      add2(join6(home, ".gitconfig"), `git runs a custom SSH command: ${sshCmd}`, sshCmd, lineOf(gitconfig, /sshCommand/));
   }
-  const ak = join5(home, ".ssh/authorized_keys");
+  const ak = join6(home, ".ssh/authorized_keys");
   try {
-    const st = statSync7(ak);
+    const st = statSync8(ak);
     if (st.mtimeMs >= reviewSinceMs) {
       const keys = (readSmall(ak) ?? "").split("\n").filter((l) => l.trim() && !l.startsWith("#"));
       const comments = keys.map((k) => k.trim().split(/\s+/).slice(2).join(" ") || "(no comment)");
@@ -11943,11 +12180,11 @@ function recentExtensions(home, reviewSinceMs) {
   const findings = [];
   const list = [];
   for (const rel of [".vscode/extensions", ".vscode-insiders/extensions", ".cursor/extensions", ".windsurf/extensions", ".vscode-oss/extensions"]) {
-    const dir = join5(home, rel);
+    const dir = join6(home, rel);
     const editor = rel.split("/")[0]?.replace(/^\./, "") ?? rel;
-    const manifest = readSmall(join5(dir, "extensions.json")) ?? (() => {
+    const manifest = readSmall(join6(dir, "extensions.json")) ?? (() => {
       try {
-        return readFileSync11(join5(dir, "extensions.json"), "utf8");
+        return readFileSync11(join6(dir, "extensions.json"), "utf8");
       } catch {
         return void 0;
       }
@@ -11958,7 +12195,7 @@ function recentExtensions(home, reviewSinceMs) {
         entries = JSON.parse(manifest).map((e) => ({
           id: e.identifier?.id,
           version: e.version,
-          path: e.location?.path ?? join5(dir, e.relativeLocation ?? ""),
+          path: e.location?.path ?? join6(dir, e.relativeLocation ?? ""),
           installed: e.metadata?.installedTimestamp,
           updated: e.metadata?.updated,
           source: e.metadata?.source,
@@ -11969,15 +12206,15 @@ function recentExtensions(home, reviewSinceMs) {
     } else {
       let names = [];
       try {
-        names = readdirSync4(dir);
+        names = readdirSync6(dir);
       } catch {
         continue;
       }
       for (const name of names) {
         if (name.startsWith(".") || !/-\d+\.\d+\.\d+/.test(name)) continue;
         try {
-          const st = statSync7(join5(dir, name));
-          if (st.isDirectory()) entries.push({ id: name.replace(/-\d+\.\d+\.\d+.*$/, ""), version: "", path: join5(dir, name), installed: st.birthtimeMs });
+          const st = statSync8(join6(dir, name));
+          if (st.isDirectory()) entries.push({ id: name.replace(/-\d+\.\d+\.\d+.*$/, ""), version: "", path: join6(dir, name), installed: st.birthtimeMs });
         } catch {
         }
       }
@@ -12024,7 +12261,7 @@ async function processFindings(runner2, home) {
 function credentialInventory(home, envFiles) {
   const out2 = [];
   const has = (rel, kind, test) => {
-    const p = join5(home, rel);
+    const p = join6(home, rel);
     if (!existsSync8(p)) return;
     if (test) {
       const text = readSmall(p);
@@ -12051,12 +12288,12 @@ function credentialInventory(home, envFiles) {
   has(".vault-token", "HashiCorp Vault token");
   has(".terraform.d/credentials.tfrc.json", "Terraform Cloud token");
   try {
-    for (const f of readdirSync4(join5(home, ".ssh"))) {
-      if (/^id_[a-z0-9]+$/.test(f) || /\.pem$/.test(f)) out2.push({ path: join5(home, ".ssh", f), kind: "SSH private key" });
+    for (const f of readdirSync6(join6(home, ".ssh"))) {
+      if (/^id_[a-z0-9]+$/.test(f) || /\.pem$/.test(f)) out2.push({ path: join6(home, ".ssh", f), kind: "SSH private key" });
     }
   } catch {
   }
-  if (existsSync8(join5(home, ".gnupg/private-keys-v1.d"))) out2.push({ path: join5(home, ".gnupg"), kind: "GPG private keys" });
+  if (existsSync8(join6(home, ".gnupg/private-keys-v1.d"))) out2.push({ path: join6(home, ".gnupg"), kind: "GPG private keys" });
   for (const p of envFiles.slice(0, 200)) out2.push({ path: p, kind: ".env file (project secrets)" });
   return out2;
 }
@@ -12065,7 +12302,7 @@ function credentialInventory(home, envFiles) {
 var MAX_HASH_BYTES = 50 * 1024 * 1024;
 function sha256File(p) {
   try {
-    if (statSync8(p).size > MAX_HASH_BYTES) return void 0;
+    if (statSync9(p).size > MAX_HASH_BYTES) return void 0;
     return createHash2("sha256").update(readFileSync12(p)).digest("hex");
   } catch {
     return void 0;
@@ -12073,7 +12310,7 @@ function sha256File(p) {
 }
 function readText(p, max = 2 * 1024 * 1024) {
   try {
-    if (statSync8(p).size > max) return void 0;
+    if (statSync9(p).size > max) return void 0;
     return readFileSync12(p, "utf8");
   } catch {
     return void 0;
@@ -12091,8 +12328,8 @@ function hitOf(m, f) {
   };
 }
 function startupDirs(home, os) {
-  if (os === "darwin") return [join6(home, "Library/LaunchAgents"), "/Library/LaunchAgents", "/Library/LaunchDaemons"];
-  return [join6(home, ".config/systemd/user"), join6(home, ".config/autostart"), "/etc/systemd/system", "/etc/cron.d", "/etc/xdg/autostart"];
+  if (os === "darwin") return [join7(home, "Library/LaunchAgents"), "/Library/LaunchAgents", "/Library/LaunchDaemons"];
+  return [join7(home, ".config/systemd/user"), join7(home, ".config/autostart"), "/etc/systemd/system", "/etc/cron.d", "/etc/xdg/autostart"];
 }
 async function scanHost(iocs, tree, runner2, opts = {}) {
   const home = opts.home ?? homedir3();
@@ -12144,7 +12381,7 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
     });
   if (hashes.size) gaps.push({ surface: "host", what: "sha256 of every file", why: "only files named like an IOC and startup items are hashed" });
   for (const dir of tree.vscodeDirs) {
-    const p = join6(dir, "tasks.json");
+    const p = join7(dir, "tasks.json");
     const text = existsSync9(p) ? readText(p) : void 0;
     if (!text || !/"runOn"\s*:\s*"folderOpen"/.test(text)) continue;
     const line = text.split("\n").findIndex((l) => /folderOpen/.test(l)) + 1;
@@ -12173,21 +12410,25 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
   for (const dir of opts.startupDirs ?? startupDirs(home, os)) {
     let names = [];
     try {
-      names = readdirSync6(dir);
+      names = readdirSync7(dir);
     } catch {
       continue;
     }
     for (const name of names) {
-      const p = join6(dir, name);
+      const p = join7(dir, name);
       let st;
       try {
-        st = statSync8(p);
+        st = statSync9(p);
       } catch {
         continue;
       }
       if (!st.isFile()) continue;
       startupCount++;
-      const text = readText(p) ?? "";
+      let text = readText(p) ?? "";
+      if (text.startsWith("bplist") && os === "darwin" && !opts.skipLive) {
+        const xml = await runner2("plutil", ["-convert", "xml1", "-o", "-", p], { timeoutMs: 1e4 });
+        if (xml.ok) text = xml.stdout;
+      }
       const m = M.content.find((x) => x.test(text)) ?? (hashes.size ? hashes.get(sha256File(p) ?? "") : void 0);
       const { command: command2, executable } = startupCommand(text);
       const item = { path: p, mtime: st.mtime.toISOString(), command: command2, executable, signals: riskSignals(command2, executable, home) };
@@ -12196,7 +12437,8 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
         if (!item.exists) item.signals.push("points to a program that no longer exists");
         else if (os === "darwin" && !opts.skipLive) {
           const sig = await signerOf(runner2, executable);
-          if (sig) {
+          if (!sig) item.signer = "unreadable (codesign could not read it, often a root-only helper)";
+          else {
             item.signed = sig.signed;
             item.signer = sig.signer;
             item.team = sig.team;
@@ -12242,7 +12484,7 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
   inventory.shellStartup = rc.lines;
   findings.push(...configFindings(home, sinceMs));
   const traces = [".zsh_history", ".bash_history", ".local/share/fish/fish_history", ".python_history", ".zshrc", ".bashrc", ".profile", ".zprofile"].map(
-    (f) => join6(home, f)
+    (f) => join7(home, f)
   );
   traces.push("/etc/hosts");
   for (const p of traces) {
@@ -12269,11 +12511,11 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
   }
   let extensions = 0;
   for (const dir of [".vscode/extensions", ".vscode-insiders/extensions", ".cursor/extensions", ".windsurf/extensions", ".vscode-oss/extensions"].map(
-    (d) => join6(home, d)
+    (d) => join7(home, d)
   )) {
     let names = [];
     try {
-      names = readdirSync6(dir);
+      names = readdirSync7(dir);
     } catch {
       continue;
     }
@@ -12287,7 +12529,7 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
       );
       if (m)
         findings.push(
-          hitOf(m, { subject: join6(dir, name), title: `Editor extension ${id}@${version} is installed`, evidence: { kind: "file", ref: join6(dir, name) } })
+          hitOf(m, { subject: join7(dir, name), title: `Editor extension ${id}@${version} is installed`, evidence: { kind: "file", ref: join7(dir, name) } })
         );
     }
   }
@@ -12298,13 +12540,13 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
   if (opts.hitRepos?.length) {
     const wanted = new Set(opts.hitRepos.map((r) => r.toLowerCase()));
     for (const dir of tree.gitDirs) {
-      const cfg = readText(join6(dir, ".git/config")) ?? "";
+      const cfg = readText(join7(dir, ".git/config")) ?? "";
       const urls = [...cfg.matchAll(/url\s*=\s*(\S+)/g)].map((x) => x[1] ?? "");
       const repo = urls.map((u) => /github\.com[:/]([^/]+\/[^/.]+?)(?:\.git)?$/.exec(u)?.[1]?.toLowerCase()).find((r) => r && wanted.has(r));
       if (!repo) continue;
       let fetched;
       try {
-        fetched = statSync8(join6(dir, ".git/FETCH_HEAD")).mtime.toISOString();
+        fetched = statSync9(join7(dir, ".git/FETCH_HEAD")).mtime.toISOString();
       } catch {
       }
       findings.push({
@@ -12313,7 +12555,7 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
         subject: dir,
         title: `Local clone of ${repo}, a repository the GitHub scan found hit${fetched ? ` (last fetch ${fetched})` : ""}`,
         at: fetched,
-        evidence: { kind: "file", ref: join6(dir, ".git/config") },
+        evidence: { kind: "file", ref: join7(dir, ".git/config") },
         key: `host|${dir}|clone|${repo}`
       });
     }
@@ -12403,6 +12645,35 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
     });
   }
   result.stats.credentialFiles = inventory.credentials.length;
+  const listDir = opts.listDir ?? tmpdir();
+  const flagged2 = findings.map((f) => f.subject).filter((s) => s.startsWith("/"));
+  if (!opts.skipLive && opts.av !== "off") {
+    const av = await antivirusPass(runner2, {
+      home,
+      inventory,
+      flagged: flagged2,
+      sinceMs,
+      listDir,
+      now: opts.now,
+      full: opts.av === "full" ? opts.roots ?? [home] : void 0
+    });
+    findings.push(...av.findings);
+    gaps.push(...av.gaps);
+    Object.assign(result.stats, av.stats);
+  } else if (opts.av === "off") gaps.push({ surface: "host", what: "the antivirus pass", why: "--no-av" });
+  if (opts.yara) {
+    const full = opts.av === "full";
+    const y = await yaraPass(runner2, {
+      rules: opts.yara,
+      targets: full ? opts.roots ?? [home] : avTargets(home, inventory, flagged2, sinceMs),
+      recursive: full,
+      listDir,
+      source: opts.yaraSource
+    });
+    findings.push(...y.findings);
+    gaps.push(...y.gaps);
+    Object.assign(result.stats, y.stats);
+  }
   gaps.push({
     surface: "host",
     what: "login items, browser extensions and kernel or system extensions",
@@ -12420,8 +12691,8 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
 }
 
 // src/scan/walk.ts
-import { lstatSync, readdirSync as readdirSync7 } from "fs";
-import { join as join7 } from "path";
+import { lstatSync, readdirSync as readdirSync8 } from "fs";
+import { join as join12 } from "path";
 var PRUNE = /* @__PURE__ */ new Set([
   "node_modules",
   ".git",
@@ -12458,7 +12729,7 @@ function walk(roots, opts = {}) {
     const { dir, depth } = stack.pop();
     let names;
     try {
-      names = readdirSync7(dir);
+      names = readdirSync8(dir);
     } catch {
       out2.unreadable++;
       continue;
@@ -12468,7 +12739,7 @@ function walk(roots, opts = {}) {
         out2.capped = true;
         return out2;
       }
-      const p = join7(dir, name);
+      const p = join12(dir, name);
       if (name === ".git") {
         out2.gitDirs.push(dir);
         continue;
@@ -12497,11 +12768,11 @@ var VERSION = "1.2.0";
 // src/watch.ts
 import { mkdirSync as mkdirSync5 } from "fs";
 import { homedir as homedir4 } from "os";
-import { join as join12 } from "path";
+import { join as join13 } from "path";
 var EXIT_ALERT = 10;
 var EXIT_INCOMPLETE = 20;
 function stateDir(flag) {
-  return flag ?? env("HOME") ?? join12(homedir4(), ".ultraguard");
+  return flag ?? env("HOME") ?? join13(homedir4(), ".ultraguard");
 }
 function loadState(dir) {
   mkdirSync5(dir, { recursive: true });
@@ -12623,7 +12894,11 @@ SCAN FLAGS
   --concurrency <n>     github: parallel repositories (default 8)
   --roots <dir,dir>     host, deps: where to walk (default: your home directory)
   --depth <n>           host, deps: walk depth (default 6)
-  --skip-live           host: skip crontab, open connections and processes
+  --skip-live           host: skip crontab, open connections, processes, signatures, antivirus
+  --no-av               host: skip the ClamAV pass (on by default when ClamAV is installed)
+  --av-full             host: ClamAV over every root instead of the targeted list (slow)
+  --yara <rules>        host: also run YARA rules (a .yar file or a folder of them)
+  --yara-source <S#>    host: the source the YARA rules came from, cited by their findings
   --no-osv              deps: skip the OSV malicious-package advisories
   --surfaces <list>     sweep: github,host,deps,cloud (default: all)
   --limit <n>           search: hits to aim for (default 10)
@@ -12658,10 +12933,12 @@ var VALUE_FLAGS = [
   "state",
   "resweep-days",
   "notify-issue",
-  "limit"
+  "limit",
+  "yara",
+  "yara-source"
 ];
-var BOOL_FLAGS = ["json", "probe", "skip-live", "no-osv"];
-var SCAN = ["out", "repos", "max-repos", "concurrency", "roots", "depth", "skip-live", "no-osv", "json"];
+var BOOL_FLAGS = ["json", "probe", "skip-live", "no-osv", "no-av", "av-full"];
+var SCAN = ["out", "repos", "max-repos", "concurrency", "roots", "depth", "skip-live", "no-osv", "no-av", "av-full", "yara", "yara-source", "json"];
 var SPEC = {
   commands: COMMANDS,
   valueFlags: VALUE_FLAGS,
@@ -12713,7 +12990,16 @@ async function runScan(surface, a, run, iocs, tree) {
     return `github: ${r2.repos.result.stats.repos ?? 0} repositories as ${r2.login ?? "?"}; ${accF.length} account finding(s), ${repF.length} repository finding(s)`;
   }
   if (surface === "host") {
-    const r2 = await scanHost(iocs, (tree ?? (() => walkFor(a)))(), runner, { hitRepos: run.meta().hitRepos, skipLive: argBool(a, "skip-live") });
+    const roots = argList(a, "roots").map((r3) => resolve2(r3.replace(/^~(?=$|\/)/, homedir5())));
+    const r2 = await scanHost(iocs, (tree ?? (() => walkFor(a)))(), runner, {
+      hitRepos: run.meta().hitRepos,
+      skipLive: argBool(a, "skip-live"),
+      av: argBool(a, "no-av") ? "off" : argBool(a, "av-full") ? "full" : "targeted",
+      roots: roots.length ? roots : void 0,
+      yara: argValue(a, "yara"),
+      yaraSource: argValue(a, "yara-source"),
+      listDir: run.dir
+    });
     const f2 = run.recordSurface(r2.result, r2.findings, r2.gaps);
     run.write("host-inventory.json", r2.inventory);
     return `host: ${r2.result.stats.files ?? 0} files, ${r2.result.stats.startupItems ?? 0} startup items, ${r2.result.stats.credentialFiles ?? 0} credential files; ${f2.length} finding(s)`;
@@ -12781,7 +13067,14 @@ Next: read each source, then write ${run.path("iocs.json")} (start from ${run.pa
       if (sub === "show") {
         const iocs2 = needIocs(run);
         out(
-          json2 ? jsonLine(iocs2) : iocs2.campaigns.map((c) => `${c.id}: ${c.title} (since ${c.since}, ${c.indicators.length} indicators) ${c.sources.map((s) => `[${s}]`).join("")}`).join("\n")
+          json2 ? jsonLine(iocs2) : iocs2.campaigns.map(
+            (c) => [
+              `${c.id}: ${c.title} (since ${c.since}${c.until ? `, until ${c.until}` : ""}, ${c.indicators.length} indicators) ${c.sources.map((s) => `[${s}]`).join("")}`,
+              ...c.indicators.map(
+                (i) => `  ${i.type.padEnd(20)} ${i.ecosystem ? `${i.ecosystem}:` : ""}${i.value}${i.versions?.length ? `@${i.versions.join(",")}` : ""}${i.regex ? " (regex)" : ""}${i.weak ? " (weak)" : ""} [${i.source}]`
+              )
+            ].join("\n")
+          ).join("\n\n")
         );
         return EXIT_OK;
       }

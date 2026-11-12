@@ -2,6 +2,7 @@
 // surface that will come back UNKNOWN, and the fix is printed next to it.
 import { httpJson } from "./engine.js";
 import type { Runner } from "./runner.js";
+import { detectAv } from "./scan/antivirus.js";
 import { Gh } from "./scan/gh.js";
 
 export interface DoctorLine {
@@ -56,6 +57,18 @@ export async function doctor(runner: Runner, opts: { probe?: boolean } = {}): Pr
       fix: r.missing ? undefined : ok ? undefined : fix,
     });
   }
+
+  const av = await detectAv(runner);
+  out.push({
+    check: "clamav",
+    ok: !!av && (av.ageDays ?? 0) <= 7,
+    detail: av
+      ? `${av.name} ${av.version}, signatures of ${av.signatures?.slice(0, 10) ?? "?"}${av.ageDays !== undefined ? ` (${av.ageDays} days old)` : ""}`
+      : "not installed (no antivirus pass)",
+    fix: !av ? "brew install clamav (or apt install clamav), then freshclam" : (av.ageDays ?? 0) > 7 ? "freshclam" : undefined,
+  });
+  const yara = await runner("yara", ["--version"], { timeoutMs: 10_000 });
+  out.push({ check: "yara", ok: yara.ok, detail: yara.ok ? `yara ${yara.stdout.trim()} (used with --yara <rules>)` : "not installed (optional)" });
 
   if (opts.probe) {
     try {
