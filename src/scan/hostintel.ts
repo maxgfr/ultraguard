@@ -90,7 +90,9 @@ const KNOWN_HIDDEN = new Set([
   ".m2",
 ]);
 
-export function riskSignals(command: string, executable: string | undefined, home: string): string[] {
+export function riskSignals(rawCommand: string, executable: string | undefined, home: string): string[] {
+  // Bounded input: these patterns scan a line more than once, and a 2 MB line must not stall the scan.
+  const command = rawCommand.length > 4000 ? rawCommand.slice(0, 4000) : rawCommand;
   const out: string[] = [];
   for (const [re, label] of STRONG) if (re.test(command)) out.push(label);
   for (const p of [executable, ...command.split(/\s+/)].filter(Boolean) as string[]) {
@@ -181,7 +183,8 @@ export function shellStartupFindings(home: string): { findings: NewFinding[]; li
     } catch {
       continue;
     }
-    text.split("\n").forEach((line, i) => {
+    text.split("\n").forEach((rawLine, i) => {
+      const line = rawLine.length > 4000 ? rawLine.slice(0, 4000) : rawLine;
       if (/^\s*#/.test(line)) return;
       for (const [re, signal] of SHELL_RISK) {
         if (!re.test(line)) continue;
@@ -343,12 +346,13 @@ export function recentExtensions(home: string, reviewSinceMs: number): { finding
 }
 
 /** Running programs whose executable sits where no installed software lives. */
-export async function processFindings(runner: Runner, home: string): Promise<NewFinding[]> {
-  const ps = await runner("ps", ["-axo", "pid=,comm="], { timeoutMs: 10_000 });
+export async function processFindings(runner: Runner, home: string, os: NodeJS.Platform = process.platform): Promise<NewFinding[]> {
+  // macOS prints the executable's path in comm; Linux prints a 15-character name, so read the command line there.
+  const ps = await runner("ps", os === "darwin" ? ["-axo", "pid=,comm="] : ["-eo", "pid=,args="], { timeoutMs: 10_000 });
   if (!ps.ok) return [];
   const out: NewFinding[] = [];
   for (const line of ps.stdout.split("\n")) {
-    const m = /^\s*(\d+)\s+(\/.+)$/.exec(line);
+    const m = os === "darwin" ? /^\s*(\d+)\s+(\/.+)$/.exec(line) : /^\s*(\d+)\s+(\/\S+)/.exec(line);
     if (!m) continue;
     const exe = m[2] as string;
     const signals = riskSignals("", exe, home);

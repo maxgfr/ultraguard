@@ -1,6 +1,7 @@
 // The IOC file: validated on read, never trusted. An indicator that does not
 // cite a fetched source is refused, because an IOC from the model's memory is a
 // guess, and a guess either misses a real compromise or raises a false one.
+import { escapeRegExp } from "./engine.js";
 import { INDICATOR_TYPES, type Campaign, type Indicator, type IocFile, type Source } from "./types.js";
 
 export interface IocProblem {
@@ -28,6 +29,8 @@ export function validateIocs(raw: unknown, sources: readonly Source[]): { iocs?:
       continue;
     }
     if (!c.id || typeof c.id !== "string") push(`${at}.id`, "required string");
+    else if (/^campaign-\d+$/.test(c.id))
+      push(`${at}.id`, `"${c.id}" is the template's placeholder: name the campaign (e.g. wfx-loot-2026-11), the routine remembers campaigns by id`);
     else if (ids.has(c.id)) push(`${at}.id`, `duplicate campaign id "${c.id}"`);
     else ids.add(c.id);
     if (!c.title) push(`${at}.title`, "required string");
@@ -36,7 +39,12 @@ export function validateIocs(raw: unknown, sources: readonly Source[]): { iocs?:
     if (!Array.isArray(c.sources) || c.sources.length === 0) push(`${at}.sources`, "cite at least one [S#]");
     else for (const s of c.sources) if (!usable.has(s)) push(`${at}.sources`, `${s} is not a fetched source of this run`);
     if (!Array.isArray(c.indicators) || c.indicators.length === 0) push(`${at}.indicators`, "at least one indicator");
-    else c.indicators.forEach((ind, ii) => validateIndicator(ind, `${at}.indicators[${ii}]`, usable, push));
+    else
+      c.indicators.forEach((ind, ii) => {
+        validateIndicator(ind, `${at}.indicators[${ii}]`, usable, push);
+        if (ind?.source && Array.isArray(c.sources) && !c.sources.includes(ind.source))
+          push(`${at}.indicators[${ii}].source`, `${ind.source} is not one of this campaign's sources (${c.sources.join(", ")}): add it to "sources"`);
+      });
   }
   return problems.length ? { problems } : { iocs: raw as IocFile, problems };
 }
@@ -66,9 +74,11 @@ function validateIndicator(ind: Indicator, at: string, usable: Set<string>, push
 /** Articles defang IOCs ("194.150.166[.]244", "hxxp://"). Matching needs them armed. */
 export function defang(s: string): string {
   return s
-    .replace(/\[\.\]|\(\.\)|\{\.\}/g, ".")
+    .replace(/\[\.\]|\(\.\)|\{\.\}|\[dot\]|\(dot\)|\{dot\}/gi, ".")
+    .replace(/\[:\/\/\]|\[:\]\/\//g, "://")
     .replace(/\[:\]/g, ":")
-    .replace(/^hxxp/i, "http");
+    .replace(/\[\/\]/g, "/")
+    .replace(/\bhxxp(s?)/gi, "http$1");
 }
 
 /** A glob (`*`, `?`) as an anchored regex. */
@@ -94,6 +104,15 @@ function compile(c: Campaign, ind: Indicator): Matcher {
   let test: (s: string) => boolean;
   if (ind.regex) {
     const re = new RegExp(value, "i");
+    // A file regex is written for a name (`^setup_bun\\.js$`): try the basename too, not only the full path.
+    test = ind.type === "file" || ind.type === "workflow_file" ? (s) => re.test(s) || re.test(s.split("/").pop() ?? s) : (s) => re.test(s);
+  } else if (ind.type === "ip") {
+    // 1.2.3.4 must not match 11.2.3.45.
+    const re = new RegExp(`(?<![\\d.])${escapeRegExp(value)}(?![\\d])`);
+    test = (s) => re.test(s);
+  } else if (ind.type === "domain") {
+    // evil.com matches x.evil.com, not notevil.com.
+    const re = new RegExp(`(?<![a-z0-9-])${escapeRegExp(value)}(?![a-z0-9-])`, "i");
     test = (s) => re.test(s);
   } else if (ind.type === "file" || ind.type === "workflow_file") {
     // A glob with a slash matches the path's tail, otherwise the basename.
@@ -155,7 +174,9 @@ export function inWindow(m: Matcher, at: string | undefined | null): boolean {
 export function packageHit(ind: Indicator, ecosystem: string, name: string, version: string): boolean {
   if (ind.type !== "package") return false;
   if (normEco(ind.ecosystem ?? "") !== normEco(ecosystem)) return false;
-  if (ind.value.toLowerCase() !== name.toLowerCase()) return false;
+  // PyPI names compare normalised (PEP 503): python_dateutil is python-dateutil.
+  const norm = (n: string) => (normEco(ecosystem) === "pypi" ? n.toLowerCase().replace(/[-_.]+/g, "-") : n.toLowerCase());
+  if (norm(ind.value) !== norm(name)) return false;
   if (!ind.versions || ind.versions.length === 0) return true;
   const v = version.replace(/^v/, "");
   return ind.versions.some((x) => x.replace(/^v/, "") === v);

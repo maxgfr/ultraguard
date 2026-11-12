@@ -41,12 +41,14 @@ export interface WalkResult {
   entries: number;
   capped: boolean;
   unreadable: number;
+  /** Directories skipped by name (node_modules, Library...), and how many: a coverage gap, never silence. */
+  pruned: Record<string, number>;
 }
 
 export function walk(roots: string[], opts: { maxDepth?: number; maxEntries?: number } = {}): WalkResult {
   const maxDepth = opts.maxDepth ?? 6;
   const maxEntries = opts.maxEntries ?? 400_000;
-  const out: WalkResult = { files: [], gitDirs: [], vscodeDirs: [], entries: 0, capped: false, unreadable: 0 };
+  const out: WalkResult = { files: [], gitDirs: [], vscodeDirs: [], entries: 0, capped: false, unreadable: 0, pruned: {} };
   const stack: { dir: string; depth: number }[] = roots.map((dir) => ({ dir, depth: 0 }));
   while (stack.length) {
     const { dir, depth } = stack.pop() as { dir: string; depth: number };
@@ -77,7 +79,14 @@ export function walk(roots: string[], opts: { maxDepth?: number; maxEntries?: nu
       }
       if (st.isSymbolicLink()) continue;
       if (st.isDirectory()) {
-        if (PRUNE.has(name) || depth + 1 > maxDepth) continue;
+        if (PRUNE.has(name)) {
+          out.pruned[name] = (out.pruned[name] ?? 0) + 1;
+          continue;
+        }
+        if (depth + 1 > maxDepth) {
+          out.pruned["(deeper than --depth)"] = (out.pruned["(deeper than --depth)"] ?? 0) + 1;
+          continue;
+        }
         stack.push({ dir: p, depth: depth + 1 });
       } else if (st.isFile()) out.files.push(p);
     }

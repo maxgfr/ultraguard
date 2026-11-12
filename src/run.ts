@@ -38,7 +38,18 @@ export class Run {
   addSource(s: Omit<Source, "id">): Source {
     const all = this.sources();
     const existing = all.find((x) => x.url === s.url);
-    if (existing && !existing.error) return existing;
+    if (existing && !existing.error) {
+      // Same page: keep its id, record what is new (the text file intel wrote).
+      if (s.file && existing.file !== s.file) {
+        const merged = { ...existing, file: s.file };
+        this.write(
+          "sources.json",
+          all.map((x) => (x.id === existing.id ? merged : x)),
+        );
+        return merged;
+      }
+      return existing;
+    }
     const id = existing?.id ?? `S${all.length + 1}`;
     const src: Source = { id, ...s };
     const next = existing ? all.map((x) => (x.id === id ? src : x)) : [...all, src];

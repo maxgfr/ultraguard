@@ -99,8 +99,11 @@ export async function watchCommit(dir: string, run: Run, opts: { now?: Date; not
   // Remember each campaign with the URLs of its sources: [S#] ids are per run.
   const byId = new Map(state.campaigns.map((c) => [c.id, c]));
   for (const c of run.iocs()?.campaigns ?? []) byId.set(c.id, { ...c, sourceUrls: Object.fromEntries(c.sources.map((s) => [s, urlOf[s] ?? ""])) } as Campaign);
+  const findingsNow = run.findings();
+  const incompleteNow = verdicts(findingsNow, run.gaps(), run.surfaces()).some((v) => v.verdict === "UNKNOWN");
   const handled = new Map(state.handled.map((h) => [safeCanonical(h.url), h]));
-  for (const s of sources) if (s.origin === "web" && !s.error) handled.set(safeCanonical(s.url), { url: s.url, at: now.toISOString() });
+  // A run that could not scan every surface leaves its sources pending: tomorrow's run sweeps them again.
+  if (!incompleteNow) for (const s of sources) if (s.origin === "web" && !s.error) handled.set(safeCanonical(s.url), { url: s.url, at: now.toISOString() });
 
   const findings = run.findings();
   const alerted = new Set(state.alerted);
@@ -115,7 +118,7 @@ export async function watchCommit(dir: string, run: Run, opts: { now?: Date; not
     campaigns: [...byId.values()],
     alerted: [...alerted],
     lastSweep: now.toISOString(),
-    lastFullSweep: plan?.resweep || !state.lastFullSweep ? now.toISOString() : state.lastFullSweep,
+    lastFullSweep: !incompleteNow && (plan?.resweep || !state.lastFullSweep) ? now.toISOString() : state.lastFullSweep,
   };
   store.write("state.json", next);
 

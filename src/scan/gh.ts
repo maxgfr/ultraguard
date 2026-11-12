@@ -13,6 +13,13 @@ export class Gh {
   calls = 0;
   /** Calls the rate limit refused: every one is something not looked at. */
   rateLimited = 0;
+  /**
+   * Every failed call except "not found" (no such file or list) and "empty
+   * repository": a 403 or a 500 is something not looked at, never a clean answer.
+   */
+  failures: { path: string; status: number; error?: string }[] = [];
+  /** Lists cut by the page cap: their oldest items were not read. */
+  truncated: string[] = [];
   constructor(
     private readonly run: Runner,
     private readonly timeoutMs = 60_000,
@@ -25,7 +32,10 @@ export class Gh {
     if (!res.ok) {
       if (/rate limit/i.test(res.stderr) || /rate limit/i.test(res.stdout)) this.rateLimited++;
       const m = /HTTP (\d{3})/.exec(res.stderr) ?? /"status":\s*"?(\d{3})/.exec(res.stdout);
-      return { ok: false, status: m ? Number(m[1]) : 0, error: (res.stderr || res.stdout).trim().split("\n")[0] };
+      const status = m ? Number(m[1]) : 0;
+      const error = (res.stderr || res.stdout).trim().split("\n")[0];
+      if (status !== 404 && status !== 409) this.failures.push({ path, status, error });
+      return { ok: false, status, error };
     }
     try {
       return { ok: true, status: 200, data: JSON.parse(res.stdout) as T };
@@ -52,6 +62,7 @@ export class Gh {
       all.push(...list);
       if (list.length < 100 || opts.stop?.(list)) return { ok: true, status: 200, data: all };
     }
+    this.truncated.push(path);
     return { ok: true, status: 200, data: all, truncated: true };
   }
 

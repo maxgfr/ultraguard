@@ -103,6 +103,8 @@ export interface Finding {
   evidence: { kind: "api" | "url" | "file" | "command"; ref: string; excerpt?: string };
   /** A stable key so a re-scan does not add the same finding twice. */
   key: string;
+  /** For a CI run or a default-branch commit: did it carry attacker code, a docs-only probe, or the repository's own code? */
+  ciRun?: "attacker" | "probe" | "own-code";
 }
 
 /** A thing a scan could not look at. Gaps are not absence. */
