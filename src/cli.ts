@@ -79,7 +79,7 @@ SCAN FLAGS
   --yara-source <S#>    host: the source the YARA rules came from, cited by their findings
   --no-rules            host: skip the community YARA rules (YARA-Forge) installed by rules update
   --set <name>          rules update: core (default, highest precision), extended or full
-  --no-osv              deps: skip the OSV malicious-package advisories
+  --no-osv              deps: skip package-checker (OSV and GHSA feeds, malicious packages)
   --surfaces <list>     sweep: github,host,deps,cloud (default: all)
   --limit <n>           search: hits to aim for (default 10)
 
@@ -212,9 +212,14 @@ async function runScan(surface: "github" | "host" | "deps" | "cloud", a: Command
     return `host: ${r.result.stats.files ?? 0} files, ${r.result.stats.startupItems ?? 0} startup items, ${r.result.stats.credentialFiles ?? 0} credential files; ${f.length} finding(s)`;
   }
   if (surface === "deps") {
-    const r = await scanDeps(iocs, (tree ?? (() => walkFor(a)))(), run, { osv: argBool(a, "no-osv") ? false : undefined });
+    const roots = argList(a, "roots").map((r) => resolve(r.replace(/^~(?=$|\/)/, homedir())));
+    const r = await scanDeps(iocs, (tree ?? (() => walkFor(a)))(), run, {
+      checker: argBool(a, "no-osv") ? false : undefined,
+      runner,
+      roots: roots.length ? roots : [homedir()],
+    });
     const f = run.recordSurface(r.result, r.findings, r.gaps);
-    return `deps: ${r.result.stats.lockfiles ?? 0} lockfiles, ${r.result.stats.packages ?? 0} packages; ${f.length} finding(s)`;
+    return `deps: ${r.result.stats.lockfiles ?? 0} lockfiles, ${r.result.stats.packages ?? 0} packages, ${r.result.stats.malicious ?? 0} malicious, ${r.result.stats.vulnerable ?? 0} with known CVEs; ${f.length} finding(s)`;
   }
   const r = await scanCloud(iocs, runner);
   const f = run.recordSurface(r.result, r.findings, r.gaps);

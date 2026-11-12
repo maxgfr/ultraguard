@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { scanDeps } from "../src/scan/deps.js";
+import { checkerGroups, scanDeps } from "../src/scan/deps.js";
 import { scanHost } from "../src/scan/host.js";
 import { parseLockfile } from "../src/scan/lockfiles.js";
 import { walk } from "../src/scan/walk.js";
@@ -145,26 +145,78 @@ describe("scan deps", () => {
     put(root, "go/go.sum", "github.com/onuragtas/docker-env v1.0.277 h1:abc=\n");
     put(root, "js/package-lock.json", JSON.stringify({ packages: { "node_modules/evil-pkg": { version: "6.6.6" } } }));
     const run = aikidoRun();
-    const osv = async (queries: { package: { name: string } }[]) => ({
-      ok: true,
-      results: queries.map((q) => (q.package.name === "evil-pkg" ? { vulns: [{ id: "MAL-2026-1" }, { id: "GHSA-xxxx" }] } : {})),
-    });
-    const r = await scanDeps(AIKIDO_IOCS, walk([root]), run, { osv });
+    const dirs: string[] = [];
+    const checker = async (dir: string) => {
+      dirs.push(dir);
+      return {
+        ok: true,
+        vulnerabilities: [
+          {
+            name: "evil-pkg",
+            version: "6.6.6",
+            file: join(root, "js/package-lock.json"),
+            ecosystem: "npm",
+            severity: "critical",
+            advisories: [{ id: "MAL-2026-1" }, { ghsa: "GHSA-xxxx" }],
+          },
+          {
+            name: "lodash",
+            version: "4.17.0",
+            file: join(root, "js/package-lock.json"),
+            ecosystem: "npm",
+            severity: "high",
+            advisories: [{ ghsa: "GHSA-yyyy" }],
+          },
+        ],
+      };
+    };
+    const r = await scanDeps(AIKIDO_IOCS, walk([root]), run, { checker, roots: [root] });
+    expect(dirs).toEqual([join(root, "go"), join(root, "js"), join(root, "php")]);
+    expect(r.findings.find((f) => f.severity === "info")?.title).toMatch(/^1 locked package versions have known vulnerabilities \(0 critical, 1 high\)/);
     const t = r.findings.map((f) => f.title);
     expect(t.some((x) => x.includes("digitalelvis/neuronai-studio@3.14.3, named by the campaign"))).toBe(true);
     expect(t.some((x) => x.includes("docker-env"))).toBe(false); // v1.0.277 is not an affected version
     expect(t.some((x) => x.includes("evil-pkg@6.6.6, a malicious package (MAL-2026-1)"))).toBe(true);
-    expect(t.some((x) => x.includes("GHSA"))).toBe(false);
+    expect(t.some((x) => x.includes("GHSA-xxxx"))).toBe(false);
     const osvSource = run.sources().find((s) => s.origin === "osv");
     expect(osvSource?.url).toBe("https://osv.dev/vulnerability/MAL-2026-1");
     expect(r.findings.find((f) => f.title.includes("evil-pkg"))?.source).toBe(osvSource?.id);
     expect(r.result.stats.lockfiles).toBe(3);
   });
 
-  it("records a gap instead of a clean bill when OSV is unreachable", async () => {
+  it("records a gap instead of a clean bill when package-checker fails", async () => {
     const root = tmp("ug-deps2-");
     put(root, "package-lock.json", JSON.stringify({ packages: { "node_modules/a": { version: "1.0.0" } } }));
-    const r = await scanDeps(AIKIDO_IOCS, walk([root]), undefined, { osv: async () => ({ ok: false, results: [], error: "offline" }) });
-    expect(r.gaps.some((g) => g.what.includes("OSV"))).toBe(true);
+    const r = await scanDeps(AIKIDO_IOCS, walk([root]), undefined, {
+      checker: async () => ({ ok: false, vulnerabilities: [], error: "offline" }),
+      roots: [root],
+    });
+    expect(r.gaps.some((g) => g.why.includes("package-checker failed: offline"))).toBe(true);
   });
+
+  it("groups lockfiles two levels under their root, never one run per lockfile nor the whole home", () => {
+    expect(
+      checkerGroups(["/h/Documents/Code/a/package-lock.json", "/h/Documents/Code/b/x/yarn.lock", "/h/p/go.sum", "/h/Cargo.lock", "/other/q/uv.lock"], ["/h"]),
+    ).toEqual(["/h", "/other/q"]);
+    expect(checkerGroups(["/h/Documents/Code/a/package-lock.json", "/h/Documents/Code/b/yarn.lock", "/h/p/go.sum"], ["/h"])).toEqual([
+      "/h/Documents/Code",
+      "/h/p",
+    ]);
+  });
+
+  it("runs the real vendored package-checker on a malicious lockfile", async () => {
+    // Network: package-checker downloads the OSV/GHSA feeds. Skipped when offline.
+    if (process.env.ULTRAGUARD_OFFLINE) return;
+    const root = tmp("ug-pc-");
+    put(
+      root,
+      "app/package-lock.json",
+      JSON.stringify({ name: "x", lockfileVersion: 3, packages: { "": {}, "node_modules/flatmap-stream": { version: "0.1.1" } } }),
+    );
+    const run = aikidoRun();
+    const { defaultRunner } = await import("../src/runner.js");
+    const r = await scanDeps(AIKIDO_IOCS, walk([root]), run, { runner: defaultRunner, roots: [root] });
+    if (r.gaps.some((g) => g.why.startsWith("package-checker failed"))) return; // offline runner
+    expect(r.findings.some((f) => f.severity === "compromised" && f.title.includes("flatmap-stream@0.1.1, a malicious package (MAL-"))).toBe(true);
+  }, 120_000);
 });
