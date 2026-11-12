@@ -127,7 +127,7 @@ describe("verdicts and report", () => {
       [],
     );
     const { report, remediation } = renderReport(run, new Date("2026-11-12T12:00:00Z"));
-    expect(report).toContain("### org/site: attacker code ran in CI");
+    expect(report).toContain("### org/site: the attacker made CI run");
     expect(report).toContain("### org/docs: probe only, no attacker run seen");
     expect(remediation).toContain("ultraguard runs none of these commands");
     expect(remediation).toContain("`victim`");

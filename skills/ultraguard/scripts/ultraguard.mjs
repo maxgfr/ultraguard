@@ -10000,135 +10000,8 @@ init_fetch();
 init_rank();
 init_trim();
 var TOKEN_RE2 = /\[([^\]\n]+)\](?!\()/g;
-function stripHtmlComments(text) {
-  let out2 = "";
-  let from = 0;
-  for (; ; ) {
-    const open2 = text.indexOf("<!--", from);
-    if (open2 < 0) break;
-    const close = text.indexOf("-->", open2 + 4);
-    if (close < 0) break;
-    out2 += text.slice(from, open2) + text.slice(open2, close + 3).replace(/[^\n]/g, " ");
-    from = close + 3;
-  }
-  return out2 + text.slice(from);
-}
 function stripInlineCode(line) {
   return line.replace(/`[^`\n]*`/g, " ");
-}
-function codeMask(lines) {
-  const mask = new Array(lines.length).fill(false);
-  let open2;
-  for (let i = 0; i < lines.length; i++) {
-    const m = /^\s*(`{3,}|~{3,})(.*)$/.exec(lines[i]);
-    if (!open2) {
-      if (m && !(m[1][0] === "`" && m[2].includes("`"))) {
-        open2 = { ch: m[1][0], len: m[1].length };
-        mask[i] = true;
-      }
-      continue;
-    }
-    mask[i] = true;
-    if (m && m[1][0] === open2.ch && m[1].length >= open2.len && m[2].trim() === "") open2 = void 0;
-  }
-  return mask;
-}
-var isHeadingOrRule = (t) => /^#{1,6}\s/.test(t) || /^([-*_])\1{2,}$/.test(t);
-var isTableSeparator = (line) => /\|/.test(line) && /^[\s:|-]+$/.test(line.trim()) && /-/.test(line);
-var isTableRow = (line) => /\|/.test(line.trim()) && !isTableSeparator(line);
-var isListItem = (line) => /^\s*([-*+]|\d+\.)\s+\S/.test(line);
-var isReferenceDefinition = (line) => /^ {0,3}\[[^\]\n]+\]:[ \t]*(?:<[^>\n]*>|\S+)(?:[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?[ \t]*$/.test(line);
-function tableCells(line) {
-  return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim()).join(" ");
-}
-function extractClaimUnits(text, opts = {}) {
-  const lines = stripHtmlComments(text).split("\n");
-  const code = codeMask(lines);
-  const extra = opts.exclude ? opts.exclude(lines) : [];
-  const skip = (i2) => code[i2] === true || extra[i2] === true;
-  const quoteMode = opts.blockquotes ?? "unit";
-  const skipHeader = opts.skipTableHeader !== false;
-  const stored = (raw) => opts.keepInlineCode ? raw : stripInlineCode(raw);
-  const units = [];
-  let prose = [];
-  let section;
-  const tag = (u) => section === void 0 ? u : { ...u, section };
-  const flush = () => {
-    if (prose.length) units.push(tag({ kind: "text", text: prose.join(" ") }));
-    prose = [];
-  };
-  let i = 0;
-  while (i < lines.length) {
-    if (skip(i)) {
-      flush();
-      i++;
-      continue;
-    }
-    const raw = lines[i];
-    const line = stripInlineCode(raw);
-    const t = line.trim();
-    if (!prose.length && isReferenceDefinition(raw)) {
-      i++;
-      continue;
-    }
-    if (t === "" || isHeadingOrRule(t) || isTableSeparator(line)) {
-      flush();
-      if (/^#{1,6}\s/.test(t)) section = opts.sectionTag?.(t);
-      i++;
-      continue;
-    }
-    if (isTableRow(line)) {
-      flush();
-      const next = i + 1 < lines.length && !skip(i + 1) ? stripInlineCode(lines[i + 1]) : "";
-      if (!(skipHeader && isTableSeparator(next))) units.push(tag({ kind: "text", text: tableCells(stored(raw)) }));
-      i++;
-      continue;
-    }
-    if (/^\s*>/.test(line)) {
-      if (quoteMode === "prose") {
-        const dequoted = stored(raw).replace(/^\s*>\s?/, "").trim();
-        if (dequoted) prose.push(dequoted);
-        i++;
-        continue;
-      }
-      flush();
-      const quoted = [];
-      while (i < lines.length && !skip(i)) {
-        if (!/^\s*>/.test(stripInlineCode(lines[i]))) break;
-        const dq = stored(lines[i]).replace(/^\s*>\s?/, "").trim();
-        if (dq) quoted.push(dq);
-        i++;
-      }
-      if (quoted.length) units.push(tag({ kind: "text", text: quoted.join(" ") }));
-      continue;
-    }
-    if (isListItem(line)) {
-      flush();
-      const items = [];
-      while (i < lines.length && !skip(i)) {
-        const rawL = lines[i];
-        const l = stripInlineCode(rawL);
-        const tt = l.trim();
-        if (tt === "" || isHeadingOrRule(tt) || isTableSeparator(l) || isTableRow(l)) break;
-        if (isListItem(l))
-          items.push(
-            stored(rawL).replace(/^\s*([-*+]|\d+\.)\s+/, "").trim()
-          );
-        else if (items.length) items[items.length - 1] += ` ${stored(rawL).trim()}`;
-        else items.push(stored(rawL).trim());
-        i++;
-      }
-      units.push(tag({ kind: "list", items }));
-      continue;
-    }
-    prose.push(stored(raw));
-    i++;
-  }
-  flush();
-  return units;
-}
-function unitTexts(unit) {
-  return unit.kind === "text" ? [unit.text] : unit.items;
 }
 function citationTokensIn(text, isCitation2) {
   const masked = stripInlineCode(text);
@@ -10237,19 +10110,13 @@ function checkAnswer(run, text) {
   const lineOf = (needle) => lines.findIndex((l) => l.includes(needle)) + 1 || void 0;
   for (const t of danglingTokens(citationTokensIn(text, isCitation), known))
     problems.push({ rule: "dangling", message: `[${t}] is not a source or finding of this run`, line: lineOf(`[${t}]`) });
-  for (const unit of extractClaimUnits(text)) {
-    for (const block of unitTexts(unit)) {
-      const cited = citationTokensIn(block, (t) => /^F\d+$/.test(t) && known.includes(t)).length > 0;
-      if (cited) continue;
-      for (const s of block.split(/(?<=[.!?])\s+/)) {
-        if (!/\b(compromised|exposed|infected|hit by|touché|compromis|exposé)/i.test(s)) continue;
-        if (/\b(not|no|never|pas|aucun|aucune|ni)\b[^.]{0,40}\b(compromised|exposed|infected|hit|touché|compromis|exposé)/i.test(s)) continue;
-        problems.push({
-          rule: "uncited-claim",
-          message: `claims a compromise without citing a finding [F#]: "${s.slice(0, 120)}"`,
-          line: lineOf(s.slice(0, 40))
-        });
-      }
+  const isKnownF = (t) => /^F\d+$/.test(t) && known.includes(t);
+  for (const b of claimBlocks(lines)) {
+    if (citationTokensIn(b.text, isKnownF).length > 0) continue;
+    for (const sentence of b.own.split(/(?<=[.!?])\s+/)) {
+      if (!/\b(compromised|exposed|infected|hit by|touché|compromis|exposé)/i.test(sentence)) continue;
+      if (/\b(not|no|never|pas|aucun|aucune|ni)\b[^.]{0,40}\b(compromised|exposed|infected|hit|touché|compromis|exposé)/i.test(sentence)) continue;
+      problems.push({ rule: "uncited-claim", message: `claims a compromise without citing a finding [F#]: "${sentence.trim().slice(0, 140)}"`, line: b.line });
     }
   }
   const vs = verdicts(run.findings(), run.gaps(), run.surfaces());
@@ -10287,6 +10154,56 @@ function checkAnswer(run, text) {
     });
   return problems;
 }
+var NO_CLAIM_SECTION = /\b(coverage|couverture|sources?|gaps?|angles? morts?|non vérifié|not checked|limites|limits)\b/i;
+function claimBlocks(lines) {
+  const out2 = [];
+  let fence = false;
+  let skip = false;
+  const indent = (l) => l.length - l.trimStart().length;
+  const bullet = /^\s*([-*+]|\d+[.)])\s+/;
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    if (/^\s*```/.test(l)) {
+      fence = !fence;
+      continue;
+    }
+    if (fence || !l.trim()) continue;
+    const h = /^#{1,6}\s+(.*)$/.exec(l);
+    if (h) {
+      skip = NO_CLAIM_SECTION.test(h[1] ?? "");
+      continue;
+    }
+    if (skip) continue;
+    if (bullet.test(l)) {
+      const own = [l.replace(bullet, "")];
+      const all = [...own];
+      const base2 = indent(l);
+      let j2 = i + 1;
+      for (; j2 < lines.length; j2++) {
+        const n = lines[j2];
+        if (!n.trim()) break;
+        if (indent(n) <= base2 && (bullet.test(n) || /^#/.test(n))) break;
+        all.push(n.trim());
+        if (!bullet.test(n)) own.push(n.trim());
+        else break;
+      }
+      for (let k = j2; k < lines.length; k++) {
+        const n = lines[k];
+        if (!n.trim() || indent(n) <= base2) break;
+        all.push(n.trim());
+      }
+      out2.push({ line: i + 1, own: own.join(" "), text: all.join(" ") });
+      continue;
+    }
+    const para = [l.trim()];
+    let j = i + 1;
+    while (j < lines.length && lines[j].trim() && !bullet.test(lines[j]) && !/^#/.test(lines[j]))
+      para.push(lines[j++].trim());
+    out2.push({ line: i + 1, own: para.join(" "), text: para.join(" ") });
+    i = j - 1;
+  }
+  return out2;
+}
 
 // src/scan/gh.ts
 var Gh = class {
@@ -10297,11 +10214,14 @@ var Gh = class {
   run;
   timeoutMs;
   calls = 0;
+  /** Calls the rate limit refused: every one is something not looked at. */
+  rateLimited = 0;
   async api(path, extra = []) {
     this.calls++;
     const res = await this.run("gh", ["api", ...extra, path], { timeoutMs: this.timeoutMs });
     if (res.missing) return { ok: false, status: 0, error: "gh is not installed" };
     if (!res.ok) {
+      if (/rate limit/i.test(res.stderr) || /rate limit/i.test(res.stdout)) this.rateLimited++;
       const m = /HTTP (\d{3})/.exec(res.stderr) ?? /"status":\s*"?(\d{3})/.exec(res.stdout);
       return { ok: false, status: m ? Number(m[1]) : 0, error: (res.stderr || res.stdout).trim().split("\n")[0] };
     }
@@ -10451,6 +10371,7 @@ function validateIndicator(ind, at, usable, push) {
       push(`${at}.value`, `invalid regex: ${e.message}`);
     }
   }
+  if (ind.weak !== void 0 && typeof ind.weak !== "boolean") push(`${at}.weak`, "true or false");
   if (ind.type === "package" && !ind.ecosystem) push(`${at}.ecosystem`, "required for a package indicator");
   if (ind.type === "sha256" && !/^[a-f0-9]{64}$/i.test(ind.value)) push(`${at}.value`, "a sha256 is 64 hex characters");
   if (ind.type === "ip" && !/^[\d.]+$|^[a-f0-9:]+$/i.test(defang(ind.value))) push(`${at}.value`, "an IPv4 or IPv6 address");
@@ -10501,6 +10422,16 @@ function matchers(iocs, ...types) {
 function windowStart(iocs) {
   const times = iocs.campaigns.map((c) => Date.parse(c.since)).filter((t) => !Number.isNaN(t));
   return new Date(times.length ? Math.min(...times) : Date.now() - 30 * 864e5).toISOString();
+}
+function reviewStart(iocs, now = /* @__PURE__ */ new Date(), days = 30) {
+  return new Date(Math.max(Date.parse(windowStart(iocs)), now.getTime() - days * 864e5)).toISOString();
+}
+function inWindow(m, at) {
+  if (!at) return true;
+  const t = Date.parse(at);
+  if (Number.isNaN(t)) return true;
+  if (t < Date.parse(m.campaign.since)) return false;
+  return !m.campaign.until || t <= Date.parse(m.campaign.until) + 864e5;
 }
 function packageHit(ind, ecosystem, name, version) {
   if (ind.type !== "package") return false;
@@ -10617,7 +10548,7 @@ function findingLine(f) {
 }
 var SEV_ORDER = ["compromised", "exposed", "suspicious", "info"];
 function payloadRan(findings, repo) {
-  return findings.some((f) => f.subject === repo && f.severity === "compromised" && /^(Workflow|Commit) /.test(f.title));
+  return findings.some((f) => f.subject === repo && f.severity === "compromised" && /^(Workflow "|Commit )/.test(f.title));
 }
 function idList(ids, max = 8) {
   if (!ids.length) return "none";
@@ -10656,7 +10587,7 @@ function renderReport(run, now = /* @__PURE__ */ new Date()) {
         const own = fs.filter((f) => f.subject === r);
         const ran = payloadRan(fs, r);
         const hitRepo = own.some((f) => f.severity === "compromised");
-        out2.push(`### ${r}${hitRepo ? ran ? ": attacker code ran in CI" : ": probe only, no attacker run seen" : ""}`, "");
+        out2.push(`### ${r}${hitRepo ? ran ? ": the attacker made CI run" : ": probe only, no attacker run seen" : ""}`, "");
         for (const sev of SEV_ORDER) for (const f of own.filter((x) => x.severity === sev)) out2.push(findingLine(f));
         out2.push("");
       }
@@ -10714,7 +10645,7 @@ function renderRemediation(findings, vs, _sources, gaps) {
     hitRepos.sort((a, b) => Number(payloadRan(findings, b)) - Number(payloadRan(findings, a)) || a.localeCompare(b));
     for (const r of hitRepos) {
       const ran = payloadRan(findings, r);
-      out2.push(`### ${r}${ran ? ": attacker code ran in CI, rotate now" : ": probe PR only"}`, "");
+      out2.push(`### ${r}${ran ? ": the attacker made CI run, rotate unless the run's code is provably yours" : ": probe PR only"}`, "");
       if (!ran)
         out2.push(
           "The probe proves the attacker could write here. No attacker run was seen, but runs can be deleted: check the run list below for gaps, and rotate if any attacker run executed.",
@@ -10803,7 +10734,8 @@ async function searchInto(run, query, opts = {}) {
   }
   const all = [...existing, ...added];
   run.write("search-hits.json", all);
-  return { query, added, total: all.length, searched: res.searched !== false, notes: res.notes };
+  const notes = res.notes.map((n) => n.replace(/`?(webindex|ultraguard) (searxng|stack|firecrawl) [a-z]+`?/g, "a SearXNG instance (ULTRAGUARD_SEARXNG)"));
+  return { query, added, total: all.length, searched: res.searched !== false, notes };
 }
 
 // src/run.ts
@@ -10917,7 +10849,7 @@ function wildcardTrust(doc) {
   return void 0;
 }
 async function scanCloud(iocs, runner2, opts = {}) {
-  const since = windowStart(iocs);
+  const since = reviewStart(iocs, opts.now);
   const result = { surface: "cloud", scanned: false, stats: {}, startedAt: (opts.now ?? /* @__PURE__ */ new Date()).toISOString() };
   const findings = [];
   const gaps = [];
@@ -11316,7 +11248,7 @@ async function scanDeps(iocs, tree, run, opts = {}) {
 var firstLine = (s) => (s ?? "").split("\n")[0] ?? "";
 function hit(m, base2) {
   return {
-    severity: "compromised",
+    severity: m.indicator.weak ? "suspicious" : "compromised",
     ...base2,
     campaign: m.campaign.id,
     source: m.indicator.source,
@@ -11324,15 +11256,16 @@ function hit(m, base2) {
     key: `${base2.surface}|${base2.subject}|${m.indicator.type}:${m.indicator.value}|${base2.evidence.ref}`
   };
 }
-function firstMatch(ms, value) {
+function firstMatch(ms, value, at) {
   if (!value) return void 0;
-  return ms.find((m) => m.test(value));
+  return ms.find((m) => inWindow(m, at) && m.test(value));
 }
 async function scanGithub(iocs, runner2, opts = {}) {
   const gh = new Gh(runner2);
   const now = opts.now ?? /* @__PURE__ */ new Date();
   const since = windowStart(iocs);
   const sinceDay = since.slice(0, 10);
+  const reviewSince = reviewStart(iocs, now);
   const accountRes = { surface: "github:account", scanned: false, stats: {}, startedAt: now.toISOString() };
   const reposRes = { surface: "github:repos", scanned: false, stats: {}, startedAt: now.toISOString() };
   const accF = [];
@@ -11385,7 +11318,7 @@ async function scanGithub(iocs, runner2, opts = {}) {
     if (!prs.ok) accG.push({ surface: "github:account", what: "pull requests you opened", why: prs.error ?? `HTTP ${prs.status}` });
     if (prs.truncated) accG.push({ surface: "github:account", what: "pull requests past the first 1,000", why: "search caps at 1,000 results" });
     for (const pr of prs.data ?? []) {
-      const m = firstMatch(M.pr, pr.title);
+      const m = firstMatch(M.pr, pr.title, pr.created_at);
       if (!m) continue;
       const repo = String(pr.repository_url ?? "").replace("https://api.github.com/repos/", "");
       accF.push(
@@ -11414,7 +11347,7 @@ async function scanGithub(iocs, runner2, opts = {}) {
       });
     for (const c of commits.data ?? []) {
       const msg = firstLine(c.commit?.message);
-      const m = firstMatch(M.commit, msg);
+      const m = firstMatch(M.commit, msg, c.commit?.author?.date);
       if (!m) continue;
       const repo = c.repository?.full_name ?? "?";
       accF.push(
@@ -11437,7 +11370,7 @@ async function scanGithub(iocs, runner2, opts = {}) {
       if (e.created_at < since) continue;
       const ref = String(e.payload?.ref ?? "").replace(/^refs\/heads\//, "");
       if (!ref || e.type !== "CreateEvent" && e.type !== "PushEvent") continue;
-      const m = firstMatch(M.branch, ref);
+      const m = firstMatch(M.branch, ref, e.created_at);
       if (!m) continue;
       accF.push(
         hit(m, {
@@ -11463,7 +11396,7 @@ async function scanGithub(iocs, runner2, opts = {}) {
     }
     accountRes.stats[path === "user/keys" ? "sshKeys" : "gpgKeys"] = keys.data?.length ?? 0;
     for (const k of keys.data ?? []) {
-      if (!k.created_at || k.created_at < since) continue;
+      if (!k.created_at || k.created_at < reviewSince) continue;
       accF.push({
         surface: "github:account",
         severity: "suspicious",
@@ -11493,6 +11426,16 @@ async function scanGithub(iocs, runner2, opts = {}) {
   reposRes.stats.repos = repos.length;
   let inactive = 0;
   let noAdmin = 0;
+  let quietGaps = 0;
+  const rate = await gh.api("rate_limit");
+  const remaining = rate.data?.resources?.core?.remaining;
+  if (remaining !== void 0 && remaining < repos.length * 6)
+    repG.push({
+      surface: "github:repos",
+      what: "part of the repositories may hit the API rate limit",
+      why: `${remaining} REST calls left this hour for ${repos.length} repositories (about 5 each)`,
+      fix: "wait for the hourly reset, or narrow with --repos"
+    });
   const truncated = [];
   await mapPool(repos, opts.concurrency ?? 8, async (repo) => {
     const r = repo.full_name;
@@ -11505,7 +11448,7 @@ async function scanGithub(iocs, runner2, opts = {}) {
       });
       for (const pr of prs.data ?? []) {
         if (pr.created_at < since) continue;
-        const m = firstMatch(M.pr, pr.title) ?? firstMatch(M.branch, pr.head?.ref);
+        const m = firstMatch(M.pr, pr.title, pr.created_at) ?? firstMatch(M.branch, pr.head?.ref, pr.created_at);
         if (!m) continue;
         const actor = pr.user?.login;
         add2(
@@ -11540,7 +11483,7 @@ async function scanGithub(iocs, runner2, opts = {}) {
       if (commits.truncated) truncated.push(`${r} commits`);
       for (const c of commits.data ?? []) {
         const msg = firstLine(c.commit?.message);
-        const m = firstMatch(M.commit, msg);
+        const m = firstMatch(M.commit, msg, c.commit?.author?.date);
         if (!m) continue;
         const actor = c.author?.login ?? c.commit?.author?.name;
         let excerpt;
@@ -11569,7 +11512,7 @@ async function scanGithub(iocs, runner2, opts = {}) {
       const w = byWorkflow.get(run.workflow_id) ?? { numbers: [], name: run.name };
       w.numbers.push(run.run_number);
       byWorkflow.set(run.workflow_id, w);
-      const m = firstMatch(M.branch, run.head_branch) ?? firstMatch(M.commit, firstLine(run.display_title)) ?? firstMatch(M.pr, run.display_title);
+      const m = firstMatch(M.branch, run.head_branch, run.created_at) ?? firstMatch(M.commit, firstLine(run.display_title), run.created_at) ?? firstMatch(M.pr, run.display_title, run.created_at);
       if (!m) continue;
       const actor = run.triggering_actor?.login ?? run.actor?.login;
       add2(
@@ -11584,19 +11527,13 @@ async function scanGithub(iocs, runner2, opts = {}) {
         })
       );
     }
+    const runGaps = [];
     for (const [id, w] of byWorkflow) {
       const nums = [...new Set(w.numbers)].sort((a, b) => a - b);
       const missing = [];
       for (let i = 1; i < nums.length; i++) for (let n = nums[i - 1] + 1; n < nums[i]; n++) missing.push(n);
-      if (!missing.length || runs.truncated) continue;
-      add2({
-        surface: "github:repos",
-        severity: "suspicious",
-        subject: r,
-        title: `Workflow "${w.name}" is missing ${missing.length} run(s) in the window (#${missing.slice(0, 5).join(", #")}${missing.length > 5 ? ", ..." : ""}): deleted runs`,
-        evidence: { kind: "api", ref: `repos/${r}/actions/workflows/${id}/runs` },
-        key: `github:repos|${r}|run-gap|${id}|${missing.join(",")}`
-      });
+      if (!missing.length || runs.truncated || missing.length > nums.length) continue;
+      runGaps.push({ id, name: w.name, missing });
     }
     if (M.cache.length) {
       const caches = await gh.api(`repos/${r}/actions/caches?per_page=100`);
@@ -11700,7 +11637,7 @@ async function scanGithub(iocs, runner2, opts = {}) {
       ]) {
         const items = await gh.api(`repos/${r}/${path}`);
         for (const it of items.data ?? []) {
-          if (!it.created_at || it.created_at < since) continue;
+          if (!it.created_at || it.created_at < reviewSince) continue;
           add2({
             surface: "github:repos",
             severity: "suspicious",
@@ -11713,11 +11650,36 @@ async function scanGithub(iocs, runner2, opts = {}) {
         }
       }
     } else noAdmin++;
+    if (runGaps.length && repF.some((f) => f.subject === r && f.severity === "compromised")) {
+      for (const g of runGaps)
+        add2({
+          surface: "github:repos",
+          severity: "suspicious",
+          subject: r,
+          title: `Workflow "${g.name}" is missing ${g.missing.length} run(s) in the window (#${g.missing.slice(0, 5).join(", #")}${g.missing.length > 5 ? ", ..." : ""}): deleted runs`,
+          evidence: { kind: "api", ref: `repos/${r}/actions/workflows/${g.id}/runs` },
+          key: `github:repos|${r}|run-gap|${g.id}|${g.missing.join(",")}`
+        });
+    } else if (runGaps.length) quietGaps++;
   });
   for (const f of repF) {
     const m = f.actor ? firstMatch(M.actor, f.actor) : void 0;
     if (m && !f.title.includes("(named compromised")) f.title += ` (named compromised by ${m.indicator.source})`;
   }
+  if (quietGaps)
+    repG.push({
+      surface: "github:repos",
+      what: `missing workflow run numbers in ${quietGaps} repositories with no IOC match`,
+      why: "not reported as findings: alone they are usually retention or re-runs"
+    });
+  if (gh.rateLimited)
+    for (const g of [accG, repG])
+      g.push({
+        surface: g === accG ? "github:account" : "github:repos",
+        what: `${gh.rateLimited} GitHub API calls`,
+        why: "the API rate limit refused them: what they would have read was not checked",
+        fix: "re-run scan github after the hourly reset (gh api rate_limit)"
+      });
   reposRes.stats.inactiveSkipped = inactive;
   reposRes.stats.apiCalls = gh.calls;
   if (inactive)
@@ -11784,8 +11746,7 @@ function startupDirs(home, os) {
 async function scanHost(iocs, tree, runner2, opts = {}) {
   const home = opts.home ?? homedir3();
   const os = opts.platform ?? platform();
-  const since = windowStart(iocs);
-  const sinceMs = Date.parse(since);
+  const sinceMs = Date.parse(reviewStart(iocs, opts.now));
   const result = { surface: "host", scanned: true, stats: {}, startedAt: (opts.now ?? /* @__PURE__ */ new Date()).toISOString() };
   const findings = [];
   const gaps = [];
@@ -11804,10 +11765,13 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
     if (!m) continue;
     const digest = sha256File(p);
     const hashHit = digest ? hashes.get(digest) : void 0;
+    const campaignHashes = M.hash.filter((h) => h.campaign.id === m.campaign.id).length;
+    const nameOnly = !hashHit && !!m.indicator.weak;
     findings.push(
       hitOf(hashHit ?? m, {
         subject: p,
-        title: `File ${p} matches ${hashHit ? "the sha256" : `"${m.indicator.value}"`}`,
+        severity: nameOnly ? "suspicious" : "compromised",
+        title: hashHit ? `File ${p} matches the sha256` : nameOnly ? `File ${p} is named like "${m.indicator.value}" (a common name)${campaignHashes ? `, and its sha256 matches none of the campaign's ${campaignHashes} hash(es)` : ""}` : `File ${p} matches "${m.indicator.value}"`,
         evidence: { kind: "file", ref: p, excerpt: digest ? `sha256=${digest}` : void 0 }
       })
     );
@@ -12356,7 +12320,10 @@ async function dispatch(a) {
       else {
         for (const h of r.added) out(`- ${h.title ?? ""} <${h.url}>${h.snippet ? `
     ${h.snippet}` : ""}`);
-        if (!r.searched) out(`search could not reach any engine: ${r.notes.join("; ")}`);
+        if (!r.searched)
+          out(
+            "search could not reach any engine (the keyless engines refused or throttled this address). Retry in a few minutes, use your own web search tool, or point ULTRAGUARD_SEARXNG at a SearXNG instance."
+          );
         out(
           `
 ${r.added.length} new hit(s), ${r.total} in ${run.path("search-hits.json")}. Keep the primary write-ups, then: ultraguard intel --web-results <that file, trimmed> --out ${run.dir}`
@@ -12378,7 +12345,7 @@ ${r.added.length} new hit(s), ${r.total} in ${run.path("search-hits.json")}. Kee
      text: ${run.path(s.file)}` : ""}`);
         out(
           `
-Next: read each source, fill ${run.path(run.iocs() ? "iocs.json" : "iocs.todo.json")}, then \`ultraguard ioc set --file <it> --out ${run.dir}\`.`
+Next: read each source, then write ${run.path("iocs.json")} (start from ${run.path("iocs.todo.json")}: one campaign per ATTACK, so merge the sources that describe the same one), then \`ultraguard ioc set --file ${run.path("iocs.json")} --out ${run.dir}\`.`
         );
       }
       return sources.some((s) => !s.error) ? EXIT_OK : EXIT_FAILURE;

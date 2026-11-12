@@ -7,7 +7,7 @@
 //  - github:repos — did ANYONE do it in a repository you can write to? A
 //    collaborator's stolen token running a stealer in your org's CI exposes the
 //    secrets that CI holds, even when your own account is clean.
-import { type Matcher, matchers, windowStart } from "../ioc.js";
+import { inWindow, type Matcher, matchers, reviewStart, windowStart } from "../ioc.js";
 import { mapPool } from "../pool.js";
 import type { Runner } from "../runner.js";
 import type { Finding, Gap, IocFile, SurfaceResult } from "../types.js";
@@ -42,7 +42,7 @@ const firstLine = (s: string | undefined | null) => (s ?? "").split("\n")[0] ?? 
 
 function hit(m: Matcher, base: Omit<NewFinding, "campaign" | "source" | "indicator" | "key" | "severity"> & { severity?: Finding["severity"] }): NewFinding {
   return {
-    severity: "compromised",
+    severity: m.indicator.weak ? "suspicious" : "compromised",
     ...base,
     campaign: m.campaign.id,
     source: m.indicator.source,
@@ -51,9 +51,10 @@ function hit(m: Matcher, base: Omit<NewFinding, "campaign" | "source" | "indicat
   };
 }
 
-function firstMatch(ms: Matcher[], value: string | undefined | null): Matcher | undefined {
+/** The first indicator that matches `value`, counting only campaigns whose own window holds `at`. */
+function firstMatch(ms: Matcher[], value: string | undefined | null, at?: string | null): Matcher | undefined {
   if (!value) return undefined;
-  return ms.find((m) => m.test(value));
+  return ms.find((m) => inWindow(m, at) && m.test(value));
 }
 
 export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScanOptions = {}): Promise<GithubScanResult> {
@@ -61,6 +62,7 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
   const now = opts.now ?? new Date();
   const since = windowStart(iocs);
   const sinceDay = since.slice(0, 10);
+  const reviewSince = reviewStart(iocs, now);
   const accountRes: SurfaceResult = { surface: "github:account", scanned: false, stats: {}, startedAt: now.toISOString() };
   const reposRes: SurfaceResult = { surface: "github:repos", scanned: false, stats: {}, startedAt: now.toISOString() };
   const accF: NewFinding[] = [];
@@ -119,7 +121,7 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
     if (!prs.ok) accG.push({ surface: "github:account", what: "pull requests you opened", why: prs.error ?? `HTTP ${prs.status}` });
     if (prs.truncated) accG.push({ surface: "github:account", what: "pull requests past the first 1,000", why: "search caps at 1,000 results" });
     for (const pr of prs.data ?? []) {
-      const m = firstMatch(M.pr, pr.title);
+      const m = firstMatch(M.pr, pr.title, pr.created_at);
       if (!m) continue;
       const repo = String(pr.repository_url ?? "").replace("https://api.github.com/repos/", "");
       accF.push(
@@ -150,7 +152,7 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
       });
     for (const c of commits.data ?? []) {
       const msg = firstLine(c.commit?.message);
-      const m = firstMatch(M.commit, msg);
+      const m = firstMatch(M.commit, msg, c.commit?.author?.date);
       if (!m) continue;
       const repo = c.repository?.full_name ?? "?";
       accF.push(
@@ -175,7 +177,7 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
       if (e.created_at < since) continue;
       const ref = String(e.payload?.ref ?? "").replace(/^refs\/heads\//, "");
       if (!ref || (e.type !== "CreateEvent" && e.type !== "PushEvent")) continue;
-      const m = firstMatch(M.branch, ref);
+      const m = firstMatch(M.branch, ref, e.created_at);
       if (!m) continue;
       accF.push(
         hit(m, {
@@ -203,7 +205,7 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
     }
     accountRes.stats[path === "user/keys" ? "sshKeys" : "gpgKeys"] = keys.data?.length ?? 0;
     for (const k of keys.data ?? []) {
-      if (!k.created_at || k.created_at < since) continue;
+      if (!k.created_at || k.created_at < reviewSince) continue;
       accF.push({
         surface: "github:account",
         severity: "suspicious",
@@ -236,6 +238,16 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
 
   let inactive = 0;
   let noAdmin = 0;
+  let quietGaps = 0;
+  const rate = await gh.api<any>("rate_limit");
+  const remaining = rate.data?.resources?.core?.remaining as number | undefined;
+  if (remaining !== undefined && remaining < repos.length * 6)
+    repG.push({
+      surface: "github:repos",
+      what: "part of the repositories may hit the API rate limit",
+      why: `${remaining} REST calls left this hour for ${repos.length} repositories (about 5 each)`,
+      fix: "wait for the hourly reset, or narrow with --repos",
+    });
   const truncated: string[] = [];
   await mapPool(repos, opts.concurrency ?? 8, async (repo) => {
     const r = repo.full_name;
@@ -250,7 +262,7 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
       });
       for (const pr of prs.data ?? []) {
         if (pr.created_at < since) continue;
-        const m = firstMatch(M.pr, pr.title) ?? firstMatch(M.branch, pr.head?.ref);
+        const m = firstMatch(M.pr, pr.title, pr.created_at) ?? firstMatch(M.branch, pr.head?.ref, pr.created_at);
         if (!m) continue;
         const actor = pr.user?.login;
         add(
@@ -288,7 +300,7 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
       if (commits.truncated) truncated.push(`${r} commits`);
       for (const c of commits.data ?? []) {
         const msg = firstLine(c.commit?.message);
-        const m = firstMatch(M.commit, msg);
+        const m = firstMatch(M.commit, msg, c.commit?.author?.date);
         if (!m) continue;
         const actor = c.author?.login ?? c.commit?.author?.name;
         let excerpt: string | undefined;
@@ -319,7 +331,10 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
       const w: { numbers: number[]; name: string } = byWorkflow.get(run.workflow_id) ?? { numbers: [], name: run.name };
       w.numbers.push(run.run_number);
       byWorkflow.set(run.workflow_id, w);
-      const m = firstMatch(M.branch, run.head_branch) ?? firstMatch(M.commit, firstLine(run.display_title)) ?? firstMatch(M.pr, run.display_title);
+      const m =
+        firstMatch(M.branch, run.head_branch, run.created_at) ??
+        firstMatch(M.commit, firstLine(run.display_title), run.created_at) ??
+        firstMatch(M.pr, run.display_title, run.created_at);
       if (!m) continue;
       const actor = run.triggering_actor?.login ?? run.actor?.login;
       add(
@@ -334,19 +349,16 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
         }),
       );
     }
+    // Deleted runs (gaps in run_number) are judged at the end: alone they are
+    // mostly retention and re-runs; next to an IOC hit they are the cover-up.
+    const runGaps: { id: number; name: string; missing: number[] }[] = [];
     for (const [id, w] of byWorkflow) {
       const nums = [...new Set(w.numbers)].sort((a, b) => a - b);
       const missing: number[] = [];
       for (let i = 1; i < nums.length; i++) for (let n = (nums[i - 1] as number) + 1; n < (nums[i] as number); n++) missing.push(n);
-      if (!missing.length || runs.truncated) continue;
-      add({
-        surface: "github:repos",
-        severity: "suspicious",
-        subject: r,
-        title: `Workflow "${w.name}" is missing ${missing.length} run(s) in the window (#${missing.slice(0, 5).join(", #")}${missing.length > 5 ? ", ..." : ""}): deleted runs`,
-        evidence: { kind: "api", ref: `repos/${r}/actions/workflows/${id}/runs` },
-        key: `github:repos|${r}|run-gap|${id}|${missing.join(",")}`,
-      });
+      // More holes than runs is a listing artefact (another event type, a filter), not deletions.
+      if (!missing.length || runs.truncated || missing.length > nums.length) continue;
+      runGaps.push({ id, name: w.name, missing });
     }
 
     if (M.cache.length) {
@@ -458,7 +470,7 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
       ] as const) {
         const items = await gh.api<any[]>(`repos/${r}/${path}`);
         for (const it of items.data ?? []) {
-          if (!it.created_at || it.created_at < since) continue;
+          if (!it.created_at || it.created_at < reviewSince) continue;
           add({
             surface: "github:repos",
             severity: "suspicious",
@@ -471,6 +483,18 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
         }
       }
     } else noAdmin++;
+
+    if (runGaps.length && repF.some((f) => f.subject === r && f.severity === "compromised")) {
+      for (const g of runGaps)
+        add({
+          surface: "github:repos",
+          severity: "suspicious",
+          subject: r,
+          title: `Workflow "${g.name}" is missing ${g.missing.length} run(s) in the window (#${g.missing.slice(0, 5).join(", #")}${g.missing.length > 5 ? ", ..." : ""}): deleted runs`,
+          evidence: { kind: "api", ref: `repos/${r}/actions/workflows/${g.id}/runs` },
+          key: `github:repos|${r}|run-gap|${g.id}|${g.missing.join(",")}`,
+        });
+    } else if (runGaps.length) quietGaps++;
   });
 
   // Actor IOCs: a login an article names as compromised, seen anywhere in your repos.
@@ -479,6 +503,20 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
     if (m && !f.title.includes("(named compromised")) f.title += ` (named compromised by ${m.indicator.source})`;
   }
 
+  if (quietGaps)
+    repG.push({
+      surface: "github:repos",
+      what: `missing workflow run numbers in ${quietGaps} repositories with no IOC match`,
+      why: "not reported as findings: alone they are usually retention or re-runs",
+    });
+  if (gh.rateLimited)
+    for (const g of [accG, repG])
+      g.push({
+        surface: g === accG ? "github:account" : "github:repos",
+        what: `${gh.rateLimited} GitHub API calls`,
+        why: "the API rate limit refused them: what they would have read was not checked",
+        fix: "re-run scan github after the hourly reset (gh api rate_limit)",
+      });
   reposRes.stats.inactiveSkipped = inactive;
   reposRes.stats.apiCalls = gh.calls;
   if (inactive)

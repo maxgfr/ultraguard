@@ -199,7 +199,10 @@ async function dispatch(a: CommandArgs): Promise<number> {
       if (json) out(jsonLine(r));
       else {
         for (const h of r.added) out(`- ${h.title ?? ""} <${h.url}>${h.snippet ? `\n    ${h.snippet}` : ""}`);
-        if (!r.searched) out(`search could not reach any engine: ${r.notes.join("; ")}`);
+        if (!r.searched)
+          out(
+            "search could not reach any engine (the keyless engines refused or throttled this address). Retry in a few minutes, use your own web search tool, or point ULTRAGUARD_SEARXNG at a SearXNG instance.",
+          );
         out(
           `\n${r.added.length} new hit(s), ${r.total} in ${run.path("search-hits.json")}. Keep the primary write-ups, then: ultraguard intel --web-results <that file, trimmed> --out ${run.dir}`,
         );
@@ -218,7 +221,7 @@ async function dispatch(a: CommandArgs): Promise<number> {
         for (const s of sources)
           out(`[${s.id}] ${s.error ? `FAILED (${s.error})` : "ok"}  ${s.title ?? ""} <${s.url}>${s.file ? `\n     text: ${run.path(s.file)}` : ""}`);
         out(
-          `\nNext: read each source, fill ${run.path(run.iocs() ? "iocs.json" : "iocs.todo.json")}, then \`ultraguard ioc set --file <it> --out ${run.dir}\`.`,
+          `\nNext: read each source, then write ${run.path("iocs.json")} (start from ${run.path("iocs.todo.json")}: one campaign per ATTACK, so merge the sources that describe the same one), then \`ultraguard ioc set --file ${run.path("iocs.json")} --out ${run.dir}\`.`,
         );
       }
       return sources.some((s) => !s.error) ? EXIT_OK : EXIT_FAILURE;

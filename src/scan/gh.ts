@@ -11,6 +11,8 @@ export interface GhResult<T> {
 
 export class Gh {
   calls = 0;
+  /** Calls the rate limit refused: every one is something not looked at. */
+  rateLimited = 0;
   constructor(
     private readonly run: Runner,
     private readonly timeoutMs = 60_000,
@@ -21,6 +23,7 @@ export class Gh {
     const res = await this.run("gh", ["api", ...extra, path], { timeoutMs: this.timeoutMs });
     if (res.missing) return { ok: false, status: 0, error: "gh is not installed" };
     if (!res.ok) {
+      if (/rate limit/i.test(res.stderr) || /rate limit/i.test(res.stdout)) this.rateLimited++;
       const m = /HTTP (\d{3})/.exec(res.stderr) ?? /"status":\s*"?(\d{3})/.exec(res.stdout);
       return { ok: false, status: m ? Number(m[1]) : 0, error: (res.stderr || res.stdout).trim().split("\n")[0] };
     }

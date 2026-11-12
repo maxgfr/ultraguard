@@ -60,7 +60,7 @@ A run directory with:
   file, command), the actor, and whether it was your login or someone else's;
 - `gaps.json`: what could not be looked at. Gaps are not absence;
 - `REPORT.md`: verdict per surface (COMPROMISED, EXPOSED, REVIEW, CLEAN,
-  UNKNOWN), repositories where attacker code ran listed first, timeline,
+  UNKNOWN), repositories where the attacker made CI run listed first, timeline,
   coverage;
 - `REMEDIATION.md`: the commands to run, most urgent first. ultraguard runs none.
 
