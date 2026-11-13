@@ -6,7 +6,17 @@ import { doctor } from "../src/doctor.js";
 import { Run } from "../src/run.js";
 import type { Runner } from "../src/runner.js";
 import { renderReport } from "../src/report.js";
-import { type CheckerSource, type CheckerVuln, defaultChecker, FEED_FILES, feedDir, feedSummary, scanDeps, updateCheckerFeeds } from "../src/scan/deps.js";
+import {
+  CHECKER_IGNORED,
+  type CheckerSource,
+  type CheckerVuln,
+  defaultChecker,
+  FEED_FILES,
+  feedDir,
+  feedSummary,
+  scanDeps,
+  updateCheckerFeeds,
+} from "../src/scan/deps.js";
 import { parseLockfile } from "../src/scan/lockfiles.js";
 import { walk } from "../src/scan/walk.js";
 import { PACKAGE_CHECKER_REF, PACKAGE_CHECKER_VERSION } from "../src/vendor/package-checker-script.js";
@@ -253,23 +263,65 @@ describe("what the deps walk could not see", () => {
     expect(s.result.stats.advisoryOnlyLockfiles).toBe(1);
   });
 
-  it("lockfiles under folders package-checker prunes are scanned: no default prune, vendor staged on its own", async () => {
+  it("lockfiles under folders package-checker prunes are each staged on their own; its default prune stays on", async () => {
     const root = tmp("ug-prune-");
     const lock = npmLock({ "flatmap-stream": "0.1.1" });
-    const vendored = put(root, "proj/vendor/lib/package-lock.json", lock);
-    for (const rel of ["ios/Pods/x", "web/.nuxt/y", "py/site-packages/z", "mac/DerivedData/w"]) put(root, `${rel}/package-lock.json`, lock);
+    const pruned = ["proj/vendor/lib", "ios/Pods/x", "web/.nuxt/y", "py/site-packages/z", "mac/DerivedData/w", "a/b/Pods/c"].map((rel) =>
+      put(root, `${rel}/package-lock.json`, lock),
+    );
+    put(root, "app/web/package-lock.json", lock);
+    expect(CHECKER_IGNORED).toEqual(expect.arrayContaining(["vendor", "Pods", ".nuxt", "site-packages", "DerivedData"]));
     const runner = fakeChecker(0, { vulnerabilities: [] });
     const run = new Run(tmp());
     await scanDeps(NO_PKG, walk([root]), run, { runner, roots: [root] });
     const dirs = runner.calls.map((c) => c[2] as string);
-    expect(runner.calls.every((c) => c.includes("--no-default-prune"))).toBe(true);
-    expect(dirs.filter((d) => !d.startsWith(run.dir)).sort()).toEqual(
-      ["ios/Pods", "mac/DerivedData", "py/site-packages", "web/.nuxt"].map((d) => join(root, d)),
-    );
-    // package-checker always ignores vendor/: that lockfile gets a run of its own.
-    const staged = dirs.find((d) => d.startsWith(join(run.dir, "package-checker", "root-lockfiles"))) as string;
-    expect(readFileSync(join(staged, "package-lock.json"), "utf8")).toBe(readFileSync(vendored, "utf8"));
-    expect(dirs).not.toContain(join(root, "proj/vendor"));
+    // Virtualenvs' site-packages stay out of a project's run: package-checker's default prune is not turned off.
+    expect(runner.calls.some((c) => c.includes("--no-default-prune"))).toBe(false);
+    expect(dirs.filter((d) => !d.startsWith(run.dir))).toEqual([join(root, "app/web")]);
+    // Every lockfile under a pruned or ignored folder gets a run of its own.
+    const staged = dirs.filter((d) => d.startsWith(join(run.dir, "package-checker", "root-lockfiles")));
+    expect(staged).toHaveLength(pruned.length);
+    for (const d of staged) expect(readFileSync(join(d, "package-lock.json"), "utf8")).toBe(lock);
+  });
+
+  it("CVEs package-checker reports in folders the walk skips (dist, .venv) are not the project's backlog; a malicious one is still a finding", async () => {
+    const root = tmp("ug-outside-");
+    const app = put(root, "code/app/package-lock.json", npmLock({ qs: "6.1.0" }));
+    const dist = put(root, "code/app/dist/server/package-lock.json", npmLock({ minimist: "0.0.8" }));
+    const venv = put(root, "code/app/.venv/lib/python3.13/site-packages/jupyterlab/staging/yarn.lock", "");
+    const bad = put(root, "code/app/build/package-lock.json", npmLock({ "flatmap-stream": "0.1.1" }));
+    const vuln = (file: string, name: string, version: string, id?: string): Partial<CheckerVuln> => ({
+      name,
+      version,
+      file,
+      ecosystem: "npm",
+      severity: "high",
+      advisories: [id ? { id } : { cve: `CVE-2026-${name.length}` }],
+    });
+    const runner = fakeChecker(1, {
+      vulnerabilities: [
+        vuln(app, "qs", "6.1.0"),
+        vuln(dist, "minimist", "0.0.8"),
+        vuln(venv, "lodash", "4.17.4"),
+        vuln(bad, "flatmap-stream", "0.1.1", "MAL-2025-20690"),
+      ],
+    });
+    const run = new Run(tmp());
+    const s = await scanDeps(NO_PKG, walk([root]), run, { runner, roots: [root] });
+    expect(s.result.stats.lockfiles).toBe(1);
+    expect(s.vulnerable.map((v) => v.file)).toEqual([app]);
+    expect(s.result.stats.vulnerable).toBe(1);
+    expect(s.result.stats.vulnerableOutsideWalk).toBe(2);
+    expect(s.findings.some((f) => f.severity === "compromised" && f.subject === bad)).toBe(true);
+    const gap = s.gaps.find((g) => g.what.includes("under folders the walk skips"));
+    expect(gap?.what).toContain(dist);
+    expect(gap?.what).toContain(venv);
+    const saved = run.read<{ vulnerabilities: CheckerVuln[]; outsideWalk: CheckerVuln[] }>("deps-vulnerabilities.json", {
+      vulnerabilities: [],
+      outsideWalk: [],
+    });
+    expect(saved.vulnerabilities.map((v) => v.file).sort()).toEqual([app, bad].sort());
+    expect(saved.outsideWalk.map((v) => v.file).sort()).toEqual([dist, venv].sort());
   });
 
   it("bun.lockb is handed to package-checker, and its not-scanned reason is a gap", async () => {

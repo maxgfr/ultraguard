@@ -9,7 +9,7 @@
 //     them to vulns.ts, which ranks them and replaces that line. The feeds are
 //     ultraguard's own copy in the state folder (--data-dir), and completeness
 //     is package-checker's exit code and JSON report (3, incomplete_reasons).
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { writeFileAtomic } from "../engine.js";
@@ -189,8 +189,9 @@ export function defaultChecker(runner: Runner, workDir: string, opts: { dataDir?
     // Exit 0: nothing found. 1: vulnerabilities found. 3: incomplete. 2: it could not scan.
     const res = await runner(
       "bash",
-      // --no-default-prune: ultraguard's walk decides which folders count (Pods, .nuxt, site-packages included).
-      [script, dir, "--default-source-ghsa-osv", "--only-lockfiles", "--no-config", "--no-runtime-check", "--no-default-prune", ...feeds, "--export-json", out],
+      // package-checker's default prune stays on (it keeps virtualenvs' site-packages out of a project's run): the
+      // lockfiles ultraguard's walk found under a pruned folder (Pods, .nuxt, site-packages) are staged on their own.
+      [script, dir, "--default-source-ghsa-osv", "--only-lockfiles", "--no-config", "--no-runtime-check", ...feeds, "--export-json", out],
       {
         timeoutMs: CHECK_TIMEOUT_MIN * 60_000,
         cwd: workDir,
@@ -220,6 +221,14 @@ export function defaultChecker(runner: Runner, workDir: string, opts: { dataDir?
   };
 }
 
+const realOr = (p: string): string => {
+  try {
+    return realpathSync(p);
+  } catch {
+    return p;
+  }
+};
+
 const rootOf = (d: string, roots: string[]) =>
   roots.filter((r) => d === r || d.startsWith(r.endsWith(sep) ? r : r + sep)).sort((a, b) => b.length - a.length)[0];
 
@@ -229,17 +238,22 @@ export function rootLevelLockfiles(lockfiles: string[], roots: string[]): string
 }
 
 /**
- * Folders package-checker never descends into, even with --no-default-prune (its default ignore_paths;
- * node_modules, .git and .yarn are pruned by ultraguard's walk too). A lockfile under one is staged on its own.
+ * Folders package-checker never descends into: its default ignore_paths (vendor; node_modules, .git and .yarn are
+ * pruned by ultraguard's walk too) and its default prune list (read from the vendored script: Pods, .nuxt,
+ * site-packages, DerivedData...). A lockfile under one is staged on its own.
  */
-const CHECKER_IGNORED = new Set(["vendor"]);
+export const CHECKER_IGNORED: string[] = [
+  "vendor",
+  ...[...(/DEFAULT_PRUNE_PATHS=\(([^)]*)\)/.exec(PACKAGE_CHECKER_SCRIPT)?.[1]?.matchAll(/"([^"]+)"/g) ?? [])].map((m) => m[1] as string),
+];
 
-/** Lockfiles package-checker would skip in their group: under a folder it always ignores. */
+/** Lockfiles package-checker would skip in their group: under a folder it ignores or prunes. */
 export function ignoredByChecker(lockfiles: string[], roots: string[]): string[] {
   return lockfiles.filter((f) => {
     const d = dirname(f);
     const root = rootOf(d, roots);
-    return (root ? relative(root, d) : d).split(sep).some((s) => CHECKER_IGNORED.has(s));
+    const rel = `/${(root ? relative(root, d) : d).split(sep).filter(Boolean).join("/")}/`;
+    return CHECKER_IGNORED.some((p) => rel.includes(`/${p}/`));
   });
 }
 
@@ -468,7 +482,7 @@ export async function scanDeps(
       const all = [...lockfilePaths, ...advisoryOnly];
       const roots = opts.roots ?? [];
       // A lockfile directly in a walk root is copied to a folder of its own: package-checker would walk the whole root.
-      // So is one under a folder package-checker ignores (vendor): its group's run would skip it.
+      // So is one under a folder package-checker ignores or prunes (vendor, Pods, site-packages): its group's run would skip it.
       const ignored = new Set(ignoredByChecker(all, roots));
       const staged = new Map<string, string>(); // staged dir -> original lockfile
       for (const [i, f] of [...new Set([...rootLevelLockfiles(all, roots), ...ignored])].entries()) {
@@ -562,11 +576,17 @@ export async function scanDeps(
       vulns.length = 0;
       vulns.push(...unique);
       result.stats.checkerRuns = groups.length - failed;
+      // A group's run also reads lockfiles under folders ultraguard's walk skips (dist, build, .venv outside
+      // site-packages): a malicious package there is still a finding, a CVE is not one of the user's projects' backlog.
+      const handed = new Set(all);
+      let handedReal: Set<string> | undefined;
+      const wasHanded = (f: string) => handed.has(f) || (handedReal ??= new Set(all.map(realOr))).has(realOr(f));
+      const outside: CheckerVuln[] = [];
       let malicious = 0;
       for (const v of vulns) {
         const mal = v.advisories.filter((a) => (a.id ?? "").startsWith("MAL-"));
         if (!mal.length) {
-          backlog.push(v);
+          (wasHanded(v.file) ? backlog : outside).push(v);
           continue;
         }
         for (const a of mal) {
@@ -586,13 +606,25 @@ export async function scanDeps(
       }
       result.stats.malicious = malicious;
       result.stats.vulnerable = backlog.length;
+      if (outside.length) {
+        const files = [...new Set(outside.map((v) => v.file))];
+        result.stats.vulnerableOutsideWalk = outside.length;
+        gaps.push({
+          surface: "deps",
+          what: `${outside.length} locked package version(s) with known CVEs in ${files.length} lockfile(s) under folders the walk skips (build outputs, virtualenvs): ${listed(files)}`,
+          why: "package-checker read them in a project's run, but they are not counted as your projects' backlog nor planned for a fix (deps-vulnerabilities.json, outsideWalk)",
+          fix: "if one is your code, scan its folder with --roots <it>",
+        });
+      }
+      const skipped = new Set(outside);
       if (run)
         run.write("deps-vulnerabilities.json", {
           checker: `package-checker.sh ${PACKAGE_CHECKER_VERSION}`,
           ref: PACKAGE_CHECKER_REF,
           sha256: PACKAGE_CHECKER_SHA256,
           sources: feeds,
-          vulnerabilities: vulns,
+          vulnerabilities: vulns.filter((v) => !skipped.has(v)),
+          outsideWalk: outside,
         });
       if (backlog.length) {
         const by = (sev: string) => backlog.filter((v) => v.severity === sev).length;
