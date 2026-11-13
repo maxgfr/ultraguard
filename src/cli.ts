@@ -25,7 +25,7 @@ import { normEco, SUPPORTED_ECOSYSTEMS, validateIocs } from "./ioc.js";
 import { renderReport } from "./report.js";
 import { formatDefenses, refreshDefenses } from "./defenses.js";
 import { defaultRulesDeps, installedRules, RULE_SETS, type RuleSet, type RulesDeps, rulesAgeDays } from "./rules.js";
-import { searchInto } from "./search.js";
+import { OS_NAMES, type Searcher, searchInto, searchNews } from "./search.js";
 import { Run } from "./run.js";
 import { defaultRunner, type Runner } from "./runner.js";
 import { scanCloud } from "./scan/cloud.js";
@@ -51,6 +51,7 @@ USAGE
   ultraguard rules update [--set core|extended|full] [--state <dir>]   freshclam + YARA-Forge
   ultraguard rules status [--state <dir>]
   ultraguard search <query> --out <run> [--limit <n>]
+  ultraguard search --news --out <run> [--limit <n>]   the standard query set, this month
   ultraguard intel [<url>...] [--web-results <file.json>] --out <run>
   ultraguard ioc set --file <iocs.json> --out <run>
   ultraguard ioc show --out <run> [--json]
@@ -63,7 +64,8 @@ USAGE
 
 THE LOOP
   1. You search the web for attacks: with your own search tool (save the hits
-     as JSON), or with search, keyless, into <run>/search-hits.json.
+     as JSON), or with search, keyless, into <run>/search-hits.json
+     (search --news: supply-chain attacks and this OS's malware, this month).
   2. intel        fetch each page once: sources [S1], [S2]... and iocs.todo.json
   3. ioc set      validate your IOC file: every indicator cites a fetched [S#]
   4. sweep        run every scan: findings [F1], [F2]... and coverage gaps
@@ -91,10 +93,15 @@ SCAN FLAGS
   --surfaces <list>     sweep: github,host,deps,cloud (default: all)
   scan and sweep exit 20 when GitHub was asked for and could not be scanned
   (logged out, every read refused): its verdict is UNKNOWN, never CLEAN.
-  --limit <n>           search: hits to aim for (default 10)
+  --limit <n>           search: hits to aim for per query (default 10; 5 with --news)
+  --news                search: run the standard "anything new?" queries instead of
+                        one: supply-chain attacks, then malware for this OS (macOS
+                        stealers and backdoors, ClickFix...; Linux), each with the
+                        current month and year. Exit 1 when no engine answered.
 
 ROUTINE (watch)
-  watch plan drops sources already handled in --state (default ~/.ultraguard,
+  watch plan --web-results <run>/search-hits.json takes the hits of search
+  (or search --news) as they are. It drops sources already handled in --state (default ~/.ultraguard,
   or ULTRAGUARD_HOME), fetches the new ones, and re-arms every known campaign
   each --resweep-days (default 7). Fill iocs.json, sweep, report, then
   watch commit: it alerts only on findings never alerted before.
@@ -130,7 +137,7 @@ export const VALUE_FLAGS = [
   "set",
   "npm-user",
 ];
-export const BOOL_FLAGS = ["json", "probe", "skip-live", "no-osv", "no-av", "av-full", "no-rules", "no-update", "no-registry"];
+export const BOOL_FLAGS = ["json", "news", "probe", "skip-live", "no-osv", "no-av", "av-full", "no-rules", "no-update", "no-registry"];
 
 const SCAN = [
   "out",
@@ -159,7 +166,7 @@ const SPEC: CliSpec = {
   commandFlags: {
     doctor: ["probe", "state", "json"],
     rules: ["set", "state", "json"],
-    search: ["out", "limit", "json"],
+    search: ["out", "limit", "news", "json"],
     intel: ["out", "web-results", "json"],
     ioc: ["out", "file", "json"],
     scan: SCAN,
@@ -184,6 +191,12 @@ let rulesDeps: RulesDeps = defaultRulesDeps;
 /** Test seam: replace the YARA-Forge download. */
 export function setRulesDeps(d: RulesDeps): void {
   rulesDeps = d;
+}
+
+let newsDeps: { searcher?: Searcher; platform?: NodeJS.Platform; now?: () => Date } = {};
+/** Test seam: replace the web search engine, the platform and the clock `search` uses. */
+export function setNewsDeps(d: { searcher?: Searcher; platform?: NodeJS.Platform; now?: () => Date }): void {
+  newsDeps = d;
 }
 
 function out(text: string): void {
@@ -406,17 +419,19 @@ async function dispatch(a: CommandArgs): Promise<number> {
       return lines.find((l) => l.check === "gh" && !l.ok) ? EXIT_FAILURE : EXIT_OK;
     }
     case "search": {
-      const run = needRun(a);
       const query = a.positional.join(" ").trim();
-      if (!query) throw new UsageError('search needs a query: ultraguard search "malicious npm packages november 2026" --out <run>');
-      const r = await searchInto(run, query, { limit: argInt(a, "limit", { min: 1, max: 50 }) });
+      if (argBool(a, "news")) {
+        if (query) throw new UsageError(`search takes a query or --news, not both: drop "${query}" or --news`);
+        return searchNewsCommand(a, needRun(a), json);
+      }
+      const run = needRun(a);
+      if (!query)
+        throw new UsageError('search needs a query, or --news for the standard set: ultraguard search "malicious npm packages november 2026" --out <run>');
+      const r = await searchInto(run, query, { limit: argInt(a, "limit", { min: 1, max: 50 }), searcher: newsDeps.searcher });
       if (json) out(jsonLine(r));
       else {
         for (const h of r.added) out(`- ${h.title ?? ""} <${h.url}>${h.snippet ? `\n    ${h.snippet}` : ""}`);
-        if (!r.searched)
-          out(
-            "search could not reach any engine (the keyless engines refused or throttled this address). Retry in a few minutes, use your own web search tool, or point ULTRAGUARD_SEARXNG at a SearXNG instance.",
-          );
+        if (!r.searched) out(NO_ENGINE);
         out(
           `\n${r.added.length} new hit(s), ${r.total} in ${run.path("search-hits.json")}. Keep the primary write-ups, then: ultraguard intel --web-results <that file, trimmed> --out ${run.dir}`,
         );
@@ -637,6 +652,35 @@ async function dispatch(a: CommandArgs): Promise<number> {
     }
   }
   throw new UsageError(`unknown command "${a.command}"`);
+}
+
+const NO_ENGINE =
+  "search could not reach any engine (the keyless engines refused or throttled this address). Retry in a few minutes, use your own web search tool, or point ULTRAGUARD_SEARXNG at a SearXNG instance.";
+
+async function searchNewsCommand(a: CommandArgs, run: Run, json: boolean): Promise<number> {
+  const r = await searchNews(run, {
+    limit: argInt(a, "limit", { min: 1, max: 50 }),
+    searcher: newsDeps.searcher,
+    platform: newsDeps.platform,
+    now: newsDeps.now?.(),
+  });
+  if (json) out(jsonLine(r));
+  else {
+    for (const q of r.queries) {
+      out(`## ${q.query}: ${q.searched ? `${q.added.length} new hit(s)` : "NOT SEARCHED (no engine answered)"}`);
+      for (const h of q.added) out(`- ${h.title ?? ""} <${h.url}>${h.snippet ? `\n    ${h.snippet}` : ""}`);
+    }
+    for (const n of r.notes) out(`note: ${n}`);
+    if (!r.searched) out(NO_ENGINE);
+    else if (r.unsearched.length)
+      out(
+        `\n${r.unsearched.length} of ${r.queries.length} queries got no answer: their news is unknown, not absent. Retry them one by one with search "<query>" in a few minutes, or with your own search tool.`,
+      );
+    out(
+      `\n${r.queries.length} queries (supply chain, then ${OS_NAMES[r.platform] ?? r.platform} malware, ${r.month}), ${r.total} hit(s) in ${run.path("search-hits.json")}. Keep the primary write-ups that can reach this user, then: ultraguard intel --web-results <that file, trimmed> --out ${run.dir}`,
+    );
+  }
+  return r.searched ? EXIT_OK : EXIT_FAILURE;
 }
 
 function writeReport(run: Run) {
