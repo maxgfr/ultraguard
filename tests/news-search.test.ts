@@ -1,4 +1,5 @@
 // search --news: the standard "anything new?" query set, supply chain plus this OS's machine malware.
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BOOL_FLAGS, HELP, main, setNewsDeps } from "../src/cli.js";
 import { Run } from "../src/run.js";
@@ -141,5 +142,27 @@ describe("ultraguard search --news", () => {
     expect(searcher.asked).toEqual(["macOS stealer"]);
     expect(await main(["search", "--out", run.dir])).toBe(2);
     expect(io.err.join("")).toContain("or --news for the standard set");
+  });
+});
+
+describe("the skill's docs follow the query set", () => {
+  const doc = (rel: string) => readFileSync(new URL(`../skills/ultraguard/${rel}`, import.meta.url), "utf8");
+
+  it("threat-intel-sources lists every query search --news runs", () => {
+    const text = doc("references/threat-intel-sources.md").replace(/\s+/g, " ");
+    const queries = [...SUPPLY_CHAIN_QUERIES, ...(MACHINE_QUERIES.darwin ?? []), ...(MACHINE_QUERIES.linux ?? [])].filter(
+      (q) => q !== "malicious PyPI packages campaign" && q !== "fake developer tool installer malware macOS",
+    );
+    for (const q of queries) expect(text).toContain(`${q} <month year>`);
+    expect(text).toContain("fake developer tool installer malware macOS");
+  });
+
+  it("SKILL.md routes a sweep with no article to both kinds of news, within the description cap (webindex skill bundle: 1000 characters)", () => {
+    const skill = doc("SKILL.md");
+    const description = /^description: (.*)$/m.exec(skill)?.[1] ?? "";
+    expect(description.length).toBeLessThanOrEqual(1000);
+    expect(description).toMatch(/machine malware/);
+    expect(skill).toContain("ultraguard search --news --out <run>");
+    expect(skill).toMatch(/BOTH supply-chain attacks and machine malware/);
   });
 });

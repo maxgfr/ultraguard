@@ -1,4 +1,5 @@
 // The machine-malware indicator types of the shared contract: launchd_label, team_id, bundle_id.
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { matchers, validateIocs } from "../src/ioc.js";
 import type { Indicator, IocFile, Source } from "../src/types.js";
@@ -41,5 +42,18 @@ describe("launchd_label, team_id, bundle_id", () => {
     expect(team?.test("ZZ00ZZ00ZZ")).toBe(true);
     expect(team?.test("zz00zz00zz")).toBe(false);
     expect(bundle?.test("com.example.crashreporter")).toBe(true);
+  });
+});
+
+describe("ioc-extraction.md's macOS worked example", () => {
+  it("is a valid IOC file", () => {
+    const doc = readFileSync(new URL("../skills/ultraguard/references/ioc-extraction.md", import.meta.url), "utf8");
+    const block = /### Worked example: an AMOS-style backdoor[\s\S]*?```json\n([\s\S]*?)```/.exec(doc)?.[1];
+    expect(block).toBeDefined();
+    const iocs = JSON.parse(block ?? "") as IocFile;
+    expect(validateIocs(iocs, [S1], new Date("2026-11-13T00:00:00Z")).problems).toEqual([]);
+    expect(new Set(iocs.campaigns[0]?.indicators.map((i) => i.type))).toEqual(
+      new Set(["file", "launchd_label", "team_id", "bundle_id", "process", "string", "domain", "ip", "sha256"]),
+    );
   });
 });

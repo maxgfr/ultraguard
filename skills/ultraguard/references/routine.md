@@ -6,11 +6,14 @@ sources already handled, the campaigns already seen, and the findings already
 alerted.
 
 ```bash
-# 1. Search the news: your search tool, or keyless (works on a headless runner):
-ultraguard search "GitHub Actions supply chain attack <month year>" --out <run>
-ultraguard search "malicious npm packages <month year>" --out <run>
-#    then, with the hits you keep:
-ultraguard watch plan --web-results <hits.json> --out <run>
+# 1. Search the news: your search tool, or keyless (works on a headless runner).
+#    --news runs the standard set: supply-chain attacks, then malware for this
+#    OS (macOS stealers and backdoors, ClickFix; Linux malware), this month:
+ultraguard search --news --out <run>
+#    or one query at a time:
+ultraguard search "macOS stealer <month year>" --out <run>
+#    then, with the hits you keep (watch plan reads search-hits.json as it is):
+ultraguard watch plan --web-results <run>/search-hits.json --out <run>
 #    NOTHING NEW: stop here and say so in one line.
 #    Otherwise it fetched the new sources. Every --resweep-days (default 7) it
 #    also writes <run>/iocs.carried.json so known campaigns are swept again.
@@ -47,14 +50,15 @@ private repository: the report names repositories and accounts.
 
 | Routine | Sees | Setup |
 |---|---|---|
-| Claude Code cloud routine (`/schedule`, daily) | web, GitHub, cloud if credentials are present | the prompt below with `sweep --surfaces github,cloud`: the runner's own disk is not the user's machine, so host and deps are left out (UNKNOWN in the report, not blocking) |
+| Claude Code cloud routine (`/schedule`, daily) | web, GitHub, cloud if credentials are present | the prompt below with `sweep --surfaces github,cloud`: the runner's own disk is not the user's machine, so host and deps are left out (UNKNOWN in the report, not blocking). It cannot tell whether the user's Mac caught a stealer: only a local routine can |
 | Local: launchd or cron running Claude Code headless | everything, this machine included | a LaunchAgent that runs `claude -p "<the prompt below>"` once a day |
 | `/loop` in an open session | everything, while the session lives | `/loop 24h <the prompt below>` |
 
 The prompt for any of them:
 
 > Run ultraguard in routine mode: search the threat-intel news of the last 3
-> days, then `watch plan`, extract IOCs for the new sources, `ioc set`,
+> days, supply-chain attacks and malware for this machine's OS (`search
+> --news` when you have no search tool), then `watch plan`, extract IOCs for the new sources, `ioc set`,
 > `sweep`, `watch commit`. Reply in one line when there is nothing new.
 > On an alert, give the verdicts and the first remediation steps.
 

@@ -1,6 +1,6 @@
 ---
 name: ultraguard
-description: AI antivirus and incident response. Checks whether a supply-chain attack, compromised-account campaign or malicious package reported on the web has reached the user. You search the threat-intel news and turn each article into indicators of compromise (IOCs) that cite it. ultraguard sweeps the user's GitHub account and every repository they can push to, this machine, their lockfiles and their cloud for them, read-only. You then judge the findings and write a cited verdict per surface with the remediation. Use only when the user explicitly asks for ultraguard or to check whether they were hacked, compromised or hit by an attack, e.g. "am I affected by this attack <url>", "check I wasn't hacked", "scan for the latest supply-chain attacks", "est-ce qu'on m'a hacké", "vérifie que je ne suis pas touché par cette attaque". Can also run as a routine (watch). Never changes the user's accounts, code or files.
+description: AI antivirus and incident response. Checks whether a supply-chain attack, compromised-account campaign, malicious package or machine malware (macOS and Linux stealers, backdoors) reported on the web has reached the user. You search the threat-intel news and turn each article into indicators of compromise (IOCs) that cite it. ultraguard sweeps the user's GitHub account and every repository they can push to, this machine, their lockfiles and their cloud for them, read-only. You then judge the findings and write a cited verdict per surface with the remediation. Use only when the user explicitly asks for ultraguard or to check whether they were hacked, compromised or hit by an attack, e.g. "am I affected by this attack <url>", "check I wasn't hacked", "is my Mac infected", "scan for the latest supply-chain attacks", "est-ce qu'on m'a hacké", "vérifie que je ne suis pas touché par cette attaque". Can also run as a routine (watch). Never changes the user's accounts, code or files.
 license: MIT
 metadata:
   version: 1.6.0
@@ -74,8 +74,8 @@ exit 20 when GitHub could not be scanned at all (UNKNOWN, never CLEAN).
 | The user says | Do | Read |
 |---|---|---|
 | "am I affected by <url>" | `intel <url>`, then the loop below | [ioc-extraction](references/ioc-extraction.md) |
-| "ultraguard", "check I wasn't hacked" (no article) | Search for attacks of the last 30 days (your search tool, or `ultraguard search`), shortlist the ones that can reach this user, `intel` them, then the loop | [threat-intel-sources](references/threat-intel-sources.md) |
-| "am I hit by <campaign name>" | Search for that name, keep the primary write-ups, then the loop | [threat-intel-sources](references/threat-intel-sources.md) |
+| "ultraguard", "check I wasn't hacked" (no article) | Search the news of the last 30 days for BOTH supply-chain attacks and machine malware for this OS (`doctor` names it): your search tool with the queries of threat-intel-sources, or `ultraguard search --news`. Shortlist what can reach this user, `intel` it, then the loop: the host scan checks the machine against every machine-malware campaign kept | [threat-intel-sources](references/threat-intel-sources.md) |
+| "am I hit by <campaign name>", "is my Mac infected by <stealer>" | Search for that name, keep the primary write-ups, then the loop (for machine malware, `sweep --surfaces host` is enough unless the source says it steals tokens: then GitHub and cloud too) | [threat-intel-sources](references/threat-intel-sources.md), [ioc-extraction](references/ioc-extraction.md) |
 | "check only GitHub" / "only this machine" | the loop with `sweep --surfaces github` (or host, deps, cloud) | [github-surface](references/github-surface.md), [host](references/host.md) |
 | "set it up as a routine", "watch every day" | `watch plan` / `watch commit` | [routine](references/routine.md) |
 | A finding needs judgment (REVIEW) | Look at it yourself, read-only, then say whose it is | [verdicts](references/verdicts.md) |
@@ -87,6 +87,7 @@ exit 20 when GitHub could not be scanned at all (UNKNOWN, never CLEAN).
 #    [{"url": "...", "title": "..."}]  (a list of URLs works too).
 #    With none (a headless routine, a cloud runner), search keyless:
 ultraguard search "<query>" --out <run> --limit 10           # → <run>/search-hits.json, one call per query
+ultraguard search --news --out <run>                       # or the whole "anything new?" set: supply chain + this OS's malware
 ultraguard intel --web-results <hits.json> --out <run>     # or: intel <url> <url> --out <run>
 # → sources [S1], [S2]... with their text in <run>/sources/S#.md, and <run>/iocs.todo.json
 
