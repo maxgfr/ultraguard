@@ -19,16 +19,17 @@ indicators of compromise (IOCs) that cite it, and ultraguard sweeps for them:
   instruction files). With ClamAV installed, a targeted antivirus pass runs
   too, with the YARA-Forge community rules; ultraguard keeps both current, and YARA
   rules a write-up publishes can be run over the same files;
-- your **lockfiles**: the campaign's packages, and the OSV and GHSA feeds
-  through [package-checker.sh](https://github.com/maxgfr/package-checker.sh)
-  (12 ecosystems): malicious packages are compromises, known CVEs a backlog;
-- your **cloud**: roles that trust everyone, keys minted during the campaign,
-  federated credentials.
+- your **dependencies**: the campaign's packages in lockfiles, manifests,
+  `node_modules`, virtualenvs and global installs, and the OSV and GHSA feeds
+  through [package-checker.sh](https://github.com/maxgfr/package-checker.sh):
+  malicious packages are compromises, known CVEs a backlog;
+- your **cloud**: roles that trust everyone, new roles and users, open GitHub
+  OIDC trusts, keys minted during the campaign, federated credentials.
 
 Then the agent judges what an IOC cannot settle alone and writes a verdict
 per surface. `ultraguard check` refuses an answer that cites a finding that
-does not exist, claims a compromise without evidence, or calls a surface
-clean when it is not. ultraguard is read-only on what it scans: it prints the
+does not exist, claims a compromise without evidence, leaves a surface's
+verdict out, or calls a surface clean when it is not. ultraguard is read-only on what it scans: it prints the
 remediation, the user runs it. The only thing it maintains itself is its
 antivirus (ClamAV signatures, YARA-Forge rules).
 
@@ -107,8 +108,8 @@ locally with launchd, cron or `/loop` to cover the machine too. See
 ## Privacy
 
 Nothing leaves the machine except `gh` calls to the GitHub API with your own
-token, the fetches of the articles you chose, and OSV queries of package names
-and versions. No secret value is read: secrets are listed by name to be rotated.
+token, the fetches of the articles you chose, and the download of the OSV and
+GHSA advisory feeds (package names are not sent). No secret value is read: secrets are listed by name to be rotated.
 
 ## License
 

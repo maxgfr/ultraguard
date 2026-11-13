@@ -48,7 +48,8 @@ Node 18 or newer, no install, no key. `<skill-dir>` is the directory holding
 this file; every `ultraguard …` below stands for
 `node <skill-dir>/scripts/ultraguard.mjs …`. Pick one absolute run directory
 per investigation and pass it as `--out` to every command that works on a run
-(all but `doctor`).
+(all but `doctor` and `rules`). `check`, `report` and `watch commit` refuse a
+`--out` that does not exist.
 
 ```bash
 ultraguard doctor --probe                    # what this machine lets ultraguard see
@@ -91,6 +92,9 @@ ultraguard ioc set --file <run>/iocs.json --out <run>      # refuses an IOC with
 # 3. Sweep. GitHub first: the host scan then looks for local clones of the repos it found hit.
 ultraguard sweep --out <run>                               # github, host, deps, cloud
 # → findings [F#], coverage gaps, REPORT.md and REMEDIATION.md
+# A large account takes minutes (about one second per GitHub call): give the
+# command a 10-minute timeout or run it in the background. To split it, run
+# `sweep --surfaces github`, then `sweep --surfaces host,deps,cloud`, same --out.
 
 # 4. Judge, write the answer, check it.
 ultraguard check <run>/ANSWER.md --out <run>
@@ -129,11 +133,13 @@ under `<run>/yara/` and pass `--yara <run>/yara --yara-source S#`: they run
 over the same targets, and their matches cite that source.
 
 Scan flags: `--repos owner/a,owner/b` and `--max-repos <n>` narrow GitHub;
-`--concurrency <n>` sets parallel repositories; `--roots ~/code,~/work` and
-`--depth <n>` bound the walk of the disk; `--skip-live` skips crontab, sockets
+`--concurrency <n>` sets parallel repositories; `--roots <dir,dir>` (existing
+folders that hold your code) and `--depth <n>` bound the walk of the disk; `--skip-live` skips crontab, sockets
 and processes; `--no-osv` skips the OSV malicious-package feed (offline).
 `ultraguard scan github|host|deps|cloud --out <run>` re-runs one surface; it
-replaces that surface's findings rather than adding duplicates. `report --out
+replaces that surface's findings rather than adding duplicates, and never
+reuses an `[F#]` for another finding. `--json` gives scan and sweep results as
+one JSON line. `report --out
 <run>` rewrites REPORT.md after a re-scan; `ioc show --out <run>` prints what
 was set.
 

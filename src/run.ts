@@ -20,7 +20,11 @@ export class Run {
   read<T>(name: string, fallback: T): T {
     const p = this.path(name);
     if (!existsSync(p)) return fallback;
-    return JSON.parse(readFileSync(p, "utf8")) as T;
+    try {
+      return JSON.parse(readFileSync(p, "utf8")) as T;
+    } catch (e) {
+      throw new Error(`${p}: not valid JSON (${(e as Error).message})`);
+    }
   }
 
   write(name: string, value: unknown): void {
@@ -83,16 +87,21 @@ export class Run {
 
   /** Replace everything one surface reported: a re-scan supersedes the last one. */
   recordSurface(result: SurfaceResult, found: Omit<Finding, "id">[], gaps: Gap[]): Finding[] {
-    const kept = this.findings().filter((f) => f.surface !== result.surface && !found.some((n) => n.key === f.key));
-    let n = kept.reduce((max, f) => Math.max(max, Number(f.id.slice(1)) || 0), 0);
+    const previous = this.findings();
+    const kept = previous.filter((f) => f.surface !== result.surface && !found.some((n) => n.key === f.key));
+    // Ids only grow: a re-scan never hands an old [F#] to a different finding, so an answer
+    // written before it cannot cite something else. An unchanged finding keeps its id.
+    let n = previous.reduce((max, f) => Math.max(max, Number(f.id.slice(1)) || 0), this.meta().lastFindingId ?? 0);
+    const idOf = new Map(previous.map((f) => [f.key, f.id]));
     const seen = new Set<string>();
     const added: Finding[] = [];
     for (const f of found) {
       if (seen.has(f.key)) continue;
       seen.add(f.key);
-      added.push({ id: `F${++n}`, ...f });
+      added.push({ id: idOf.get(f.key) ?? `F${++n}`, ...f });
     }
     this.write("findings.json", [...kept, ...added]);
+    this.setMeta({ lastFindingId: n });
     this.write("gaps.json", [...this.gaps().filter((g) => g.surface !== result.surface), ...gaps]);
     this.write("surfaces.json", [...this.surfaces().filter((s) => s.surface !== result.surface), result]);
     return added;
@@ -105,6 +114,8 @@ export interface RunMeta {
   /** Repositories the GitHub scan found hit, for the host scan's clone check. */
   hitRepos?: string[];
   createdAt?: string;
+  /** The highest [F#] number ever given in this run. */
+  lastFindingId?: number;
   /** The surfaces the last sweep was asked for (--surfaces): the others were left out on purpose. */
   requested?: Surface[];
 }

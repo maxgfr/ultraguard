@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -46,15 +46,15 @@ things it writes are its run folders, its state folder and the antivirus
 databases it keeps current (ClamAV signatures, YARA-Forge rules).
 
 USAGE
-  ultraguard doctor [--probe] [--json]
+  ultraguard doctor [--probe] [--state <dir>] [--json]
   ultraguard rules update [--set core|extended|full] [--state <dir>]   freshclam + YARA-Forge
   ultraguard rules status [--state <dir>]
   ultraguard search <query> --out <run> [--limit <n>]
   ultraguard intel [<url>...] [--web-results <file.json>] --out <run>
   ultraguard ioc set --file <iocs.json> --out <run>
   ultraguard ioc show --out <run> [--json]
-  ultraguard scan github|host|deps|cloud --out <run> [scan flags]
-  ultraguard sweep --out <run> [--surfaces <list>] [scan flags]
+  ultraguard scan github|host|deps|cloud --out <run> [scan flags] [--json]
+  ultraguard sweep --out <run> [--surfaces <list>] [scan flags] [--json]
   ultraguard report --out <run> [--json]
   ultraguard check <answer.md> --out <run> [--json]
   ultraguard watch plan [--web-results <file.json>] --out <run> [--state <dir>] [--resweep-days <n>]
@@ -73,7 +73,7 @@ SCAN FLAGS
   --repos <a/b,c/d>     github: only these repositories
   --max-repos <n>       github: stop after n repositories
   --concurrency <n>     github: parallel repositories (default 8)
-  --roots <dir,dir>     host, deps: where to walk (default: your home directory)
+  --roots <dir,dir>     host, deps: existing folders to walk (default: your home directory)
   --depth <n>           host, deps: walk depth (default 6)
   --skip-live           host: skip crontab, open connections, processes, signatures, antivirus
   --no-av               host: skip the ClamAV pass (on by default when ClamAV is installed)
@@ -82,6 +82,7 @@ SCAN FLAGS
   --yara-source <S#>    host: the source the YARA rules came from, cited by their findings
   --no-rules            host: skip the community YARA rules (YARA-Forge) installed by rules update
   --no-update           host: do not refresh ClamAV signatures or YARA-Forge rules older than 7 days
+  --state <dir>         host, rules, watch: ultraguard's state folder (default ~/.ultraguard)
   --set <name>          rules update: core (default, highest precision), extended or full
   --no-osv              deps: skip package-checker (OSV and GHSA feeds, malicious packages)
   --surfaces <list>     sweep: github,host,deps,cloud (default: all)
@@ -227,8 +228,26 @@ const GITHUB_TYPES = new Set([
   "actor",
 ]);
 
-function walkFor(a: CommandArgs): WalkResult {
+/**
+ * The --roots, each an existing directory. A typo or a space-separated list would
+ * otherwise walk nothing and come back CLEAN with "0 lockfiles".
+ */
+function rootsOf(a: CommandArgs): string[] {
   const roots = argList(a, "roots").map((r) => resolve(r.replace(/^~(?=$|\/)/, homedir())));
+  for (const r of roots) {
+    let dir = false;
+    try {
+      dir = statSync(r).isDirectory();
+    } catch {
+      dir = false;
+    }
+    if (!dir) throw new UsageError(`--roots: ${r} does not exist or is not a directory (pass existing folders, comma-separated)`);
+  }
+  return roots;
+}
+
+function walkFor(a: CommandArgs): WalkResult {
+  const roots = rootsOf(a);
   return walk(roots.length ? roots : [homedir()], { maxDepth: argInt(a, "depth", { min: 1, max: 20 }) ?? 6 });
 }
 
@@ -265,7 +284,7 @@ async function runScan(surface: "github" | "host" | "deps" | "cloud", a: Command
       const shown = ups.filter((u) => u.status === "updated" || u.status === "failed");
       if (shown.length) refreshed = `${formatDefenses(shown)}\n`;
     }
-    const roots = argList(a, "roots").map((r) => resolve(r.replace(/^~(?=$|\/)/, homedir())));
+    const roots = rootsOf(a);
     const r = await scanHost(iocs, (tree ?? (() => walkFor(a)))(), runner, {
       hitRepos: run.meta().hitRepos,
       skipLive: argBool(a, "skip-live"),
@@ -281,7 +300,7 @@ async function runScan(surface: "github" | "host" | "deps" | "cloud", a: Command
     return `${refreshed}host: ${r.result.stats.files ?? 0} files, ${r.result.stats.startupItems ?? 0} startup items, ${r.result.stats.credentialFiles ?? 0} credential files; ${f.length} finding(s)`;
   }
   if (surface === "deps") {
-    const roots = argList(a, "roots").map((r) => resolve(r.replace(/^~(?=$|\/)/, homedir())));
+    const roots = rootsOf(a);
     const r = await scanDeps(iocs, (tree ?? (() => walkFor(a)))(), run, {
       checker: argBool(a, "no-osv") ? false : undefined,
       runner,
@@ -446,7 +465,20 @@ async function dispatch(a: CommandArgs): Promise<number> {
       if (surface !== "github" && surface !== "host" && surface !== "deps" && surface !== "cloud")
         throw new UsageError("scan takes github, host, deps or cloud");
       const run = needRun(a);
-      out(await runScan(surface, a, run, needIocs(run)));
+      const iocs = needIocs(run);
+      if (surface === "host" || surface === "deps") rootsOf(a);
+      const line = await runScan(surface, a, run, iocs);
+      const mine = SURFACE_OF[surface] ?? [];
+      out(
+        json
+          ? jsonLine({
+              summary: line,
+              surfaces: run.surfaces().filter((x) => mine.includes(x.surface)),
+              findings: run.findings().filter((f) => mine.includes(f.surface)).length,
+              gaps: run.gaps().filter((g) => mine.includes(g.surface)),
+            })
+          : line,
+      );
       return EXIT_OK;
     }
     case "sweep": {
@@ -459,13 +491,49 @@ async function dispatch(a: CommandArgs): Promise<number> {
       const list = ORDER.filter((s) => !wanted.length || wanted.includes(s));
       // The routine tells "left out on purpose" from "could not scan" with this.
       run.setMeta({ requested: list.flatMap((s) => SURFACE_OF[s] ?? []) });
+      // A mistyped root fails now, before the GitHub stage spends its API budget.
+      if (list.includes("host") || list.includes("deps")) rootsOf(a);
       let tree: WalkResult | undefined;
       const shared = () => (tree ??= walkFor(a));
+      const lines: string[] = [];
+      let crashed = 0;
       // GitHub first: the host scan looks for local clones of the repositories it found hit.
-      for (const s of list) out(await runScan(s, a, run, iocs, shared));
+      for (const s of list) {
+        // Progress on stderr (stdout stays clean for --json): a large account takes minutes.
+        process.stderr.write(`${s}: scanning${s === "github" ? " (about one second per API call)" : ""}...\n`);
+        let line: string;
+        try {
+          line = await runScan(s, a, run, iocs, shared);
+        } catch (e) {
+          if (e instanceof UsageError) throw e;
+          // One surface that crashes must not take the others and the report with it: it becomes a gap.
+          crashed++;
+          const why = (e as Error).message;
+          for (const surface of SURFACE_OF[s] ?? [])
+            run.recordSurface(
+              { surface, scanned: false, stats: {}, startedAt: new Date().toISOString() },
+              [],
+              [{ surface, what: `the ${s} scan`, why: `it stopped with an error: ${why}`, fix: `fix the cause, then ultraguard scan ${s} --out ${run.dir}` }],
+            );
+          line = `${s}: FAILED (${why}), recorded as a gap`;
+        }
+        if (json) lines.push(line);
+        else out(line);
+      }
       const { verdicts: vs } = writeReport(run);
-      out(`\n${vs.map((v) => `${v.surface.padEnd(15)} ${v.verdict}`).join("\n")}\n\nreport: ${run.path("REPORT.md")}`);
-      return EXIT_OK;
+      out(
+        json
+          ? jsonLine({
+              surfaces: list,
+              summary: lines,
+              verdicts: vs,
+              findings: run.findings().length,
+              gaps: run.gaps().length,
+              report: run.path("REPORT.md"),
+            })
+          : `\n${vs.map((v) => `${v.surface.padEnd(15)} ${v.verdict}`).join("\n")}\n\nreport: ${run.path("REPORT.md")}`,
+      );
+      return crashed ? EXIT_FAILURE : EXIT_OK;
     }
     case "report": {
       const run = needRun(a, { mustExist: true });
