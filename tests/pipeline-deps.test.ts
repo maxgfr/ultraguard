@@ -1,5 +1,5 @@
 // Regressions for the dependency-scan findings of the pipeline audit.
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { doctor } from "../src/doctor.js";
@@ -199,6 +199,25 @@ describe("what the deps walk could not see", () => {
     expect(s.gaps.some((g) => g.what.startsWith("lockfiles deeper than --depth"))).toBe(true);
     expect(dirs).toEqual([join(root, "dart/app")]);
     expect(s.result.stats.advisoryOnlyLockfiles).toBe(1);
+  });
+
+  it("lockfiles under folders package-checker prunes are scanned: no default prune, vendor staged on its own", async () => {
+    const root = tmp("ug-prune-");
+    const lock = npmLock({ "flatmap-stream": "0.1.1" });
+    const vendored = put(root, "proj/vendor/lib/package-lock.json", lock);
+    for (const rel of ["ios/Pods/x", "web/.nuxt/y", "py/site-packages/z", "mac/DerivedData/w"]) put(root, `${rel}/package-lock.json`, lock);
+    const runner = fakeChecker(0, { vulnerabilities: [] });
+    const run = new Run(tmp());
+    await scanDeps(NO_PKG, walk([root]), run, { runner, roots: [root] });
+    const dirs = runner.calls.map((c) => c[2] as string);
+    expect(runner.calls.every((c) => c.includes("--no-default-prune"))).toBe(true);
+    expect(dirs.filter((d) => !d.startsWith(run.dir)).sort()).toEqual(
+      ["ios/Pods", "mac/DerivedData", "py/site-packages", "web/.nuxt"].map((d) => join(root, d)),
+    );
+    // package-checker always ignores vendor/: that lockfile gets a run of its own.
+    const staged = dirs.find((d) => d.startsWith(join(run.dir, "package-checker", "root-lockfiles"))) as string;
+    expect(readFileSync(join(staged, "package-lock.json"), "utf8")).toBe(readFileSync(vendored, "utf8"));
+    expect(dirs).not.toContain(join(root, "proj/vendor"));
   });
 
   it("bun.lockb is handed to package-checker, and its not-scanned reason is a gap", async () => {

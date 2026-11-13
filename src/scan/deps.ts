@@ -136,7 +136,8 @@ export function defaultChecker(runner: Runner, workDir: string, opts: { dataDir?
     // Exit 0: nothing found. 1: vulnerabilities found. 3: incomplete. 2: it could not scan.
     const res = await runner(
       "bash",
-      [script, dir, "--default-source-ghsa-osv", "--only-lockfiles", "--no-config", "--no-runtime-check", ...feeds, "--export-json", out],
+      // --no-default-prune: ultraguard's walk decides which folders count (Pods, .nuxt, site-packages included).
+      [script, dir, "--default-source-ghsa-osv", "--only-lockfiles", "--no-config", "--no-runtime-check", "--no-default-prune", ...feeds, "--export-json", out],
       {
         timeoutMs: 15 * 60_000,
         cwd: workDir,
@@ -171,6 +172,21 @@ const rootOf = (d: string, roots: string[]) =>
 /** Lockfiles that sit directly in a walk root: handing the root to package-checker would walk all of it. */
 export function rootLevelLockfiles(lockfiles: string[], roots: string[]): string[] {
   return lockfiles.filter((f) => rootOf(dirname(f), roots) === dirname(f));
+}
+
+/**
+ * Folders package-checker never descends into, even with --no-default-prune (its default ignore_paths;
+ * node_modules, .git and .yarn are pruned by ultraguard's walk too). A lockfile under one is staged on its own.
+ */
+const CHECKER_IGNORED = new Set(["vendor"]);
+
+/** Lockfiles package-checker would skip in their group: under a folder it always ignores. */
+export function ignoredByChecker(lockfiles: string[], roots: string[]): string[] {
+  return lockfiles.filter((f) => {
+    const d = dirname(f);
+    const root = rootOf(d, roots);
+    return (root ? relative(root, d) : d).split(sep).some((s) => CHECKER_IGNORED.has(s));
+  });
 }
 
 /**
@@ -392,8 +408,10 @@ export async function scanDeps(
       const all = [...lockfilePaths, ...advisoryOnly];
       const roots = opts.roots ?? [];
       // A lockfile directly in a walk root is copied to a folder of its own: package-checker would walk the whole root.
+      // So is one under a folder package-checker ignores (vendor): its group's run would skip it.
+      const ignored = new Set(ignoredByChecker(all, roots));
       const staged = new Map<string, string>(); // staged dir -> original lockfile
-      for (const [i, f] of rootLevelLockfiles(all, roots).entries()) {
+      for (const [i, f] of [...new Set([...rootLevelLockfiles(all, roots), ...ignored])].entries()) {
         const d = join(workDir, "root-lockfiles", String(i + 1));
         try {
           rmSync(d, { recursive: true, force: true });
@@ -404,7 +422,13 @@ export async function scanDeps(
           gaps.push({ surface: "deps", what: `advisories for ${f}`, why: "the lockfile could not be copied for package-checker" });
         }
       }
-      const groups = [...checkerGroups(all, roots), ...staged.keys()];
+      const groups = [
+        ...checkerGroups(
+          all.filter((f) => !ignored.has(f)),
+          roots,
+        ),
+        ...staged.keys(),
+      ];
       const vulns: CheckerVuln[] = [];
       let failed = 0;
       const sources = new Map<string, CheckerSource>();
