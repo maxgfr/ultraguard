@@ -371,19 +371,25 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
   let inactive = 0;
   let noAdmin = 0;
   let quietGaps = 0;
+  let inactiveRan = 0;
   const contentCapped: string[] = [];
+  const pkgCapped: string[] = [];
+  const treeCut: string[] = [];
   const rate = await gh.api<any>("rate_limit");
   const remaining = rate.data?.resources?.core?.remaining as number | undefined;
   const resetEpoch = rate.data?.resources?.core?.reset as number | undefined;
   const resetAt = resetEpoch ? new Date(resetEpoch * 1000).toISOString() : undefined;
   const activeCount = repos.filter(isActive).length;
   const perActive = COST_ACTIVE + literalBranches.length * 2;
-  const cost = activeCount * perActive + (repos.length - activeCount) * COST_INACTIVE;
+  const perInactive = COST_INACTIVE + (M.content.length || M.workflow.length ? 1 : 0);
+  // Webhooks and deploy keys are read on every repository you administer.
+  const admins = repos.filter((x) => x.permissions?.admin).length;
+  const cost = activeCount * perActive + (repos.length - activeCount) * perInactive + admins * 2;
   if (remaining !== undefined && remaining < cost)
     repG.push({
       surface: "github:repos",
       what: "part of the repositories may hit the API rate limit",
-      why: `${remaining} REST calls left this hour; ${repos.length} repositories need up to ${cost} (about ${perActive} per repository pushed since ${sinceDay}, ${COST_INACTIVE} per other)`,
+      why: `${remaining} REST calls left this hour; ${repos.length} repositories need up to ${cost} (about ${perActive} per repository pushed since ${sinceDay}, ${perInactive} per other, 2 more per one you administer)`,
       fix: `wait for the reset${resetAt ? ` at ${resetAt}` : ""}, or narrow with --repos`,
     });
   const truncated: string[] = [];
@@ -398,6 +404,118 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
     }
     const add = (f: NewFinding) => repF.push(f);
     const active = isActive(repo);
+
+    // The default branch's whole tree in one call. GitHub cuts trees past about 100,000 entries:
+    // then the workflow folder and the root are listed as well.
+    const blobUrl = (path: string) =>
+      `https://github.com/${r}/blob/${encodeURIComponent(repo.default_branch)}/${path.split("/").map(encodeURIComponent).join("/")}`;
+    const treeOf = async (): Promise<string[]> => {
+      const t = await gh.api<any>(`repos/${r}/git/trees/${encodeURIComponent(repo.default_branch)}?recursive=1`);
+      const paths: string[] = ((t.data?.tree ?? []) as { path: string; type: string }[]).filter((e) => e.type === "blob").map((e) => e.path);
+      if (!t.data?.truncated) return paths;
+      treeCut.push(r);
+      for (const dir of [".github/workflows", ""]) {
+        const list = await gh.api<any[]>(`repos/${r}/contents/${dir}`);
+        for (const e of Array.isArray(list.data) ? list.data : []) if (e.type === "file" && !paths.includes(e.path)) paths.push(e.path);
+      }
+      return paths;
+    };
+    const isWorkflow = (p: string) => /^\.github\/workflows\/[^/]+$/.test(p);
+    /** Workflow file names and contents. `note` says why an inactive repository's files were read. */
+    const scanWorkflows = async (paths: string[], note = "") => {
+      // Composite actions run in CI too: their action.yml is read like a workflow.
+      const runnable = paths.filter((p) => isWorkflow(p) || /^\.github\/actions\/(.+\/)?action\.ya?ml$/.test(p));
+      for (const p of runnable) {
+        const m = firstMatch(M.workflow, p) ?? firstMatch(M.file, p);
+        if (m)
+          add(
+            hit(m, {
+              surface: "github:repos",
+              subject: r,
+              title: `Workflow file ${p} on ${repo.default_branch}${note}`,
+              evidence: { kind: "url", ref: blobUrl(p) },
+            }),
+          );
+      }
+      if (!M.content.length) return;
+      if (runnable.length > 25) contentCapped.push(`${r} (${runnable.length} workflow files)`);
+      for (const p of runnable.slice(0, 25)) {
+        const body = await gh.api<any>(`repos/${r}/contents/${p.split("/").map(encodeURIComponent).join("/")}`);
+        const text = body.data?.content ? Buffer.from(body.data.content, "base64").toString("utf8") : "";
+        const lines = text.split("\n");
+        for (const m of M.content) {
+          const ln = lines.findIndex((l) => m.test(l));
+          if (ln < 0) continue;
+          add(
+            hit(m, {
+              surface: "github:repos",
+              subject: r,
+              title: `${p} contains "${m.indicator.value}"${note}`,
+              evidence: { kind: "url", ref: `${blobUrl(p)}#L${ln + 1}`, excerpt: lines[ln]?.trim().slice(0, 200) },
+            }),
+          );
+        }
+      }
+    };
+    /** Every file of the tree against file IOCs, the workflows, and every package.json's install hooks. */
+    const scanFiles = async (paths: string[]) => {
+      await scanWorkflows(paths);
+      for (const p of paths) {
+        if (/^\.github\//.test(p) && (isWorkflow(p) || /action\.ya?ml$/.test(p))) continue;
+        const m = firstMatch(M.file, p) ?? (p.startsWith(".github/") ? firstMatch(M.workflow, p) : undefined);
+        if (m) add(hit(m, { surface: "github:repos", subject: r, title: `File ${p} on ${repo.default_branch}`, evidence: { kind: "url", ref: blobUrl(p) } }));
+      }
+      // Install hooks: the npm variant drops a script and wires it to postinstall.
+      if (!M.file.length && !M.content.length) return;
+      const pkgs = paths.filter((p) => /(^|\/)package\.json$/.test(p) && !/(^|\/)node_modules\//.test(p));
+      if (pkgs.length > 20) pkgCapped.push(`${r} (${pkgs.length} package.json files)`);
+      for (const p of pkgs.slice(0, 20)) {
+        const pkg = await gh.api<any>(`repos/${r}/contents/${p.split("/").map(encodeURIComponent).join("/")}`);
+        const text = pkg.data?.content ? Buffer.from(pkg.data.content, "base64").toString("utf8") : "";
+        try {
+          const scripts = (JSON.parse(text).scripts ?? {}) as Record<string, string>;
+          for (const hook of ["preinstall", "install", "postinstall", "prepare"]) {
+            const cmd = scripts[hook];
+            if (!cmd) continue;
+            const m = M.file.find((x) => cmd.split(/[\s;&|]+/).some((tok) => x.test(tok))) ?? firstMatch(M.content, cmd);
+            if (m)
+              add(
+                hit(m, {
+                  surface: "github:repos",
+                  subject: r,
+                  title: `${p} "${hook}" runs "${cmd}"`,
+                  evidence: { kind: "url", ref: pkg.data?.html_url ?? blobUrl(p), excerpt: cmd },
+                }),
+              );
+          }
+        } catch {
+          // Not JSON: nothing an install hook could run from.
+        }
+      }
+    };
+
+    // Webhooks and deploy keys created in the window: persistence that survives a token rotation and
+    // needs no push, so they are read on every repository, active or not.
+    if (repo.permissions?.admin) {
+      for (const [path, label] of [
+        ["hooks", "Webhook"],
+        ["keys", "Deploy key"],
+      ] as const) {
+        const items = await gh.paged<any>(`repos/${r}/${path}`, { maxPages: 5 });
+        for (const it of items.data ?? []) {
+          if (!it.created_at || it.created_at < keySince) continue;
+          add({
+            surface: "github:repos",
+            severity: "suspicious",
+            subject: r,
+            title: `${label} added in the window: ${label === "Webhook" ? it.config?.url : it.title}`,
+            at: it.created_at,
+            evidence: { kind: "api", ref: `repos/${r}/${path}/${it.id}` },
+            key: `github:repos|${r}|${path}|${it.id}`,
+          });
+        }
+      }
+    } else noAdmin++;
 
     // Pull requests: a fork PR does not move pushed_at, so check them on every repo.
     if (M.pr.length || M.branch.length) {
@@ -426,6 +544,16 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
 
     if (!active) {
       inactive++;
+      // A moved action tag (tj-actions, trivy-action) changes nothing in the repository: a workflow
+      // that only ran on a schedule or by hand still executed it. Read the workflows when any ran.
+      if (M.content.length || M.workflow.length) {
+        const ran = await gh.api<any>(`repos/${r}/actions/runs?created=>=${sinceDay}&per_page=1`);
+        const n = Number(ran.data?.total_count ?? 0);
+        if (n > 0) {
+          inactiveRan++;
+          await scanWorkflows(await treeOf(), ` (${n} run(s) since ${sinceDay})`);
+        }
+      }
       return;
     }
 
@@ -602,7 +730,7 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
       }
     }
 
-    if (M.commit.length || M.file.length) {
+    if (M.commit.length) {
       const commits = await gh.paged<any>(`repos/${r}/commits?since=${since}`, { maxPages: 3 });
       if (commits.truncated && !commits.partial) truncated.push(`${r} commits`);
       for (const c of commits.data ?? []) {
@@ -728,96 +856,8 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
       }
     }
 
-    // Workflow files on the default branch: names, then contents when content IOCs exist.
-    const wf = await gh.api<any[]>(`repos/${r}/contents/.github/workflows`);
-    for (const f of Array.isArray(wf.data) ? wf.data : []) {
-      const m = firstMatch(M.workflow, f.path) ?? firstMatch(M.file, f.path);
-      if (m)
-        add(
-          hit(m, {
-            surface: "github:repos",
-            subject: r,
-            title: `Workflow file ${f.path} on ${repo.default_branch}`,
-            evidence: { kind: "url", ref: f.html_url },
-          }),
-        );
-    }
-    if (M.content.length && Array.isArray(wf.data)) {
-      if (wf.data.length > 25) contentCapped.push(`${r} (${wf.data.length} workflow files)`);
-      for (const f of wf.data.slice(0, 25)) {
-        const body = await gh.api<any>(`repos/${r}/contents/${String(f.path).split("/").map(encodeURIComponent).join("/")}`);
-        const text = body.data?.content ? Buffer.from(body.data.content, "base64").toString("utf8") : "";
-        const lines = text.split("\n");
-        for (const m of M.content) {
-          const ln = lines.findIndex((l) => m.test(l));
-          if (ln < 0) continue;
-          add(
-            hit(m, {
-              surface: "github:repos",
-              subject: r,
-              title: `${f.path} contains "${m.indicator.value}"`,
-              evidence: { kind: "url", ref: `${f.html_url}#L${ln + 1}`, excerpt: lines[ln]?.trim().slice(0, 200) },
-            }),
-          );
-        }
-      }
-    }
-
-    // Root files and install hooks: the npm variant drops a script and wires it to postinstall.
-    if (M.file.length || M.content.length) {
-      const root = await gh.api<any[]>(`repos/${r}/contents/`);
-      const names = Array.isArray(root.data) ? root.data : [];
-      for (const f of names) {
-        const m = firstMatch(M.file, f.path);
-        if (m)
-          add(hit(m, { surface: "github:repos", subject: r, title: `File ${f.path} on ${repo.default_branch}`, evidence: { kind: "url", ref: f.html_url } }));
-      }
-      if (names.some((f) => f.name === "package.json")) {
-        const pkg = await gh.api<any>(`repos/${r}/contents/package.json`);
-        const text = pkg.data?.content ? Buffer.from(pkg.data.content, "base64").toString("utf8") : "";
-        try {
-          const scripts = (JSON.parse(text).scripts ?? {}) as Record<string, string>;
-          for (const hook of ["preinstall", "install", "postinstall", "prepare"]) {
-            const cmd = scripts[hook];
-            if (!cmd) continue;
-            const m = M.file.find((x) => cmd.split(/[\s;&|]+/).some((tok) => x.test(tok))) ?? firstMatch(M.content, cmd);
-            if (m)
-              add(
-                hit(m, {
-                  surface: "github:repos",
-                  subject: r,
-                  title: `package.json "${hook}" runs "${cmd}"`,
-                  evidence: { kind: "url", ref: pkg.data.html_url, excerpt: cmd },
-                }),
-              );
-          }
-        } catch {
-          // Not JSON: nothing an install hook could run from.
-        }
-      }
-    }
-
-    // Webhooks and deploy keys created in the window: persistence that survives a token rotation.
-    if (repo.permissions?.admin) {
-      for (const [path, label] of [
-        ["hooks", "Webhook"],
-        ["keys", "Deploy key"],
-      ] as const) {
-        const items = await gh.paged<any>(`repos/${r}/${path}`, { maxPages: 5 });
-        for (const it of items.data ?? []) {
-          if (!it.created_at || it.created_at < keySince) continue;
-          add({
-            surface: "github:repos",
-            severity: "suspicious",
-            subject: r,
-            title: `${label} added in the window: ${label === "Webhook" ? it.config?.url : it.title}`,
-            at: it.created_at,
-            evidence: { kind: "api", ref: `repos/${r}/${path}/${it.id}` },
-            key: `github:repos|${r}|${path}|${it.id}`,
-          });
-        }
-      }
-    } else noAdmin++;
+    // The default branch's files: names against file IOCs, workflow contents, install hooks.
+    await scanFiles(await treeOf());
 
     if (runGaps.length && repF.some((f) => f.subject === r && f.severity === "compromised")) {
       for (const g of runGaps)
@@ -879,8 +919,16 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
     repG.push({
       surface: "github:repos",
       what: `${inactive} repositories with no push since ${sinceDay}`,
-      why: "only their pull requests were checked; their branches, commits and files cannot have changed without a push, but scheduled or manual runs, caches, artifacts, webhooks and deploy keys were not read",
+      why: `only their pull requests, webhooks and deploy keys${M.content.length || M.workflow.length ? `, and the workflow files of the ${inactiveRan} where a workflow ran in the window,` : ""} were checked; their branches, commits, runs, caches and artifacts were not read`,
     });
+  if (treeCut.length)
+    repG.push({
+      surface: "github:repos",
+      what: `files of ${treeCut.join(", ")} past what GitHub returns in one tree`,
+      why: "the tree was cut (truncated): only its first part, the workflow folder and the root were compared with file indicators",
+    });
+  if (pkgCapped.length)
+    repG.push({ surface: "github:repos", what: `package.json files past the first 20 in ${pkgCapped.join(", ")}`, why: "their install hooks were not read" });
   if (contentCapped.length)
     repG.push({
       surface: "github:repos",
@@ -922,7 +970,7 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
   repG.push({
     surface: "github:repos",
     what: "branches other than the default branch, for commits and files",
-    why: "commits and files are read on the default branch; attacker branches are caught by name, runs and PRs",
+    why: "commits and the whole file tree are read on the default branch; attacker branches are caught by name, activity log, runs and PRs",
   });
   reposRes.finishedAt = new Date().toISOString();
 

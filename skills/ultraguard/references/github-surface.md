@@ -31,6 +31,12 @@ For each:
 
 - **PRs** created in the window, by anyone: title and head branch. Checked on
   every repository, because a PR from a fork does not move `pushed_at`.
+- **Webhooks and deploy keys** added since the window start, 180 days back
+  at most (admin rights only), on every repository: adding one needs no push.
+- When the campaign has string, IP, domain, URL or workflow-file indicators
+  and a workflow ran in the window, the **workflow files** of a repository
+  not pushed since: a moved action tag (tj-actions, trivy-action) changes
+  nothing in the repository, yet the workflow ran it.
 - Then, only if the repository was pushed to since the window:
   - **branches** by name, and the repository **activity log** (branch
     creations, pushes and deletions, with their actor): it finds the
@@ -52,12 +58,13 @@ For each:
     A gap is reported only in a repository that also has an IOC match: alone,
     gaps are mostly retention and re-runs, and are counted in the coverage;
   - **Actions caches and artifacts** by prefix;
-  - **workflow files** on the default branch: names, and contents when the
-    campaign has string, IP, domain or URL indicators;
-  - **root files and install hooks** (`preinstall`, `install`,
-    `postinstall`, `prepare` in package.json);
-  - **webhooks and deploy keys** added since the window start, 180 days back
-    at most (admin rights only).
+  - the default branch's **whole file tree** (one call): every path against
+    `file` indicators (`public/fonts/x.woff2`, `.claude/setup.mjs`), workflow
+    files and composite actions (`.github/actions/**/action.yml`) by name,
+    and their contents when the campaign has string, IP, domain or URL
+    indicators (first 25 per repository);
+  - **install hooks** (`preinstall`, `install`, `postinstall`, `prepare`) of
+    every package.json in the tree (first 20, outside node_modules).
 
 Each finding carries the actor and `scope`: `own` (your login) or `other`.
 Run and commit findings also say what the commit changed: "the commit only

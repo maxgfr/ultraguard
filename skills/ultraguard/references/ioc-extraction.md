@@ -53,9 +53,9 @@ The full worked example, with all 27 indicators of that article, is
 | `branch` | exact name (or regex) | branches, PR head refs, workflow run branches, pushes by your login |
 | `pr_title` | exact title (or regex) | PRs you opened anywhere; PRs in repos you can push to; run titles |
 | `commit_message` | exact first line (or regex) | commits on default branches; run titles |
-| `workflow_file` | glob, e.g. `.github/workflows/build-audit-*.yml` | workflow files on default branches, files on disk |
-| `file` | glob on the name (`.ci-*.sh`) or the path tail (`public/fonts/x.woff2`) | repo root files, install hooks, files on disk |
-| `string` | substring | workflow file contents, startup items, VS Code tasks, crontab, shell history |
+| `workflow_file` | glob, e.g. `.github/workflows/build-audit-*.yml` | workflow files and composite actions on default branches, files on disk |
+| `file` | glob on the name (`.ci-*.sh`) or the path tail (`public/fonts/x.woff2`) | every file path on default branches, install hooks, files on disk |
+| `string` | substring | workflow and composite action contents, startup items, VS Code tasks, crontab, shell history |
 | `ip`, `domain`, `url` | the address, defanged or not | the same contents, plus open connections (IPs) |
 | `sha256` | 64 hex characters | files named like a `file` IOC, startup items |
 | `package` | name, with `ecosystem` and optional `versions` | every lockfile; editor extensions (`ecosystem: "vscode"`) |
