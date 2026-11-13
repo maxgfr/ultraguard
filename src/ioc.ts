@@ -109,6 +109,8 @@ function validateIndicator(ind: Indicator, at: string, usable: Set<string>, push
     }
   }
   if (ind.type === "sha256" && !/^[a-f0-9]{64}$/i.test(value.trim())) push(`${at}.value`, "a sha256 is 64 hex characters");
+  if (ind.type === "team_id" && !ind.regex && !/^[A-Z0-9]{10}$/.test(value.trim()))
+    push(`${at}.value`, "an Apple Developer Team ID is 10 capital letters and digits, e.g. A1B2C3D4E5");
   if (ind.type === "ip" && !/^[\d.]+$|^[a-f0-9:]+$/i.test(defang(value).trim())) push(`${at}.value`, "an IPv4 or IPv6 address");
 }
 
@@ -196,6 +198,10 @@ function compile(c: Campaign, ind: Indicator): Matcher {
     // indicator for the variants a source describes.
     const want = value.trim().toLowerCase();
     test = (s) => s.trim().toLowerCase() === want;
+  } else if (ind.type === "launchd_label" || ind.type === "team_id" || ind.type === "bundle_id") {
+    // Exact and case-sensitive, as launchd and codesign compare them.
+    const want = value.trim();
+    test = (s) => s.trim() === want;
   } else if (ind.type.endsWith("_prefix")) {
     test = (s) => s.toLowerCase().startsWith(value.toLowerCase());
   } else if (ind.type === "string") {

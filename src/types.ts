@@ -35,6 +35,9 @@ export const INDICATOR_TYPES = [
   "repo_name",
   "repo_description",
   "runner_name",
+  "launchd_label",
+  "team_id",
+  "bundle_id",
 ] as const;
 export type IndicatorType = (typeof INDICATOR_TYPES)[number];
 
