@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here, generated automatically from the [Conventional Commits](https://www.conventionalcommits.org/) by [semantic-release](https://github.com/semantic-release/semantic-release).
 
+## [1.7.1](https://github.com/maxgfr/ultraguard/compare/v1.7.0...v1.7.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **skill:** keep the description a plain YAML scalar so the skill installs ([#12](https://github.com/maxgfr/ultraguard/issues/12)) ([4739d0b](https://github.com/maxgfr/ultraguard/commit/4739d0b966a8913dbbcc706c82181f80e4b02f4a))
+
 # [1.7.0](https://github.com/maxgfr/ultraguard/compare/v1.6.0...v1.7.0) (2026-11-13)
 
 
