@@ -8,8 +8,8 @@ show the few that matter and offer to fix them.
 The OSV and GHSA feeds come from ultraguard's copy in
 `<state>/package-checker/data`: `rules update` refreshes it, and `scan deps`
 does when it is older than 1 day. A failed refresh keeps the older copy and
-is a gap with its age; with no copy at all, package-checker downloads the
-feeds itself and the refresh line says so. The run's `meta.json`
+is a gap with its age; with no copy at all, `scan deps` downloads the feeds
+once for the scan into its run folder and the refresh line says so. The run's `meta.json`
 (`advisoryFeeds`) and `deps-vulnerabilities.json` (`sources`) list each feed's
 origin, entries and age. package-checker's exit code says whether its scan was
 complete (3: incomplete, each reason a gap; a missing OSV feed means the

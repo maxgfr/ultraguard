@@ -92,6 +92,27 @@ describe("package-checker runs", () => {
     expect(args).not.toContain("--include-gitignored");
   });
 
+  it("with no feed copy, the feeds are downloaded once for the scan, not once per run", async () => {
+    const root = tmp("ug-pc8-");
+    for (const g of ["a/x", "b/y", "c/z"]) put(root, `${g}/package-lock.json`, npmLock({ a: "1.0.0" }));
+    const calls: string[][] = [];
+    const runner: Runner = async (_cmd, args) => {
+      calls.push(args);
+      const dir = args[args.indexOf("--data-dir") + 1] as string;
+      if (args.includes("--update-feeds")) for (const f of FEED_FILES) put(dir, f, "pkg:npm/x@1\n");
+      else writeFileSync(args[args.indexOf("--export-json") + 1] as string, JSON.stringify({ vulnerabilities: [] }));
+      return { ok: true, status: 0, stdout: "", stderr: "" };
+    };
+    const run = new Run(tmp());
+    const once = join(run.dir, "package-checker", "data");
+    await scanDeps(NO_PKG, walk([root]), run, { runner, roots: [root], feedDir: tmp("ug-pc8s-") });
+    expect(calls.filter((c) => c.includes("--update-feeds"))).toHaveLength(1);
+    const scans = calls.filter((c) => !c.includes("--update-feeds"));
+    expect(scans).toHaveLength(3);
+    for (const c of scans) expect(c[c.indexOf("--data-dir") + 1]).toBe(once);
+    expect(existsSync(once)).toBe(false);
+  });
+
   it("deps-9: a report left by an earlier scan is never read as this run's", async () => {
     const work = tmp("ug-pc9-");
     writeFileSync(join(work, "package-checker-1.json"), JSON.stringify({ vulnerabilities: [] }));

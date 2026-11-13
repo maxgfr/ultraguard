@@ -86,7 +86,7 @@ export async function updateYaraForge(
 
 /**
  * package-checker's advisory feeds in the state folder (scan deps reads them with --data-dir).
- * A failed refresh keeps the previous copy; with no copy at all, package-checker downloads the feeds itself.
+ * A failed refresh keeps the previous copy; with no copy at all, each scan deps downloads them again.
  */
 export async function updateAdvisoryFeeds(state: string, runner: Runner, opts: { force?: boolean; now?: Date } = {}): Promise<DefenseUpdate> {
   const dir = feedDir(state);
@@ -100,7 +100,7 @@ export async function updateAdvisoryFeeds(state: string, runner: Runner, opts: {
   return {
     engine: "package-checker",
     status: "failed",
-    detail: `feed refresh failed: ${r.detail}; ${kept ? `kept the copy in ${dir} (${kept.ageDays} days old${kept.missing.length ? `, ${kept.missing.length} of ${FEED_FILES.length} feeds missing` : ""})` : "no local copy: package-checker looks for the feeds itself on each scan (its Homebrew copy, else a download)"}`,
+    detail: `feed refresh failed: ${r.detail}; ${kept ? `kept the copy in ${dir} (${kept.ageDays} days old${kept.missing.length ? `, ${kept.missing.length} of ${FEED_FILES.length} feeds missing` : ""})` : "no local copy: each scan deps downloads the feeds again"}`,
   };
 }
 

@@ -270,7 +270,7 @@ export interface DepsScanOptions {
   home?: string;
   /** Global install folders, instead of the ones under `home` and the system ones (tests). */
   globalDirs?: { node: string[]; python: string[] };
-  /** The advisory feed copy package-checker reads (--data-dir): feedDir(state). Unset or empty: it downloads them. */
+  /** The advisory feed copy package-checker reads (--data-dir): feedDir(state). Empty: downloaded once for the scan. Unset: each run downloads them. */
   feedDir?: string;
   /** Why refreshing that copy failed, when it did: the stale-feed gap says so. */
   feedRefreshError?: string;
@@ -446,8 +446,9 @@ export async function scanDeps(
   if (opts.checker !== false && lockfiles + advisoryOnly.size > 0) {
     const workDir = run ? join(run.dir, "package-checker") : join(tmpdir(), `ultraguard-pc-${process.pid}`);
     mkdirSync(workDir, { recursive: true });
-    const checker = opts.checker ?? (opts.runner ? defaultChecker(opts.runner, workDir, { dataDir: opts.feedDir }) : undefined);
-    if (!checker) gaps.push({ surface: "deps", what: "the OSV and GHSA advisory feeds", why: "no command runner" });
+    const injected = opts.checker || undefined;
+    const runner = injected ? undefined : opts.runner;
+    if (!injected && !runner) gaps.push({ surface: "deps", what: "the OSV and GHSA advisory feeds", why: "no command runner" });
     else {
       const all = [...lockfilePaths, ...advisoryOnly];
       const roots = opts.roots ?? [];
@@ -473,6 +474,15 @@ export async function scanDeps(
         ),
         ...staged.keys(),
       ];
+      // No feed copy in the state folder (--no-update on a fresh state, a failed first refresh): download the
+      // feeds once for this scan into the run folder, not once per run; removed after the runs.
+      let dataDir = opts.feedDir;
+      if (runner && dataDir && groups.length > 1 && !localFeeds(dataDir)) {
+        const once = join(workDir, "data");
+        await updateCheckerFeeds(runner, once);
+        if (localFeeds(once)) dataDir = once;
+      }
+      const checker = injected ?? defaultChecker(runner as Runner, workDir, { dataDir });
       const vulns: CheckerVuln[] = [];
       let failed = 0;
       const sources = new Map<string, CheckerSource>();
@@ -499,6 +509,7 @@ export async function scanDeps(
         }
         vulns.push(...(orig ? r.vulnerabilities.map((v) => ({ ...v, file: orig })) : r.vulnerabilities));
       }
+      if (dataDir && dataDir !== opts.feedDir) rmSync(dataDir, { recursive: true, force: true });
       // The feeds the runs loaded: where from, how many entries, how old.
       const feeds = [...sources.values()];
       const local = feeds.filter((f) => f.status === "loaded" && f.origin_type === "local" && typeof f.age_days === "number");

@@ -183,12 +183,12 @@ describe("advisory feeds refresh", () => {
     expect(localFeeds(feedDir(state))?.missing).toEqual([]);
   });
 
-  it("a failed refresh keeps the older copy and gives its age; with no copy, says package-checker downloads them itself", async () => {
+  it("a failed refresh keeps the older copy and gives its age; with no copy, says each scan downloads them again", async () => {
     const state = tmp("ug-def-");
     const none = await updateAdvisoryFeeds(state, machine({ feeds: "fail" }).runner);
     expect(none.status).toBe("failed");
     expect(none.detail).toBe(
-      `feed refresh failed: Error: unable to write the feed directory ${feedDir(state)}; no local copy: package-checker looks for the feeds itself on each scan (its Homebrew copy, else a download)`,
+      `feed refresh failed: Error: unable to write the feed directory ${feedDir(state)}; no local copy: each scan deps downloads the feeds again`,
     );
     const partial = await updateAdvisoryFeeds(state, machine({ feeds: "partial" }).runner);
     expect(partial.detail).toBe(
