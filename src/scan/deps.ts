@@ -54,8 +54,12 @@ export interface CheckerSource {
  */
 export type Checker = (dir: string) => Promise<{ ok: boolean; vulnerabilities: CheckerVuln[]; error?: string; warnings?: string[]; sources?: CheckerSource[] }>;
 
-/** Older than this (whole days), the advisory feeds in the state folder are refreshed before scan deps. */
+/** Older than this (24 hours, not whole days), the advisory feeds in the state folder are refreshed before scan deps. */
 export const FEED_STALE_DAYS = 1;
+
+/** A feed last written at `mtime` (ms or ISO date) is stale: older than FEED_STALE_DAYS, to the millisecond. */
+export const feedStale = (mtime: number | string, now: Date): boolean =>
+  now.getTime() - (typeof mtime === "number" ? mtime : Date.parse(mtime)) > FEED_STALE_DAYS * 86_400_000;
 
 /** Where ultraguard keeps package-checker's advisory feeds, refreshed by `rules update` and scan deps. */
 export const feedDir = (state: string): string => join(state, "package-checker", "data");
@@ -71,7 +75,7 @@ export const FEED_FILES: string[] = (() => {
 })();
 
 /** The feed copy in `dir`: how many files, the feeds it lacks, and the age in whole days of the oldest one. */
-export function localFeeds(dir: string, now = new Date()): { files: number; missing: string[]; ageDays: number; date: string } | undefined {
+export function localFeeds(dir: string, now = new Date()): { files: number; missing: string[]; ageDays: number; date: string; stale: boolean } | undefined {
   let oldest = Number.POSITIVE_INFINITY;
   const names = new Set<string>();
   try {
@@ -89,6 +93,7 @@ export function localFeeds(dir: string, now = new Date()): { files: number; miss
     missing: FEED_FILES.filter((f) => !names.has(f)),
     ageDays: Math.max(0, Math.floor((now.getTime() - oldest) / 86_400_000)),
     date: new Date(oldest).toISOString(),
+    stale: feedStale(oldest, now),
   };
 }
 
@@ -480,8 +485,11 @@ export async function scanDeps(
       if (feedAge !== undefined) result.stats.feedAgeDays = feedAge;
       if (feeds.length) result.stats.feedEntries = feeds.reduce((n, f) => n + (f.status === "loaded" ? (f.entries ?? 0) : 0), 0);
       if (run && feeds.length) run.setMeta({ advisoryFeeds: feeds });
-      if (feedAge !== undefined && feedAge > FEED_STALE_DAYS) {
-        const dirs = [...new Set(local.filter((f) => (f.age_days as number) > FEED_STALE_DAYS).map((f) => dirname(f.origin as string)))];
+      // Stale from the file date when package-checker gives it: its age_days is floored to whole days.
+      const now = opts.now ?? new Date();
+      const stale = local.filter((f) => (f.date && !Number.isNaN(Date.parse(f.date)) ? feedStale(f.date, now) : (f.age_days as number) > FEED_STALE_DAYS));
+      if (feedAge !== undefined && stale.length) {
+        const dirs = [...new Set(stale.map((f) => dirname(f.origin as string)))];
         gaps.push({
           surface: "deps",
           what: `advisories newer than ${feedAge} days (feeds read from ${dirs.join(", ")})`,

@@ -166,7 +166,9 @@ describe("advisory feeds refresh", () => {
     expect(r).toEqual({ engine: "package-checker", status: "updated", detail: `Updated ${N} of ${N} feed(s) (OSV and GHSA advisories for scan deps)` });
     expect(localFeeds(feedDir(state))?.files).toBe(N);
     expect((await updateAdvisoryFeeds(state, m.runner)).status).toBe("current");
-    expect((await updateAdvisoryFeeds(state, m.runner, { now: new Date(Date.now() + 2.5 * 86_400_000) })).status).toBe("updated");
+    expect((await updateAdvisoryFeeds(state, m.runner, { now: new Date(Date.now() + 23 * 3_600_000) })).status).toBe("current");
+    // Older than 1 day means 24 hours, not two whole days.
+    expect((await updateAdvisoryFeeds(state, m.runner, { now: new Date(Date.now() + 30 * 3_600_000) })).status).toBe("updated");
     expect((await updateAdvisoryFeeds(state, m.runner, { force: true })).status).toBe("updated");
   });
 

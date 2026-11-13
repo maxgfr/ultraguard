@@ -135,12 +135,19 @@ describe("package-checker runs", () => {
       `2 loaded, 12 entries; 1 from ${feeds} (oldest 10 days, 2026-11-03); 1 downloaded during the scan`,
     );
     expect(renderReport(run).report).toContain("advisory feeds (package-checker): 2 loaded");
-    // A fresh copy: no gap.
-    const fresh = await scanDeps(NO_PKG, walk([root]), new Run(tmp()), {
-      runner: fakeChecker(0, { vulnerabilities: [], sources: [{ ...report.sources?.[0], age_days: 1 }] }),
-      roots: [root],
-    });
-    expect(fresh.gaps.some((g) => g.what.startsWith("advisories newer than"))).toBe(false);
+    // A fresh copy: no gap. A copy 30 hours old (age_days 1, floored) is past the 1-day limit.
+    const NOW = new Date("2026-11-13T12:00:00Z");
+    const aged = (hours: number) =>
+      scanDeps(NO_PKG, walk([root]), new Run(tmp()), {
+        runner: fakeChecker(0, {
+          vulnerabilities: [],
+          sources: [{ ...report.sources?.[0], age_days: Math.floor(hours / 24), date: new Date(NOW.getTime() - hours * 3_600_000).toISOString() }],
+        }),
+        roots: [root],
+        now: NOW,
+      });
+    expect((await aged(20)).gaps.some((g) => g.what.startsWith("advisories newer than"))).toBe(false);
+    expect((await aged(30)).gaps.find((g) => g.what.startsWith("advisories newer than"))?.what).toContain("newer than 1 days");
   });
 
   it("deps-7: exit 2 is a failure with package-checker's reason (Bash 3: install Bash)", async () => {
@@ -371,6 +378,7 @@ describe("doctor", () => {
     const later = await line(new Date(Date.now() + 2.5 * 86_400_000));
     expect(later).toMatchObject({ ok: false, fix: "ultraguard rules update" });
     expect(later?.detail).toContain("2 days old (stale: refreshed after 1 day)");
+    expect(await line(new Date(Date.now() + 30 * 3_600_000))).toMatchObject({ ok: false, fix: "ultraguard rules update" });
   });
 
   it("deps-7: names Bash 3 and probes the feed host scan deps downloads from", async () => {
