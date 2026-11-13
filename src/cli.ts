@@ -21,6 +21,7 @@ import {
   UsageError,
 } from "./engine.js";
 import { defaultFeedGet, type FeedGet } from "./feeds.js";
+import { fixProject, renderFix } from "./fix.js";
 import { planFixes, renderFixes } from "./fixes.js";
 import { intel, readWebResultsFile, type WebHit } from "./intel.js";
 import { normEco, SUPPORTED_ECOSYSTEMS, validateIocs } from "./ioc.js";
@@ -40,7 +41,7 @@ import { defaultRegistryGet, type RegistryGet, scanNpmPublishes } from "./scan/r
 import { walk, type WalkResult } from "./scan/walk.js";
 import { type Campaign, type Gap, type IocFile, SURFACES, type Surface } from "./types.js";
 import { VERSION } from "./version.js";
-import type { RankedVulns } from "./vulns.js";
+import type { RankedVulns, Tier } from "./vulns.js";
 import { EXIT_INCOMPLETE, stateDir, watchCommit, watchPlan } from "./watch.js";
 
 export const HELP = `ultraguard v${VERSION} (webindex ${ENGINE_VERSION})
@@ -49,7 +50,10 @@ each article into indicators of compromise (IOCs) that cite it, and ultraguard
 sweeps your GitHub account and the repositories you can push to, this machine,
 your lockfiles and your cloud for them. Read-only on what it scans: the only
 things it writes are its run folders, its state folder and the antivirus
-databases it keeps current (ClamAV signatures, YARA-Forge rules).
+databases it keeps current (ClamAV signatures, YARA-Forge rules). The one
+exception is fix --apply, run only when you ask to fix a named project: it
+upgrades that project's dependencies in a new git worktree and branch, and
+never pushes.
 
 USAGE
   ultraguard doctor [--probe] [--state <dir>] [--json]
@@ -65,6 +69,7 @@ USAGE
   ultraguard report --out <run> [--json]
   ultraguard check <answer.md> --out <run> [--json]
   ultraguard fixes --out <run> [--project <path>] [--json]   upgrade plan for the ranked CVEs
+  ultraguard fix --out <run> --project <path> [--apply] [--tiers P0,P1,P2] [--no-test] [--json]
   ultraguard watch plan [--web-results <file.json>] --out <run> [--state <dir>] [--resweep-days <n>]
   ultraguard watch commit --out <run> [--state <dir>] [--notify-issue <owner/repo>]
 
@@ -88,6 +93,18 @@ VULNERABILITIES (scan deps)
   upgrades with the command for each package manager (FIXES.md) and runs none.
   The KEV and EPSS feeds are cached for 24 hours in <state>/feeds.
 
+FIX (one own project, on request)
+  fix --project <path> prints what it would do (a dry run: nothing written).
+  With --apply it makes a new worktree <state>/fixes/<repo>-<yyyymmdd-hhmm> on a
+  new branch ultraguard/fix-<yyyymmdd>-<sha> from the default branch, runs the
+  plan there (install scripts off), re-checks the lockfiles with
+  package-checker, runs the project's tests (15 min timeout) and commits with
+  your git config. It never pushes, opens a PR or merges: it prints how to,
+  and how to drop the fix. Record: <run>/fix-<project>.json. It refuses
+  caches, plugins, vendored copies, worktrees and folders outside git.
+  Exit codes: 0 applied and tests pass, 1 tests fail, a step failed or
+  advisories remain, 2 refused.
+
 SCAN FLAGS
   --repos <a/b,c/d>     github: only these repositories
   --max-repos <n>       github: stop after n repositories
@@ -107,7 +124,10 @@ SCAN FLAGS
   --no-registry         deps: skip that check (it reads the public npm registry)
   --no-osv              deps: skip package-checker (OSV and GHSA feeds, malicious packages)
   --surfaces <list>     sweep: github,host,deps,cloud (default: all)
-  --project <path>      fixes: only this project (any kind, even a worktree or a cache)
+  --project <path>      fixes: only this project (any kind, even a worktree or a cache); fix: the project to fix
+  --apply               fix: do it (without it, fix is a dry run)
+  --tiers <list>        fix: the tiers to fix (default P0,P1,P2)
+  --no-test             fix: do not run the project's tests
   scan and sweep exit 20 when GitHub was asked for and could not be scanned
   (logged out, every read refused): its verdict is UNKNOWN, never CLEAN.
   --limit <n>           search: hits to aim for per query (default 10; 5 with --news)
@@ -134,7 +154,7 @@ VERDICTS (per surface)
   --help, --version
 `;
 
-export const COMMANDS = ["doctor", "rules", "search", "intel", "ioc", "scan", "sweep", "report", "check", "fixes", "watch"];
+export const COMMANDS = ["doctor", "rules", "search", "intel", "ioc", "scan", "sweep", "report", "check", "fixes", "fix", "watch"];
 export const VALUE_FLAGS = [
   "out",
   "web-results",
@@ -154,8 +174,9 @@ export const VALUE_FLAGS = [
   "set",
   "npm-user",
   "project",
+  "tiers",
 ];
-export const BOOL_FLAGS = ["json", "news", "probe", "skip-live", "no-osv", "no-av", "av-full", "no-rules", "no-update", "no-registry"];
+export const BOOL_FLAGS = ["json", "news", "probe", "skip-live", "no-osv", "no-av", "av-full", "no-rules", "no-update", "no-registry", "apply", "no-test"];
 
 const SCAN = [
   "out",
@@ -192,6 +213,7 @@ const SPEC: CliSpec = {
     report: ["out", "json"],
     check: ["out", "json"],
     fixes: ["out", "project", "state", "json"],
+    fix: ["out", "project", "tiers", "apply", "no-test", "state", "json"],
     watch: ["out", "web-results", "state", "resweep-days", "notify-issue", "json"],
   },
 };
@@ -661,14 +683,7 @@ async function dispatch(a: CommandArgs): Promise<number> {
     }
     case "fixes": {
       const run = needRun(a, { mustExist: true });
-      let ranked = run.read<RankedVulns | undefined>("vulnerabilities.json", undefined);
-      if (!ranked) {
-        // A run scanned before the ranking existed: rank its package-checker list now.
-        const raw = run.read<{ vulnerabilities?: CheckerVuln[] } | undefined>("deps-vulnerabilities.json", undefined);
-        if (!raw) throw new UsageError(`no vulnerability list in ${run.dir}: run \`ultraguard scan deps --out ${run.dir}\` first`);
-        const backlog = (raw.vulnerabilities ?? []).filter((x) => !x.advisories.some((y) => (y.id ?? "").startsWith("MAL-")));
-        ranked = (await assessVulnerabilities(backlog, run, { get: feedGet, state: stateDir(argValue(a, "state")), runner, home: homedir() })).ranked;
-      }
+      const ranked = await rankedOf(a, run, run);
       const flag = argValue(a, "project");
       const project = flag ? resolve(flag.replace(/^~(?=$|\/)/, homedir())) : undefined;
       const plans = planFixes(ranked, { project });
@@ -678,6 +693,29 @@ async function dispatch(a: CommandArgs): Promise<number> {
       run.writeText("FIXES.md", md);
       out(json ? jsonLine({ counts: ranked.counts, plans, file: run.path("FIXES.md") }) : `${md}\n${run.path("FIXES.md")}`);
       return EXIT_OK;
+    }
+    case "fix": {
+      const run = needRun(a, { mustExist: true });
+      const flag = argValue(a, "project");
+      if (!flag) throw new UsageError("fix needs --project <path>: the one project of yours to fix (see ultraguard fixes --out <run>)");
+      const tiers = argList(a, "tiers").map((t) => t.toUpperCase());
+      for (const t of tiers) if (!["P0", "P1", "P2"].includes(t)) throw new UsageError(`--tiers takes P0, P1 and P2 (P3 has no plan), not "${t}"`);
+      const apply = argBool(a, "apply");
+      // The dry run writes nothing: an older run is ranked in memory, not saved.
+      const ranked = await rankedOf(a, run, apply ? run : undefined);
+      const r = await fixProject(
+        ranked,
+        {
+          project: resolve(flag.replace(/^~(?=$|\/)/, homedir())),
+          apply,
+          tiers: (tiers.length ? tiers : ["P0", "P1", "P2"]) as Tier[],
+          test: !argBool(a, "no-test"),
+        },
+        run,
+        { runner, state: stateDir(argValue(a, "state")) },
+      );
+      out(json ? jsonLine(r) : renderFix(r, run));
+      return r.exitCode;
     }
     case "watch": {
       const sub = a.positional[0];
@@ -716,6 +754,17 @@ async function dispatch(a: CommandArgs): Promise<number> {
     }
   }
   throw new UsageError(`unknown command "${a.command}"`);
+}
+
+/** The ranked list of a run: vulnerabilities.json, or the package-checker list of an older run ranked now (saved in `save`, when given). */
+async function rankedOf(a: CommandArgs, run: Run, save: Run | undefined): Promise<RankedVulns> {
+  const ranked = run.read<RankedVulns | undefined>("vulnerabilities.json", undefined);
+  if (ranked) return ranked;
+  // A run scanned before the ranking existed: rank its package-checker list now.
+  const raw = run.read<{ vulnerabilities?: CheckerVuln[] } | undefined>("deps-vulnerabilities.json", undefined);
+  if (!raw) throw new UsageError(`no vulnerability list in ${run.dir}: run \`ultraguard scan deps --out ${run.dir}\` first`);
+  const backlog = (raw.vulnerabilities ?? []).filter((x) => !x.advisories.some((y) => (y.id ?? "").startsWith("MAL-")));
+  return (await assessVulnerabilities(backlog, save, { get: feedGet, state: stateDir(argValue(a, "state")), runner, home: homedir() })).ranked;
 }
 
 const NO_ENGINE =

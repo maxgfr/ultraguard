@@ -1,7 +1,7 @@
 // fixes: the smallest upgrades that close the P0-P2 vulnerabilities of each of
 // the user's own projects, with the exact command for the project's package
-// manager, read from its lockfile. ultraguard never runs them: the agent applies
-// them on a branch, runs the tests and shows the diff, once the user says so.
+// manager, read from its lockfile. `fixes` runs none of them; `fix --apply`
+// (fix.ts) runs them in a new worktree and branch, once the user says so.
 import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
 import { compareVersions, isBreaking, type ProjectKind, type RankedItem, type RankedVulns, type Relation, type Tier, TIERS } from "./vulns.js";
@@ -44,8 +44,11 @@ export interface FixStep {
   closes: string[];
   /** The command to run in the lockfile's folder, or the edit to make, in words. */
   command: string;
-  /** When the fix is an edit rather than a command: the file (and field) and the entry to add or change. */
-  edit?: { where: string; entry: string };
+  /**
+   * When the fix is an edit rather than a command: the file (and field) and the entry to add or change.
+   * `file` is relative to the lockfile's folder; `field` is the JSON path of an override map, absent for a line edit.
+   */
+  edit?: { where: string; entry: string; file: string; field?: string[]; key: string; value: string };
   note?: string;
 }
 
@@ -88,37 +91,44 @@ function commandFor(
   const direct = isDirect(s.relation);
   const dev = s.relation === "dev";
   const from = s.from[0] as string;
-  const pin = (key: string, value: string, where: string) => ({
+  const pin = (key: string, value: string, where: string, field: string[]) => ({
     command: `add to ${where}: "${key}": "${value}"`,
-    edit: { where, entry: `"${key}": "${value}"` },
+    edit: { where, entry: `"${key}": "${value}"`, file: "package.json", field, key, value },
   });
-  const line = (file: string, entry: string) => ({ command: `in ${file}: ${entry}`, edit: { where: file, entry } });
+  const line = (file: string, entry: string) => ({ command: `in ${file}: ${entry}`, edit: { where: file, entry, file, key: s.name, value: s.to } });
   switch (m) {
     case "npm":
       return direct
         ? { command: `npm install ${s.name}@${s.to}${dev ? " --save-dev" : ""}` }
-        : { ...pin(`${s.name}@${from}`, s.to, 'package.json "overrides"'), finally: "npm install" };
+        : { ...pin(`${s.name}@${from}`, s.to, 'package.json "overrides"', ["overrides"]), finally: "npm install" };
     case "pnpm": {
       const ws = existsSync(join(dir, "pnpm-workspace.yaml"));
       return direct
         ? { command: `pnpm up${ws ? " -r" : ""} ${s.name}@${s.to}` }
         : {
-            ...pin(`${s.name}@${from}`, s.to, ws ? 'pnpm-workspace.yaml "overrides" (or package.json "pnpm.overrides")' : 'package.json "pnpm.overrides"'),
+            ...pin(`${s.name}@${from}`, s.to, ws ? 'pnpm-workspace.yaml "overrides" (or package.json "pnpm.overrides")' : 'package.json "pnpm.overrides"', [
+              "pnpm",
+              "overrides",
+            ]),
             finally: "pnpm install",
           };
     }
     case "yarn":
       return direct
         ? { command: `yarn upgrade ${s.name}@${s.to}` }
-        : { ...pin(s.name, s.to, 'package.json "resolutions"'), finally: "yarn install", note: "a resolution applies to every copy of the package" };
+        : {
+            ...pin(s.name, s.to, 'package.json "resolutions"', ["resolutions"]),
+            finally: "yarn install",
+            note: "a resolution applies to every copy of the package",
+          };
     case "yarn-berry":
       return direct
         ? { command: `yarn up ${s.name}@${s.to}` }
-        : { ...pin(`${s.name}@npm:${from}`, s.to, 'package.json "resolutions"'), finally: "yarn install" };
+        : { ...pin(`${s.name}@npm:${from}`, s.to, 'package.json "resolutions"', ["resolutions"]), finally: "yarn install" };
     case "bun":
       return direct
         ? { command: `bun add${dev ? " -d" : ""} ${s.name}@${s.to}` }
-        : { ...pin(s.name, s.to, 'package.json "overrides"'), finally: "bun install", note: "an override applies to every copy of the package" };
+        : { ...pin(s.name, s.to, 'package.json "overrides"', ["overrides"]), finally: "bun install", note: "an override applies to every copy of the package" };
     case "uv":
       return direct ? { command: `uv add${dev ? " --dev" : ""} "${s.name}>=${s.to}"` } : { command: `uv lock --upgrade-package "${s.name}==${s.to}"` };
     case "poetry":
@@ -228,7 +238,7 @@ export function renderFixes(plans: ProjectPlan[], r: RankedVulns): string {
   const out: string[] = [
     "# Fix plan",
     "",
-    "ultraguard runs none of these commands. Per project: make a branch (or a worktree), run them in the folder shown, run the tests, read the diff, and only then commit.",
+    "`fixes` runs none of these commands. Once the user asks to fix a project: `ultraguard fix --out <run> --project <path>` shows what it would do, and `--apply` runs them in a new worktree and branch, re-checks the lockfiles, runs the tests and commits there (never pushes).",
     "",
     `Closes the P0-P2 vulnerabilities (P0 in CISA KEV, P1 EPSS >= 10% or critical, P2 high) with the smallest version that fixes every advisory. ${r.counts.P0} P0, ${r.counts.P1} P1, ${r.counts.P2} P2, ${r.counts.P3} P3 on this machine.`,
     "",

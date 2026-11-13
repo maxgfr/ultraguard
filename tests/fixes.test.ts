@@ -67,7 +67,7 @@ describe("fixes", () => {
     expect(l?.unfixed).toEqual([]);
     expect(l?.p3).toBe(2);
     const md = renderFixes(planFixes(r), r);
-    expect(md).toContain("ultraguard runs none of these commands");
+    expect(md).toContain("`fixes` runs none of these commands");
     expect(md).toContain(
       `cd ${join(home, "app")}\npnpm up -r tar@7.5.21\n# edit pnpm-workspace.yaml "overrides" (or package.json "pnpm.overrides"):\n#   "tar@6.2.1": "6.2.2"`,
     );
