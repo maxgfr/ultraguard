@@ -21,7 +21,7 @@ import {
   UsageError,
 } from "./engine.js";
 import { intel, readWebResultsFile, type WebHit } from "./intel.js";
-import { validateIocs } from "./ioc.js";
+import { normEco, SUPPORTED_ECOSYSTEMS, validateIocs } from "./ioc.js";
 import { renderReport } from "./report.js";
 import { formatDefenses, refreshDefenses } from "./defenses.js";
 import { defaultRulesDeps, installedRules, RULE_SETS, type RuleSet, type RulesDeps, rulesAgeDays } from "./rules.js";
@@ -194,6 +194,36 @@ function needIocs(run: Run): IocFile {
   return iocs;
 }
 
+/** Types matched as a whole line unless "regex" is set: `ioc show` says so. */
+const EXACT = new Set(["branch", "pr_title", "commit_message", "actor"]);
+
+/** Package ecosystems in the file that no reader covers, with their indicator count: "maven (2)". */
+function uncheckedEcosystems(iocs: IocFile): string[] {
+  const n = new Map<string, number>();
+  for (const c of iocs.campaigns)
+    for (const i of c.indicators) {
+      const e = normEco(i.ecosystem ?? "");
+      if (i.type === "package" && !(SUPPORTED_ECOSYSTEMS as readonly string[]).includes(e)) n.set(e, (n.get(e) ?? 0) + 1);
+    }
+  return [...n].map(([e, k]) => `${e} (${k})`);
+}
+
+/** Indicator types the GitHub scan reads. */
+const GITHUB_TYPES = new Set([
+  "branch",
+  "pr_title",
+  "commit_message",
+  "file",
+  "workflow_file",
+  "string",
+  "ip",
+  "domain",
+  "url",
+  "cache_key_prefix",
+  "artifact_prefix",
+  "actor",
+]);
+
 function walkFor(a: CommandArgs): WalkResult {
   const roots = argList(a, "roots").map((r) => resolve(r.replace(/^~(?=$|\/)/, homedir())));
   return walk(roots.length ? roots : [homedir()], { maxDepth: argInt(a, "depth", { min: 1, max: 20 }) ?? 6 });
@@ -206,6 +236,15 @@ async function runScan(surface: "github" | "host" | "deps" | "cloud", a: Command
       maxRepos: argInt(a, "max-repos", { min: 1 }),
       concurrency: argInt(a, "concurrency", { min: 1, max: 32 }),
     });
+    // Nothing in the file is a GitHub indicator (a package-only campaign): CLEAN would mean "checked against nothing".
+    if (r.account.result.scanned && !iocs.campaigns.some((c) => c.indicators.some((i) => GITHUB_TYPES.has(i.type))))
+      for (const g of [r.account.gaps, r.repos.gaps])
+        g.push({
+          surface: g === r.account.gaps ? "github:account" : "github:repos",
+          what: "the campaign's indicators",
+          why: "no indicator of this run applies to GitHub: only new keys, webhooks and deploy keys were reviewed",
+          fix: "add the branches, PR titles, commit messages or files the sources name, if any",
+        });
     const accF = run.recordSurface(r.account.result, r.account.findings, r.account.gaps);
     const repF = run.recordSurface(r.repos.result, r.repos.findings, r.repos.gaps);
     run.setMeta({ login: r.login, hitRepos: r.hitRepos });
@@ -352,7 +391,7 @@ async function dispatch(a: CommandArgs): Promise<number> {
                     `${c.id}: ${c.title} (since ${c.since}${c.until ? `, until ${c.until}` : ""}, ${c.indicators.length} indicators) ${c.sources.map((s) => `[${s}]`).join("")}`,
                     ...c.indicators.map(
                       (i) =>
-                        `  ${i.type.padEnd(20)} ${i.ecosystem ? `${i.ecosystem}:` : ""}${i.value}${i.versions?.length ? `@${i.versions.join(",")}` : ""}${i.regex ? " (regex)" : ""}${i.weak ? " (weak)" : ""} [${i.source}]`,
+                        `  ${i.type.padEnd(20)} ${i.ecosystem ? `${i.ecosystem}:` : ""}${i.value}${i.versions?.length ? `@${i.versions.join(",")}` : ""}${i.regex ? " (regex)" : EXACT.has(i.type) ? " (exact)" : ""}${i.weak ? " (weak)" : ""} [${i.source}]`,
                     ),
                   ].join("\n"),
                 )
@@ -362,21 +401,35 @@ async function dispatch(a: CommandArgs): Promise<number> {
       }
       if (sub !== "set") throw new UsageError("ioc takes `set --file <iocs.json>` or `show`");
       const file = argValue(a, "file");
-      const own: Campaign[] = file ? (JSON.parse(readFileSync(file, "utf8")) as IocFile).campaigns : [];
+      let raw: unknown;
+      if (file)
+        try {
+          raw = JSON.parse(readFileSync(file, "utf8"));
+        } catch (e) {
+          throw new UsageError(`${file}: not valid JSON (${(e as Error).message})`);
+        }
       const carried = run.read<IocFile>("iocs.carried.json", { campaigns: [] }).campaigns;
       if (!file && !carried.length) throw new UsageError("ioc set needs --file <iocs.json>");
-      const merged = [...own, ...carried.filter((c) => !own.some((o) => o.id === c.id))];
-      const { iocs, problems } = validateIocs({ campaigns: merged }, run.sources());
+      // A file of the wrong shape (a bare list of indicators) is answered by the validator, not merged.
+      const own: Campaign[] | undefined = file ? ((raw as IocFile | null)?.campaigns as Campaign[] | undefined) : [];
+      const { iocs, problems } = Array.isArray(own)
+        ? validateIocs({ campaigns: [...own, ...carried.filter((c) => !own.some((o) => o?.id === c.id))] }, run.sources())
+        : validateIocs(raw, run.sources());
       if (!iocs) {
         out(json ? jsonLine(problems) : `iocs refused: ${problems.length} problem(s)\n${problems.map((p) => `  ${p.path}: ${p.message}`).join("\n")}`);
         return EXIT_FAILURE;
       }
       run.write("iocs.json", iocs);
       const n = iocs.campaigns.reduce((s, c) => s + c.indicators.length, 0);
+      const unchecked = uncheckedEcosystems(iocs);
       out(
         json
-          ? jsonLine({ campaigns: iocs.campaigns.length, indicators: n })
-          : `iocs set: ${iocs.campaigns.length} campaign(s), ${n} indicator(s)${carried.length ? ` (${carried.length} carried from the watch state)` : ""}`,
+          ? jsonLine({ campaigns: iocs.campaigns.length, indicators: n, uncheckedEcosystems: unchecked })
+          : `iocs set: ${iocs.campaigns.length} campaign(s), ${n} indicator(s)${carried.length ? ` (${carried.length} carried from the watch state)` : ""}${
+              unchecked.length
+                ? `\nnote: ultraguard has no reader for ${unchecked.join(", ")}: those package indicators are reported as a deps coverage gap (supported: ${SUPPORTED_ECOSYSTEMS.join(", ")})`
+                : ""
+            }`,
       );
       return EXIT_OK;
     }

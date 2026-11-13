@@ -28,7 +28,7 @@ from, states when it started, and lists indicators copied from those sources.
 ```
 
 The full worked example, with all 27 indicators of that article, is
-`tests/fixtures/aikido-iocs.json` in the ultraguard repository.
+[example-iocs.json](example-iocs.json), next to this file.
 
 ## Fields
 
@@ -65,7 +65,11 @@ The full worked example, with all 27 indicators of that article, is
 | `azure_fedcred_prefix` | prefix | Azure AD federated credentials |
 | `actor` | a GitHub login the source names | annotates findings by that login |
 
-Ecosystems: `npm`, `pypi`, `crates.io`, `go`, `packagist`, `rubygems`, `vscode`.
+Ecosystems: `npm`, `pypi`, `crates.io`, `go`, `packagist`, `rubygems`, `vscode`
+(common spellings such as `node`, `rust`, `php`, `ruby`, `OpenVSX` are
+understood). A package in another ecosystem (`maven`, `nuget`, `homebrew`) is
+kept, but ultraguard has no reader for it: `ioc set` says so and `scan deps`
+reports it as a coverage gap. Check those by hand and say so in the answer.
 
 ## Rules of thumb
 
@@ -90,7 +94,8 @@ Ecosystems: `npm`, `pypi`, `crates.io`, `go`, `packagist`, `rubygems`, `vscode`.
   host reference).
 - **Versions are listed one by one.** Expand a range a source writes as
   `0.0.16-18` into `["0.0.16", "0.0.17", "0.0.18"]`, after checking the source
-  means a range. A package listed with no version flags every version: use
+  means a range. `ioc set` refuses ranges (`>=1.0 <1.2`), wildcards and a
+  version inside the name (`name@1.2.3`). A package listed with no version flags every version: use
   another source that lists versions, or mark it `"weak": true`.
 - **Long package tables:** extract them with a short script from
   `<run>/sources/S#.md` rather than by hand, and spot-check a few rows against
@@ -102,12 +107,23 @@ Ecosystems: `npm`, `pypi`, `crates.io`, `go`, `packagist`, `rubygems`, `vscode`.
   line, case-insensitive: `ci: cleanup` must not flag every `ci: cleanup
   workflows`. When the source shows variants (`docs: add dependency audit
   notes` next to `docs: dependency audit notes`), write one regex.
-- **Anchor regexes.** `^chore/[a-z0-9]{8}$`, not `chore/[a-z0-9]{8}`.
+- **A pattern needs `"regex": true`.** Without it the value is compared as an
+  exact string: `chore/[a-z0-9]{8}` would never match a branch. `ioc set`
+  refuses a branch holding a character git forbids (`[`, `*`, `?`, a space)
+  and a title or message that looks like a regex; write `"regex": false` to
+  keep such a text literal.
+- **Anchor regexes.** `^chore/[a-z0-9]{8}$`, not `chore/[a-z0-9]{8}`. A regex
+  that matches an empty string or ordinary text (`wfx|`, `^(docs: )?`) is
+  refused: it would flag every repository.
 - **Generic patterns produce noise.** A random-looking branch pattern also
   matches real branches. Keep it, and judge each hit against its run title and
   actor before calling it compromised.
-- **Defanged is fine.** `194.150.166[.]244` and `hxxp://` are re-armed for
-  matching; keep them defanged in the file.
+- **Defanged is fine** for `ip`, `domain` and `url`: `194.150.166[.]244` and
+  `hxxp://` are re-armed for matching; keep them defanged in the file. A
+  `string` is tried as written and re-armed. Other types (branches, messages,
+  globs, regexes) are never re-armed: `[.]` there means what it says.
+- **Dates.** `since` cannot be in the future and `until` cannot precede it:
+  `ioc set` refuses both, since such a window matches nothing.
 - **One campaign per attack.** Two articles about the same attack are one
   campaign with two sources. Two attacks are two campaigns.
 - **Related campaigns the article links to** (an earlier wave, the same
