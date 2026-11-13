@@ -116,6 +116,8 @@ describe("matching", () => {
         home,
         startupDirs: [],
         skipLive: true,
+        // Never the real temp folders: other tests drop archives there at the same time.
+        dropDirs: [],
         now: NOW,
       });
       expect(r.findings.some((f) => f.severity === "compromised" && f.title.startsWith("Editor extension evil.ext@1.2.3"))).toBe(true);

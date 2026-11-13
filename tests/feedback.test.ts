@@ -125,6 +125,8 @@ describe("host noise", () => {
       home,
       startupDirs: [],
       skipLive: true,
+      // Never the real temp folders: other tests drop archives there at the same time.
+      dropDirs: [],
       now: NOW,
     });
     expect(r.findings[0]?.severity).toBe("suspicious");
@@ -141,6 +143,8 @@ describe("host noise", () => {
       home,
       startupDirs: [dir],
       skipLive: true,
+      // Never the real temp folders: other tests drop archives there at the same time.
+      dropDirs: [],
       now: NOW,
     });
     expect(r.findings).toEqual([]);
