@@ -48,6 +48,7 @@ import {
   startupCommand,
 } from "./hostintel.js";
 import type { WalkResult } from "./walk.js";
+import { hardeningFindings, remediatorFindings, type XProtectInfo, xprotectYara } from "./xprotect.js";
 
 type NewFinding = Omit<Finding, "id">;
 
@@ -81,6 +82,8 @@ export interface HostScanOptions {
   communityMissing?: boolean;
   /** --av-full: days before a file scanned clean is scanned again even if unchanged (default 7). */
   avRescanDays?: number;
+  /** macOS: XProtect's version and rule files (detectXProtect), with the run's [S#] for them. Without it, no XProtect YARA pass. */
+  xprotect?: XProtectInfo;
   /** macOS: folders holding installed apps (default /Applications and ~/Applications). Read with the live checks. */
   appDirs?: string[];
 }
@@ -195,6 +198,7 @@ export async function scanHost(
   const inventory: HostInventory = { startupItems: [], credentials: [], recentExtensions: [], shellStartup: [] };
   const dropDirs = opts.dropDirs ?? defaultDropDirs(home);
   const startupFolders = opts.startupDirs ?? startupDirs(home, os);
+  const appDirs = opts.appDirs ?? ["/Applications", join(home, "Applications")];
 
   const M = {
     file: matchers(iocs, "file", "workflow_file"),
@@ -717,7 +721,7 @@ export async function scanHost(
 
   // 5c. macOS apps: bundle_id and team_id IOCs. Live: codesign and plutil run.
   if (os === "darwin" && !opts.skipLive) {
-    const apps = await appFindings(runner, opts.appDirs ?? ["/Applications", join(home, "Applications")], {
+    const apps = await appFindings(runner, appDirs, {
       nowMs,
       team: M.team,
       bundle: M.bundle,
@@ -857,7 +861,12 @@ export async function scanHost(
           why: "codesign runs on a bounded number of programs",
         });
     }
-  } else gaps.push({ surface: "host", what: "crontab, open connections, processes and code signatures", why: "live checks were skipped" });
+  } else
+    gaps.push({
+      surface: "host",
+      what: `crontab, open connections, processes and code signatures${os === "darwin" ? ", apps, XProtect and XProtect Remediator, Gatekeeper, SIP and update settings" : ""}`,
+      why: "live checks were skipped",
+    });
 
   // 8. What a stealer here would take: the credential stores, by path.
   inventory.credentials = credentialInventory(
@@ -1027,6 +1036,27 @@ export async function scanHost(
       why: "not installed",
       fix: "ultraguard rules update (needs yara; yarac makes scans faster)",
     });
+  // macOS's own antivirus: Apple's YARA rules over the same targets, XProtect Remediator's reports, and the hardening stealers turn off.
+  if (os === "darwin" && !opts.skipLive) {
+    const mac: NonNullable<HostInventory["macos"]> = {};
+    if (opts.xprotect) {
+      const xp = opts.xprotect;
+      mac.xprotect = { version: xp.version, installed: xp.installed, ageDays: xp.ageDays };
+      const y = await xprotectYara(runner, xp, { targets: yaraTargets(), listDir, exclude: [...exclude, xp.bundle], incremental });
+      findings.push(...y.findings);
+      gaps.push(...y.gaps);
+      Object.assign(result.stats, y.stats);
+    }
+    const xpr = await remediatorFindings(runner);
+    findings.push(...xpr.findings);
+    gaps.push(...xpr.gaps);
+    Object.assign(result.stats, xpr.stats);
+    const hard = await hardeningFindings(runner, { appDirs });
+    findings.push(...hard.findings);
+    gaps.push(...hard.gaps);
+    mac.hardening = hard.hardening;
+    inventory.macos = mac;
+  }
   gaps.push({
     surface: "host",
     what: "login items registered in System Settings, Safari extensions, kernel and system extensions",

@@ -33,6 +33,7 @@ import { scanDeps } from "./scan/deps.js";
 import { scanGithub } from "./scan/github.js";
 import { DEFAULT_RESCAN_DAYS } from "./scan/avcache.js";
 import { scanHost } from "./scan/host.js";
+import { detectXProtect, type XProtectInfo, xprotectSource } from "./scan/xprotect.js";
 import { defaultRegistryGet, type RegistryGet, scanNpmPublishes } from "./scan/registry.js";
 import { walk, type WalkResult } from "./scan/walk.js";
 import { type Campaign, type Gap, type IocFile, SURFACES, type Surface } from "./types.js";
@@ -337,6 +338,7 @@ async function runScan(surface: "github" | "host" | "deps" | "cloud", a: Command
       stateDir: stateDir(argValue(a, "state")),
       avRescanDays: argInt(a, "av-rescan-days", { min: 0, max: 365 }),
       ...communityRules(a, run),
+      xprotect: process.platform === "darwin" && !argBool(a, "skip-live") ? await xprotectRules(run) : undefined,
     });
     const f = run.recordSurface(r.result, r.findings, [...refreshGaps, ...r.gaps]);
     run.write("host-inventory.json", r.inventory);
@@ -383,6 +385,13 @@ function communityRules(
     origin: "rules",
   });
   return { community: { source: meta.source, compiled: meta.compiled, label: `YARA-Forge ${meta.set}`, sourceId: src.id, ageDays: rulesAgeDays(meta) } };
+}
+
+/** Apple's XProtect rules for scan host (macOS), registered as a source of the run so their matches cite it. */
+async function xprotectRules(run: Run): Promise<XProtectInfo> {
+  const info = await detectXProtect(runner);
+  if (!info.missing && info.rules.length) info.sourceId = run.addSource(xprotectSource(info)).id;
+  return info;
 }
 
 const SURFACE_OF: Record<string, Surface[]> = { github: ["github:account", "github:repos"], host: ["host"], deps: ["deps"], cloud: ["cloud"] };

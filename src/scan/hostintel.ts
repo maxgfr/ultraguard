@@ -38,6 +38,11 @@ export interface HostInventory {
   agents?: import("./agents.js").AgentInventory;
   /** Every non-comment line of the user's crontab. */
   crontab?: string[];
+  /** macOS: XProtect's version and the hardening settings read (real-time tools found: LuLu, BlockBlock...). */
+  macos?: {
+    xprotect?: { version?: string; installed?: string; ageDays?: number };
+    hardening?: import("./xprotect.js").Hardening;
+  };
   /** Browser extensions installed in the review window. */
   recentBrowserExtensions?: { browser: string; profile: string; id: string; version: string; installed: string }[];
 }
