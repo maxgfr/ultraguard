@@ -6,8 +6,10 @@
 //     malicious-package advisory (MAL-*) is a compromise and cites its OSV
 //     page as a source; ordinary CVEs are a patching backlog, summed up in
 //     one info finding and listed in deps-vulnerabilities.json. The CLI hands
-//     them to vulns.ts, which ranks them and replaces that line.
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
+//     them to vulns.ts, which ranks them and replaces that line. The feeds are
+//     ultraguard's own copy in the state folder (--data-dir), and completeness
+//     is package-checker's exit code and JSON report (3, incomplete_reasons).
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { writeFileAtomic } from "../engine.js";
@@ -15,7 +17,7 @@ import { matchers, normEco, packageHit, SUPPORTED_ECOSYSTEMS } from "../ioc.js";
 import type { Run } from "../run.js";
 import { parseJsonOutput, type Runner } from "../runner.js";
 import type { Finding, Gap, IocFile, SurfaceResult } from "../types.js";
-import { PACKAGE_CHECKER_SCRIPT, PACKAGE_CHECKER_SHA256, PACKAGE_CHECKER_VERSION } from "../vendor/package-checker-script.js";
+import { PACKAGE_CHECKER_REF, PACKAGE_CHECKER_SCRIPT, PACKAGE_CHECKER_SHA256, PACKAGE_CHECKER_VERSION } from "../vendor/package-checker-script.js";
 import { globalInstallDirs, installedPackages } from "./installed.js";
 import { advisoryOnlyKind, type Locked, lockfileKind, parseLockfile } from "./lockfiles.js";
 import type { WalkResult } from "./walk.js";
@@ -32,93 +34,133 @@ export interface CheckerVuln {
   advisories: { severity?: string; ghsa?: string; cve?: string; id?: string; source?: string; fix?: string }[];
 }
 
-/** One advisory feed package-checker loaded: a URL, or a local copy and its age. */
-export interface CheckerFeed {
-  feed: string;
-  source: string;
-  ageDays?: number;
+/** One feed of package-checker's JSON report (`sources[]`): where it came from, how many entries, how old. */
+export interface CheckerSource {
+  kind: string;
+  ecosystem: string | null;
+  file?: string | null;
+  status: "loaded" | "missing" | "failed";
+  origin: string | null;
+  origin_type?: "local" | "remote" | null;
+  entries?: number;
+  date?: string | null;
+  age_days?: number | null;
+  stale?: boolean;
 }
 
 /**
  * Runs package-checker on one directory; answers its JSON report, or why it could not.
- * `warnings` are what made a finished run partial (a feed it could not load, a file it could not read).
+ * `warnings` are what made a finished run incomplete (a feed it could not load, a file it could not read).
  */
-export type Checker = (dir: string) => Promise<{ ok: boolean; vulnerabilities: CheckerVuln[]; error?: string; warnings?: string[]; feeds?: CheckerFeed[] }>;
+export type Checker = (dir: string) => Promise<{ ok: boolean; vulnerabilities: CheckerVuln[]; error?: string; warnings?: string[]; sources?: CheckerSource[] }>;
 
-/**
- * What package-checker printed about its feeds and the files it skipped. A run
- * that exits 0 or 1 can still have loaded no OSV feed (the malicious-package
- * advisories), or read its feeds from a stale local copy.
- */
-export function readCheckerLog(log: string, now = Date.now()): { missingOsv: string[]; warnings: string[]; feeds: CheckerFeed[] } {
-  // The ANSI colours package-checker prints would stick to the paths it names.
-  const text = log.replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g"), "");
-  const missingOsv: string[] = [];
-  const warnings: string[] = [];
-  const feeds: CheckerFeed[] = [];
-  for (const m of text.matchAll(/Unable to find (\w+) feed for (\S+)/g)) {
-    if (m[1] === "osv") missingOsv.push(m[2] as string);
-    else warnings.push(`the ${(m[1] as string).toUpperCase()} feed for ${m[2]} could not be loaded`);
+/** Older than this (whole days), the advisory feeds in the state folder are refreshed before scan deps. */
+export const FEED_STALE_DAYS = 1;
+
+/** Where ultraguard keeps package-checker's advisory feeds, refreshed by `rules update` and scan deps. */
+export const feedDir = (state: string): string => join(state, "package-checker", "data");
+
+/** The feed copy in `dir`: how many files, and the age in whole days of the oldest one. */
+export function localFeeds(dir: string, now = new Date()): { files: number; ageDays: number; date: string } | undefined {
+  let oldest = Number.POSITIVE_INFINITY;
+  let files = 0;
+  try {
+    for (const f of readdirSync(dir)) {
+      if (!f.endsWith(".purl")) continue;
+      files++;
+      oldest = Math.min(oldest, statSync(join(dir, f)).mtimeMs);
+    }
+  } catch {
+    return undefined;
   }
-  if (/results may be incomplete/.test(text)) warnings.push("some directories could not be read");
-  const unreadable = (text.match(/Cannot read this file: it was not scanned/g) ?? []).length;
-  if (unreadable) warnings.push(`${unreadable} lockfile(s) could not be read`);
-  const ignored = /Skipping (\d+) git-ignored file/.exec(text);
-  if (ignored) warnings.push(`${ignored[1]} git-ignored lockfile(s) were skipped`);
-  for (const m of text.matchAll(/Using (\w+) source: (\S+)/g)) {
-    const source = m[2] as string;
-    const f: CheckerFeed = { feed: m[1] as string, source };
-    if (!/^https?:\/\//.test(source))
-      try {
-        f.ageDays = Math.floor((now - statSync(source).mtimeMs) / 86_400_000);
-      } catch {
-        // A path we cannot stat: no age to report.
-      }
-    feeds.push(f);
-  }
-  return { missingOsv, warnings, feeds };
+  if (!files) return undefined;
+  return { files, ageDays: Math.max(0, Math.floor((now.getTime() - oldest) / 86_400_000)), date: new Date(oldest).toISOString() };
 }
 
-/** Writes the vendored script where it can run, once per version. */
+/** One line on the feeds a scan loaded: how many, from where, how old; the ones it could not load. */
+export function feedSummary(feeds: CheckerSource[]): string {
+  const loaded = feeds.filter((f) => f.status === "loaded");
+  const local = loaded.filter((f) => f.origin_type === "local" && f.origin);
+  const dirs = [...new Set(local.map((f) => dirname(f.origin as string)))];
+  const oldest = local.reduce<CheckerSource | undefined>((o, f) => ((f.age_days ?? 0) >= (o?.age_days ?? -1) ? f : o), undefined);
+  const parts = [
+    `${loaded.length} loaded, ${loaded.reduce((n, f) => n + (f.entries ?? 0), 0)} entries`,
+    local.length ? `${local.length} from ${dirs.join(", ")} (oldest ${oldest?.age_days ?? "?"} days, ${oldest?.date?.slice(0, 10) ?? "?"})` : "",
+    loaded.length - local.length ? `${loaded.length - local.length} downloaded during the scan` : "",
+    ...feeds.filter((f) => f.status !== "loaded").map((f) => `${f.kind} for ${f.ecosystem ?? "?"} ${f.status}`),
+  ];
+  return parts.filter(Boolean).join("; ");
+}
+
+/** Writes the vendored script where it can run, once per pinned version. */
 export function materializeChecker(dir: string): string {
   mkdirSync(dir, { recursive: true });
-  const p = join(dir, `package-checker-${PACKAGE_CHECKER_VERSION}.sh`);
+  const p = join(dir, `package-checker-${PACKAGE_CHECKER_VERSION}-${PACKAGE_CHECKER_SHA256.slice(0, 12)}.sh`);
   if (!existsSync(p) || statSync(p).size !== Buffer.byteLength(PACKAGE_CHECKER_SCRIPT)) writeFileAtomic(p, PACKAGE_CHECKER_SCRIPT);
   return p;
 }
 
-export function defaultChecker(runner: Runner, workDir: string): Checker {
+/** The line of package-checker's error output that says why: its first "Error:" line, else the last line. */
+const checkerError = (out: string): string | undefined => {
+  const lines = out
+    .replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g"), "")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  return (lines.find((l) => /(^|\s)Error:/.test(l)) ?? lines.at(-1))?.replace(/^❌\s*/, "").slice(0, 200);
+};
+
+/**
+ * Refreshes the advisory feeds in `dir` with package-checker's `--update-feeds`.
+ * Exit 0: all refreshed; 3: some failed, their previous copies kept; 2: it could not run.
+ */
+export async function updateCheckerFeeds(runner: Runner, dir: string): Promise<{ ok: boolean; detail: string }> {
+  const script = materializeChecker(join(dir, "..", "bin"));
+  const res = await runner("bash", [script, "--update-feeds", "--data-dir", dir], { timeoutMs: 20 * 60_000 });
+  if (res.missing) return { ok: false, detail: "bash is not installed" };
+  const summary = /Updated \d+ of \d+ feed\(s\)/.exec(res.stdout)?.[0];
+  if (res.status === 0) return { ok: true, detail: summary ?? "feeds updated" };
+  if (res.status === 3) return { ok: false, detail: `${summary ?? "some feeds"} (the others could not be downloaded)` };
+  return { ok: false, detail: checkerError(`${res.stderr}\n${res.stdout}`) ?? `exit ${res.status}` };
+}
+
+export function defaultChecker(runner: Runner, workDir: string, opts: { dataDir?: string } = {}): Checker {
   const script = materializeChecker(join(workDir, "tools"));
+  // ultraguard owns the feed copy and its age: --max-feed-age 0 keeps package-checker on it, never on another local copy.
+  const feeds = opts.dataDir && localFeeds(opts.dataDir) ? ["--data-dir", opts.dataDir, "--max-feed-age", "0"] : [];
   let n = 0;
   return async (dir) => {
     const out = join(workDir, `package-checker-${++n}.json`);
     // A report left by an earlier scan in this run must never pass for this one's.
     rmSync(out, { force: true });
-    // Exit 0: nothing found. 1: vulnerabilities found. Anything else: it could not scan.
-    // --include-gitignored: a lockfile a repository ignores is still what was installed.
+    // Exit 0: nothing found. 1: vulnerabilities found. 3: incomplete. 2: it could not scan.
     const res = await runner(
       "bash",
-      [script, dir, "--default-source-ghsa-osv", "--only-lockfiles", "--include-gitignored", "--no-config", "--no-runtime-check", "--export-json", out],
+      [script, dir, "--default-source-ghsa-osv", "--only-lockfiles", "--no-config", "--no-runtime-check", ...feeds, "--export-json", out],
       {
         timeoutMs: 15 * 60_000,
         cwd: workDir,
       },
     );
     if (res.missing) return { ok: false, vulnerabilities: [], error: "bash is not installed" };
-    if (res.status !== 0 && res.status !== 1)
-      return { ok: false, vulnerabilities: [], error: (res.stderr || res.stdout).trim().split("\n").slice(-1)[0]?.slice(0, 200) };
-    const log = readCheckerLog(`${res.stdout}\n${res.stderr}`);
-    // No OSV feed: no MAL- advisory was loaded, so "0 malicious" would be a lie.
-    if (log.missingOsv.length)
-      return { ok: false, vulnerabilities: [], error: `OSV feed unreachable for ${log.missingOsv.join(", ")}: malicious-package advisories not loaded` };
-    const extra = { warnings: log.warnings, feeds: log.feeds };
-    if (!existsSync(out)) return { ok: res.status === 0, vulnerabilities: [], error: res.status === 0 ? undefined : "no JSON report written", ...extra };
-    const json = parseJsonOutput<{ vulnerabilities?: CheckerVuln[] }>({ ok: true, status: 0, stdout: readFileSync(out, "utf8"), stderr: "" });
+    if (res.status !== 0 && res.status !== 1 && res.status !== 3)
+      return { ok: false, vulnerabilities: [], error: checkerError(`${res.stderr}\n${res.stdout}`) ?? `exit ${res.status}` };
+    if (!existsSync(out)) return { ok: res.status === 0, vulnerabilities: [], error: res.status === 0 ? undefined : "no JSON report written" };
+    const json = parseJsonOutput<{ vulnerabilities?: CheckerVuln[]; incomplete?: boolean; incomplete_reasons?: string[]; sources?: CheckerSource[] }>({
+      ok: true,
+      status: 0,
+      stdout: readFileSync(out, "utf8"),
+      stderr: "",
+    });
     if (!json) return { ok: false, vulnerabilities: [], error: "unreadable JSON report" };
+    // No OSV feed: no MAL- advisory was loaded, so "0 malicious" would be a lie.
+    const warnings = (json.incomplete_reasons ?? []).map((r) => (/\bosv feed\b/i.test(r) ? `${r}: malicious-package (MAL-) advisories were not loaded` : r));
+    if ((res.status === 3 || json.incomplete) && !warnings.length) warnings.push("the scan was incomplete (exit 3)");
     return {
       ok: true,
       vulnerabilities: (json.vulnerabilities ?? []).map((v) => ({ ...v, file: isAbsolute(v.file) ? v.file : resolve(workDir, v.file) })),
-      ...extra,
+      warnings,
+      sources: json.sources ?? [],
     };
   };
 }
@@ -168,6 +210,10 @@ export interface DepsScanOptions {
   home?: string;
   /** Global install folders, instead of the ones under `home` and the system ones (tests). */
   globalDirs?: { node: string[]; python: string[] };
+  /** The advisory feed copy package-checker reads (--data-dir): feedDir(state). Unset or empty: it downloads them. */
+  feedDir?: string;
+  /** Why refreshing that copy failed, when it did: the stale-feed gap says so. */
+  feedRefreshError?: string;
 }
 
 const MANIFESTS = new Set(["package.json", "pyproject.toml", "Pipfile", "Gemfile", "setup.py", "setup.cfg"]);
@@ -327,7 +373,7 @@ export async function scanDeps(
   if (opts.checker !== false && lockfiles + advisoryOnly.size > 0) {
     const workDir = run ? join(run.dir, "package-checker") : join(tmpdir(), `ultraguard-pc-${process.pid}`);
     mkdirSync(workDir, { recursive: true });
-    const checker = opts.checker ?? (opts.runner ? defaultChecker(opts.runner, workDir) : undefined);
+    const checker = opts.checker ?? (opts.runner ? defaultChecker(opts.runner, workDir, { dataDir: opts.feedDir }) : undefined);
     if (!checker) gaps.push({ surface: "deps", what: "the OSV and GHSA advisory feeds", why: "no command runner" });
     else {
       const all = [...lockfilePaths, ...advisoryOnly];
@@ -348,10 +394,11 @@ export async function scanDeps(
       const groups = [...checkerGroups(all, roots), ...staged.keys()];
       const vulns: CheckerVuln[] = [];
       let failed = 0;
-      let feedAge: number | undefined;
+      const sources = new Map<string, CheckerSource>();
       for (const g of groups) {
         const r = await checker(g);
-        const label = staged.get(g) ?? `the lockfiles under ${g}`;
+        const orig = staged.get(g);
+        const label = orig ?? `the lockfiles under ${g}`;
         if (!r.ok) {
           failed++;
           gaps.push({
@@ -362,22 +409,33 @@ export async function scanDeps(
           });
           continue;
         }
-        for (const w of r.warnings ?? []) gaps.push({ surface: "deps", what: `advisories for ${label}`, why: `package-checker: ${w}` });
-        for (const f of r.feeds ?? [])
-          if (f.ageDays !== undefined) {
-            feedAge = Math.max(feedAge ?? 0, f.ageDays);
-            if (f.ageDays > 2)
-              gaps.push({
-                surface: "deps",
-                what: `advisories newer than ${f.ageDays} days (${f.feed} feed read from ${f.source})`,
-                why: "package-checker used a local copy of its feed instead of downloading the current one",
-                fix: "brew upgrade package-checker (or remove that copy), then re-run scan deps",
-              });
-          }
-        const orig = staged.get(g);
+        // A staged copy is named by the lockfile it stands for.
+        for (const w of r.warnings ?? [])
+          gaps.push({ surface: "deps", what: `advisories for ${label}`, why: `package-checker: ${orig ? w.split(join(g, basename(orig))).join(orig) : w}` });
+        for (const src of r.sources ?? []) {
+          const k = `${src.kind}|${src.ecosystem}|${src.origin}`;
+          if (!sources.has(k)) sources.set(k, src);
+        }
         vulns.push(...(orig ? r.vulnerabilities.map((v) => ({ ...v, file: orig })) : r.vulnerabilities));
       }
+      // The feeds the runs loaded: where from, how many entries, how old.
+      const feeds = [...sources.values()];
+      const local = feeds.filter((f) => f.status === "loaded" && f.origin_type === "local" && typeof f.age_days === "number");
+      const feedAge = local.length ? Math.max(...local.map((f) => f.age_days as number)) : feeds.some((f) => f.status === "loaded") ? 0 : undefined;
       if (feedAge !== undefined) result.stats.feedAgeDays = feedAge;
+      if (feeds.length) result.stats.feedEntries = feeds.reduce((n, f) => n + (f.status === "loaded" ? (f.entries ?? 0) : 0), 0);
+      if (run && feeds.length) run.setMeta({ advisoryFeeds: feeds });
+      if (feedAge !== undefined && feedAge > FEED_STALE_DAYS) {
+        const dirs = [...new Set(local.filter((f) => (f.age_days as number) > FEED_STALE_DAYS).map((f) => dirname(f.origin as string)))];
+        gaps.push({
+          surface: "deps",
+          what: `advisories newer than ${feedAge} days (feeds read from ${dirs.join(", ")})`,
+          why: opts.feedRefreshError
+            ? `the feed refresh failed (${opts.feedRefreshError}): the ${feedAge}-day-old copy was used`
+            : `the local copy of the advisory feeds is ${feedAge} days old`,
+          fix: "ultraguard rules update, then re-run scan deps",
+        });
+      }
       // One entry per locked file and version, whatever run reported it.
       const seen = new Set<string>();
       const unique = vulns.filter((v) => {
@@ -416,7 +474,9 @@ export async function scanDeps(
       if (run)
         run.write("deps-vulnerabilities.json", {
           checker: `package-checker.sh ${PACKAGE_CHECKER_VERSION}`,
+          ref: PACKAGE_CHECKER_REF,
           sha256: PACKAGE_CHECKER_SHA256,
+          sources: feeds,
           vulnerabilities: vulns,
         });
       if (backlog.length) {

@@ -48,6 +48,8 @@ function project(): { root: string; lock: string } {
 function checkerRunner(lock: string, extra: Runner = async () => ({ ok: false, status: 1, stdout: "", stderr: "", missing: true })): Runner {
   return async (cmd, args, opts) => {
     if (cmd !== "bash") return extra(cmd, args, opts);
+    // The advisory feeds refresh before the scan: nothing downloaded here.
+    if (args.includes("--update-feeds")) return { ok: true, status: 0, stdout: "Updated 0 of 0 feed(s)\n", stderr: "" };
     writeFileSync(
       args[args.indexOf("--export-json") + 1] as string,
       JSON.stringify({

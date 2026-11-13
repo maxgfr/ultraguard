@@ -1,10 +1,11 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { main, setRulesDeps, setRunner } from "../src/cli.js";
-import { freshclamSummary, refreshDefenses, updateClamav, updateYaraForge } from "../src/defenses.js";
+import { freshclamSummary, refreshDefenses, updateAdvisoryFeeds, updateClamav, updateYaraForge } from "../src/defenses.js";
 import { defaultRulesDeps, installedRules, type RulesDeps } from "../src/rules.js";
 import { defaultRunner, type Runner } from "../src/runner.js";
+import { feedDir, localFeeds } from "../src/scan/deps.js";
 import { aikidoRun, tmp } from "./helpers.js";
 
 const NOW = new Date("2026-11-13T12:00:00Z");
@@ -21,16 +22,38 @@ main.cvd database is up-to-date (version: 63, sigs: 3287027, f-level: 90, builde
 bytecode.cvd database is up-to-date (version: 339, sigs: 80, f-level: 90, builder: nrandolp)
 `;
 
+/** What the CLI prints, captured. */
+function captureOut(): string[] {
+  const out: string[] = [];
+  vi.spyOn(process.stdout, "write").mockImplementation((t) => {
+    out.push(String(t));
+    return true;
+  });
+  vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+  return out;
+}
+
 const ok = (stdout = "") => ({ ok: true, status: 0, stdout, stderr: "" });
 const fail = (stdout = "", status = 1) => ({ ok: false, status, stdout, stderr: "" });
 const missing = () => ({ ok: false, status: 127, stdout: "", stderr: "", missing: true });
 
-/** A fake machine: clamscan whose signatures freshclam renews, yara, unzip that unpacks one rule. */
-function machine(opts: { sigs?: string; freshclam?: ReturnType<typeof ok>; yara?: boolean } = {}) {
+/** package-checker's --update-feeds: writes the feeds to --data-dir (ok), only one of them (partial, exit 3), or none (exit 2). */
+function updateFeeds(args: string[], how: "ok" | "partial" | "fail") {
+  const dir = args[args.indexOf("--data-dir") + 1] as string;
+  if (how === "fail") return { ok: false, status: 2, stdout: "", stderr: `\u001b[0;31m❌ Error: unable to write the feed directory ${dir}\u001b[0m\n` };
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "osv.purl"), "pkg:npm/x@1\n");
+  if (how === "ok") writeFileSync(join(dir, "ghsa.purl"), "pkg:npm/y@1\n");
+  return how === "ok" ? ok(`Updating feeds in ${dir}...\nUpdated 2 of 2 feed(s) in ${dir}\n`) : fail(`Updated 1 of 2 feed(s) in ${dir}\n`, 3);
+}
+
+/** A fake machine: clamscan whose signatures freshclam renews, yara, unzip that unpacks one rule, package-checker's feed update. */
+function machine(opts: { sigs?: string; freshclam?: ReturnType<typeof ok>; yara?: boolean; feeds?: "ok" | "partial" | "fail" } = {}) {
   let version = opts.sigs ?? OLD;
   const calls: string[] = [];
   const runner: Runner = async (cmd, args) => {
     calls.push(cmd);
+    if (cmd === "bash" && args.includes("--update-feeds")) return updateFeeds(args, opts.feeds ?? "ok");
     if (cmd === "clamdscan") return fail();
     if (cmd === "clamscan") return ok(version);
     if (cmd === "freshclam") {
@@ -121,12 +144,44 @@ describe("YARA-Forge refresh", () => {
     });
   });
 
-  it("refreshDefenses honours --no-av and --no-rules", async () => {
+  it("refreshDefenses honours --no-av and --no-rules, and refreshes the advisory feeds only when asked", async () => {
     const state = tmp("ug-def-");
     const m = machine();
     expect((await refreshDefenses(state, m.runner, { clamav: false, yaraForge: false, deps, now: NOW })).length).toBe(0);
     expect(m.calls).toEqual([]);
     expect((await refreshDefenses(state, m.runner, { yaraForge: false, deps, now: NOW })).map((u) => u.engine)).toEqual(["clamav"]);
+    expect(m.calls).not.toContain("bash");
+    expect((await refreshDefenses(state, m.runner, { clamav: false, yaraForge: false, advisoryFeeds: true })).map((u) => u.engine)).toEqual([
+      "package-checker",
+    ]);
+  });
+});
+
+describe("advisory feeds refresh", () => {
+  it("downloads the feeds into the state folder, then leaves a copy younger than 1 day alone unless forced", async () => {
+    const state = tmp("ug-def-");
+    const m = machine();
+    const r = await updateAdvisoryFeeds(state, m.runner);
+    expect(r).toEqual({ engine: "package-checker", status: "updated", detail: "Updated 2 of 2 feed(s) (OSV and GHSA advisories for scan deps)" });
+    expect(localFeeds(feedDir(state))?.files).toBe(2);
+    expect((await updateAdvisoryFeeds(state, m.runner)).status).toBe("current");
+    expect((await updateAdvisoryFeeds(state, m.runner, { now: new Date(Date.now() + 2.5 * 86_400_000) })).status).toBe("updated");
+    expect((await updateAdvisoryFeeds(state, m.runner, { force: true })).status).toBe("updated");
+  });
+
+  it("a failed refresh keeps the older copy and gives its age; with no copy, says package-checker downloads them itself", async () => {
+    const state = tmp("ug-def-");
+    const none = await updateAdvisoryFeeds(state, machine({ feeds: "fail" }).runner);
+    expect(none.status).toBe("failed");
+    expect(none.detail).toBe(
+      `feed refresh failed: Error: unable to write the feed directory ${feedDir(state)}; no local copy: package-checker downloads the feeds itself on each scan`,
+    );
+    const partial = await updateAdvisoryFeeds(state, machine({ feeds: "partial" }).runner);
+    expect(partial.detail).toBe(
+      `feed refresh failed: Updated 1 of 2 feed(s) (the others could not be downloaded); kept the copy in ${feedDir(state)} (0 days old)`,
+    );
+    const later = await updateAdvisoryFeeds(state, machine({ feeds: "fail" }).runner, { now: new Date(Date.now() + 3.5 * 86_400_000) });
+    expect(later.detail).toContain(`kept the copy in ${feedDir(state)} (3 days old)`);
   });
 });
 
@@ -134,16 +189,61 @@ describe("rules update", () => {
   afterEach(() => {
     setRunner(defaultRunner);
     setRulesDeps(defaultRulesDeps);
+    vi.restoreAllMocks();
   });
 
-  it("runs freshclam and fetches YARA-Forge, even when both are fresh", async () => {
+  it("runs freshclam, fetches YARA-Forge and the advisory feeds, even when all are fresh", async () => {
     const state = tmp("ug-def-");
     const m = machine({ sigs: NEW });
     setRunner(m.runner);
     setRulesDeps(deps);
+    const out = captureOut();
     expect(await main(["rules", "update", "--state", state])).toBe(0);
     expect(m.calls).toContain("freshclam");
     expect(installedRules(state)?.tag).toBe("20261108");
+    expect(localFeeds(feedDir(state))?.files).toBe(2);
+    expect(out.join("")).toMatch(/^package-checker +updated +Updated 2 of 2 feed\(s\)/m);
+    // Fresh feeds are refreshed again: rules update is forced.
+    expect(await main(["rules", "update", "--state", state])).toBe(0);
+    expect(m.calls.filter((c) => c === "bash")).toHaveLength(2);
+  });
+
+  it("fails when the advisory feeds could not be refreshed", async () => {
+    setRunner(machine({ sigs: NEW, feeds: "fail" }).runner);
+    setRulesDeps(deps);
+    captureOut();
+    expect(await main(["rules", "update", "--state", tmp("ug-def-")])).toBe(1);
+  });
+
+  it("scan deps refreshes the advisory feeds older than 1 day and reads them with --data-dir, unless --no-update", async () => {
+    const state = tmp("ug-def-");
+    const root = tmp("ug-defr-");
+    mkdirSync(join(root, "app"));
+    writeFileSync(join(root, "app", "package-lock.json"), JSON.stringify({ lockfileVersion: 3, packages: { "": {} } }));
+    const calls: string[][] = [];
+    setRunner(async (cmd, args) => {
+      if (cmd !== "bash") return missing();
+      calls.push(args);
+      if (args.includes("--update-feeds")) return updateFeeds(args, "ok");
+      writeFileSync(args[args.indexOf("--export-json") + 1] as string, JSON.stringify({ vulnerabilities: [] }));
+      return ok();
+    });
+    const out = captureOut();
+    const scan = (...flags: string[]) => main(["scan", "deps", "--out", aikidoRun().dir, "--roots", root, "--no-registry", "--state", state, ...flags]);
+    expect(await scan()).toBe(0);
+    expect(calls[0]).toContain("--update-feeds");
+    expect(calls[1]?.slice(calls[1].indexOf("--data-dir"), calls[1].indexOf("--data-dir") + 2)).toEqual(["--data-dir", feedDir(state)]);
+    expect(out.join("")).toContain("package-checker updated");
+    // Fresh now: the next scan reads the copy without downloading it again.
+    calls.length = 0;
+    expect(await scan()).toBe(0);
+    expect(calls.map((c) => c.includes("--update-feeds"))).toEqual([false]);
+    // Stale, but --no-update: no refresh.
+    const old = new Date(Date.now() - 3 * 86_400_000);
+    for (const f of ["osv.purl", "ghsa.purl"]) utimesSync(join(feedDir(state), f), old, old);
+    calls.length = 0;
+    expect(await scan("--no-update")).toBe(0);
+    expect(calls.map((c) => c.includes("--update-feeds"))).toEqual([false]);
   });
 
   it("scan host refreshes stale signatures before scanning, unless --no-update", async () => {

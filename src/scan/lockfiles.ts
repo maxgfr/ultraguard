@@ -30,6 +30,7 @@ export const LOCKFILES: Record<string, string> = {
  * handed to its advisory pass, never matched against campaign packages here.
  */
 export const ADVISORY_ONLY = new Set([
+  "bun.lockb",
   "deno.lock",
   "go.mod",
   "pdm.lock",

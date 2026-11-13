@@ -12,7 +12,7 @@ import { UsageError } from "./engine.js";
 import { type FixStep, type LockfilePlan, type Manager, type ProjectPlan, planFixes } from "./fixes.js";
 import type { Run } from "./run.js";
 import type { Runner } from "./runner.js";
-import { type Checker, defaultChecker } from "./scan/deps.js";
+import { type Checker, defaultChecker, feedDir } from "./scan/deps.js";
 import type { RankedVulns, Tier } from "./vulns.js";
 
 export const FIX_TEST_TIMEOUT_MS = 15 * 60_000;
@@ -508,7 +508,7 @@ export async function fixProject(ranked: RankedVulns, opts: FixOptions, run: Run
   const before = new Set(
     (project?.items ?? []).flatMap((i) => adv(rel(i.file), i.name, i.version, [...i.cves, ...i.ghsas])).map((x) => `${x.lockfile}|${x.name}|${x.id}`),
   );
-  const checker = deps.checker ?? defaultChecker(runner, join(run.dir, "package-checker", `fix-${record.name}`));
+  const checker = deps.checker ?? defaultChecker(runner, join(run.dir, "package-checker", `fix-${record.name}`), { dataDir: feedDir(deps.state) });
   const c = await checker(record.worktree);
   if (!c.ok) record.recheck = { ok: false, error: c.error ?? "package-checker failed", closed: [], remaining: [], introduced: [] };
   else {

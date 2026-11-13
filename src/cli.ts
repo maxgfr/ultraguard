@@ -26,13 +26,13 @@ import { planFixes, renderFixes } from "./fixes.js";
 import { intel, readWebResultsFile, type WebHit } from "./intel.js";
 import { normEco, SUPPORTED_ECOSYSTEMS, validateIocs } from "./ioc.js";
 import { renderReport } from "./report.js";
-import { formatDefenses, refreshDefenses } from "./defenses.js";
+import { formatDefenses, refreshDefenses, updateAdvisoryFeeds } from "./defenses.js";
 import { defaultRulesDeps, installedRules, RULE_SETS, type RuleSet, type RulesDeps, rulesAgeDays } from "./rules.js";
 import { OS_NAMES, type Searcher, searchInto, searchNews } from "./search.js";
 import { Run } from "./run.js";
 import { defaultRunner, type Runner } from "./runner.js";
 import { scanCloud } from "./scan/cloud.js";
-import { type CheckerVuln, scanDeps } from "./scan/deps.js";
+import { type CheckerVuln, feedDir, scanDeps } from "./scan/deps.js";
 import { scanGithub } from "./scan/github.js";
 import { DEFAULT_RESCAN_DAYS } from "./scan/avcache.js";
 import { scanHost } from "./scan/host.js";
@@ -52,14 +52,14 @@ each article into indicators of compromise (IOCs) that cite it, and ultraguard
 sweeps your GitHub account and the repositories you can push to, this machine,
 your lockfiles and your cloud for them. Read-only on what it scans: the only
 things it writes are its run folders, its state folder and the antivirus
-databases it keeps current (ClamAV signatures, YARA-Forge rules). The one
+databases it keeps current (ClamAV signatures, YARA-Forge rules, package-checker's advisory feeds). The one
 exception is fix --apply, run only when you ask to fix a named project: it
 upgrades that project's dependencies in a new git worktree and branch, and
 never pushes.
 
 USAGE
   ultraguard doctor [--probe] [--state <dir>] [--json]
-  ultraguard rules update [--set core|extended|full] [--state <dir>]   freshclam + YARA-Forge
+  ultraguard rules update [--set core|extended|full] [--state <dir>]   freshclam + YARA-Forge + advisory feeds
   ultraguard rules status [--state <dir>]
   ultraguard search <query> --out <run> [--limit <n>]
   ultraguard search --news --out <run> [--limit <n>]   the standard query set, this month
@@ -122,8 +122,9 @@ SCAN FLAGS
   --yara <rules>        host: also run YARA rules (a .yar file or a folder of them)
   --yara-source <S#>    host: the source the YARA rules came from, cited by their findings
   --no-rules            host: skip the community YARA rules (YARA-Forge) installed by rules update
-  --no-update           host: do not refresh ClamAV signatures or YARA-Forge rules older than 7 days
-  --state <dir>         host, rules, watch: ultraguard's state folder (default ~/.ultraguard)
+  --no-update           host: do not refresh ClamAV signatures or YARA-Forge rules older than 7 days;
+                        deps: do not refresh package-checker's advisory feeds older than 1 day
+  --state <dir>         host, deps, rules, watch: ultraguard's state folder (default ~/.ultraguard)
   --set <name>          rules update: core (default, highest precision), extended or full
   --npm-user <name>     deps: the npm account whose packages to check for versions published in a campaign window (default: npm whoami)
   --no-registry         deps: skip that check (it reads the public npm registry)
@@ -419,12 +420,18 @@ async function runScan(surface: "github" | "host" | "deps" | "cloud", a: Command
   }
   if (surface === "deps") {
     const roots = rootsOf(a);
+    const state = stateDir(argValue(a, "state"));
+    // The OSV and GHSA feeds package-checker reads: ultraguard's copy, refreshed when older than 1 day.
+    const feeds = argBool(a, "no-osv") || argBool(a, "no-update") ? undefined : await updateAdvisoryFeeds(state, runner);
+    const refreshed = feeds && feeds.status !== "current" ? `${formatDefenses([feeds])}\n` : "";
     const r = await scanDeps(iocs, (tree ?? (() => walkFor(a)))(), run, {
       checker: argBool(a, "no-osv") ? false : undefined,
       runner,
       roots: roots.length ? roots : [homedir()],
       // Global installs (npm -g, nvm, bun, uv tools, pipx) are read under the real home.
       home: homedir(),
+      feedDir: feedDir(state),
+      feedRefreshError: feeds?.status === "failed" ? feeds.detail : undefined,
     });
     // The packages the user publishes: a worm with their npm token republishes them.
     const pub = argBool(a, "no-registry") ? undefined : await scanNpmPublishes(iocs, { user: argValue(a, "npm-user"), runner, get: registryGet });
@@ -442,7 +449,8 @@ async function runScan(surface: "github" | "host" | "deps" | "cloud", a: Command
     const f = run.recordSurface(r.result, found, [...r.gaps, ...v.gaps, ...(pub?.gaps ?? [])]);
     const c = v.ranked.counts;
     const ranked = v.ranked.packages ? ` (P0 ${c.P0}, P1 ${c.P1}, P2 ${c.P2}, P3 ${c.P3}: ultraguard fixes --out ${run.dir})` : "";
-    return `deps: ${r.result.stats.lockfiles ?? 0} lockfiles${pub?.user ? `, ${pub.stats.npmPackages ?? 0} npm packages of ${pub.user}` : ""}, ${r.result.stats.packages ?? 0} packages, ${r.result.stats.malicious ?? 0} malicious, ${r.result.stats.vulnerable ?? 0} with known CVEs${ranked}; ${f.length} finding(s)`;
+    const age = r.result.stats.feedAgeDays;
+    return `${refreshed}deps: ${r.result.stats.lockfiles ?? 0} lockfiles${pub?.user ? `, ${pub.stats.npmPackages ?? 0} npm packages of ${pub.user}` : ""}, ${r.result.stats.packages ?? 0} packages, ${r.result.stats.malicious ?? 0} malicious, ${r.result.stats.vulnerable ?? 0} with known CVEs${ranked}${age !== undefined ? `; advisory feeds ${age} days old` : ""}; ${f.length} finding(s)`;
   }
   const r = await scanCloud(iocs, runner);
   const f = run.recordSurface(r.result, r.findings, r.gaps);
@@ -492,11 +500,12 @@ async function dispatch(a: CommandArgs): Promise<number> {
         );
         return meta ? EXIT_OK : EXIT_FAILURE;
       }
-      if (sub !== "update") throw new UsageError("rules takes `update [--set core|extended|full]` (ClamAV signatures and YARA-Forge rules) or `status`");
+      if (sub !== "update")
+        throw new UsageError("rules takes `update [--set core|extended|full]` (ClamAV signatures, YARA-Forge rules, advisory feeds) or `status`");
       const set = (argValue(a, "set") ?? "core") as RuleSet;
       if (!RULE_SETS.includes(set)) throw new UsageError(`--set takes ${RULE_SETS.join(", ")}, not "${set}"`);
-      // Both databases, now: ClamAV's signatures through freshclam, and the YARA-Forge rules.
-      const ups = await refreshDefenses(dir, runner, { force: true, set, deps: rulesDeps });
+      // Every database, now: ClamAV's signatures through freshclam, the YARA-Forge rules and package-checker's advisory feeds.
+      const ups = await refreshDefenses(dir, runner, { force: true, set, advisoryFeeds: true, deps: rulesDeps });
       const meta = installedRules(dir);
       out(json ? jsonLine({ updates: ups, rules: meta ?? null }) : `${formatDefenses(ups)}${meta ? `\n${meta.source}` : ""}`);
       return ups.some((u) => u.status === "failed") ? EXIT_FAILURE : EXIT_OK;

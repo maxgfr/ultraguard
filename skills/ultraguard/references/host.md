@@ -81,7 +81,9 @@ could not load its database. A target this user cannot read (root-owned) is
 a gap with the exact `sudo clamscan` command that reads it.
 ClamAV signatures older than 7 days are refreshed first (`freshclam`, or
 `ultraguard rules update` at any time); only a refresh that failed leaves a
-gap in the run, with freshclam's error. ClamAV
+gap in the run, with freshclam's error (`rules update` also refreshes the
+advisory feeds `scan deps` reads; `scan deps` does it when they are older
+than 1 day). ClamAV
 knows common malware families; it rarely knows a supply-chain payload from
 this week, which is what the IOCs and the machine analysis are for.
 

@@ -6,8 +6,10 @@ import type { Runner } from "./runner.js";
 import { EPSS_URL, feedCache, KEV_URL } from "./feeds.js";
 import { installedRules, rulesAgeDays } from "./rules.js";
 import { detectAv } from "./scan/antivirus.js";
+import { FEED_STALE_DAYS, feedDir, localFeeds } from "./scan/deps.js";
 import { Gh } from "./scan/gh.js";
 import { detectXProtect, hardeningFindings, XPROTECT_STALE_DAYS } from "./scan/xprotect.js";
+import { PACKAGE_CHECKER_REF, PACKAGE_CHECKER_VERSION } from "./vendor/package-checker-script.js";
 
 export interface DoctorLine {
   check: string;
@@ -67,7 +69,7 @@ export async function doctor(
     });
   }
 
-  // scan deps runs package-checker: a Bash 4+ script that downloads its advisory feeds with curl.
+  // scan deps runs package-checker: a Bash 4+ script that downloads its advisory feeds with curl (rules update keeps a copy).
   const bash = await runner("bash", ["-c", "echo $BASH_VERSINFO"], { timeoutMs: 10_000 });
   const bashMajor = Number(bash.stdout.trim()) || 0;
   out.push({
@@ -77,6 +79,21 @@ export async function doctor(
       ? "not installed (scan deps cannot run package-checker)"
       : `Bash ${bash.stdout.trim() || "?"}${bashMajor >= 4 ? "" : " (scan deps needs Bash 4 or newer for package-checker)"}`,
     fix: !bash.missing && bashMajor >= 4 ? undefined : process.platform === "darwin" ? "brew install bash" : "install Bash 4 or newer",
+  });
+  // The vendored package-checker, and the advisory feed copy ultraguard keeps for it in the state folder.
+  const feeds = opts.state ? localFeeds(feedDir(opts.state), opts.now) : undefined;
+  const fresh = !!feeds && feeds.ageDays <= FEED_STALE_DAYS;
+  out.push({
+    check: "package-checker",
+    ok: !opts.state || fresh,
+    detail: `${PACKAGE_CHECKER_VERSION} (${PACKAGE_CHECKER_REF}, vendored)${
+      opts.state
+        ? feeds
+          ? `; ${feeds.files} feed(s) in ${feedDir(opts.state)}, ${feeds.ageDays} days old${fresh ? "" : " (stale: refreshed after 1 day)"}`
+          : `; no advisory feeds in ${feedDir(opts.state)} (scan deps downloads them on each run)`
+        : ""
+    }`,
+    fix: opts.state && !fresh ? "ultraguard rules update" : undefined,
   });
   const curl = await runner("curl", ["--version"], { timeoutMs: 10_000 });
   out.push({

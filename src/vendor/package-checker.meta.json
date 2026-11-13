@@ -1,6 +1,7 @@
 {
-  "tag": "v1.16.4",
-  "version": "1.16.4",
-  "sha256": "de5ede80029422b7218c14d98f81954e956dfa9423f90bb8c89ee7af351dd269",
-  "syncedAt": "2026-11-12T22:09:38.694Z"
+  "ref": "fix-audit-findings",
+  "commit": "dfae08a3bbe2b9ecffe2655d103464f16b658059",
+  "version": "1.16.5",
+  "sha256": "4e9e162d04e2818693e0ea433856cd20234837d91043fc9723b27e290cbb2c6e",
+  "syncedAt": "2026-11-13T12:22:47.005Z"
 }
