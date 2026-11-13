@@ -30,8 +30,12 @@ export const EPSS_P1 = 0.1;
  * - worktree: a linked git worktree of one of their projects (fixed in the main checkout)
  * - tool: a cache, a plugin, an editor extension or a tool's own folder (~/.claude/plugins, ~/.vscode, ~/Library...)
  * - vendored: a copy inside node_modules, a virtualenv or site-packages
+ * - fixture: a test fixture (test-fixtures/, fixtures/, testdata/...): vulnerable on purpose, never installed
  */
-export type ProjectKind = "own" | "worktree" | "tool" | "vendored";
+export type ProjectKind = "own" | "worktree" | "tool" | "vendored" | "fixture";
+
+/** Folders whose lockfiles are test data a scanner or parser is tested on, not dependencies anyone installs. */
+const FIXTURE_SEGMENTS = new Set(["test-fixtures", "test_fixtures", "fixtures", "__fixtures__", "testdata", "test-data", "test_data"]);
 
 /** How the project declares the package: a production or dev-only direct dependency, or pulled in by another. */
 export type Relation = "direct" | "dev" | "transitive" | "unknown";
@@ -189,6 +193,8 @@ function classify(dir: string, home: string | undefined): ProjectInfo {
   const parts = dir.split(sep).filter(Boolean);
   const vi = parts.findIndex((p) => VENDORED_SEGMENTS.has(p));
   if (vi >= 0) return { root: dir, kind: "vendored" };
+  const fi = parts.findIndex((p) => FIXTURE_SEGMENTS.has(p));
+  if (fi >= 0) return { root: sep + parts.slice(0, fi + 1).join(sep), kind: "fixture" };
   const inHome = home && (dir === home || dir.startsWith(home.endsWith(sep) ? home : home + sep));
   const rel = inHome && home ? relative(home, dir).split(sep).filter(Boolean) : parts;
   // ~/.claude/plugins, ~/.vscode/extensions, ~/Library/Caches, ~/.config/<tool>: a tool's own copy.
@@ -405,7 +411,7 @@ export function byUrgency(a: RankedItem, b: RankedItem): number {
   );
 }
 
-const KIND_ORDER: Record<ProjectKind, number> = { own: 0, worktree: 1, tool: 2, vendored: 3 };
+const KIND_ORDER: Record<ProjectKind, number> = { own: 0, worktree: 1, tool: 2, vendored: 3, fixture: 4 };
 
 export function rankVulnerabilities(vulns: CheckerVuln[], input: RankInput = {}): RankedVulns {
   const projects = new Map<string, RankedProject>();
@@ -494,6 +500,7 @@ export const KIND_LABEL: Record<ProjectKind, string> = {
   worktree: "a git worktree",
   tool: "a cache, plugin or tool folder",
   vendored: "a vendored copy",
+  fixture: "test fixtures (vulnerable on purpose)",
 };
 
 const tierCounts = (c: Record<Tier, number>) =>
@@ -535,7 +542,7 @@ export function vulnFindings(r: RankedVulns, runDir?: string): NewFinding[] {
       surface: "deps",
       severity: "info",
       subject: "vulnerable dependencies",
-      title: `${r.packages} locked package versions have known vulnerabilities (${tierCounts(r.counts)}) in ${own.length} of your projects${others.length ? ` and ${others.length} worktree, cache, plugin or vendored folder(s) (${otherItems} of them)` : ""}: a patching backlog, not a compromise (vulnerabilities.json, ultraguard fixes)`,
+      title: `${r.packages} locked package versions have known vulnerabilities (${tierCounts(r.counts)}) in ${own.length} of your projects${others.length ? ` and ${others.length} worktree, cache, plugin, vendored or test-fixture folder(s) (${otherItems} of them)` : ""}: a patching backlog, not a compromise (vulnerabilities.json, ultraguard fixes)`,
       evidence: { kind: "file", ref: "vulnerabilities.json" },
       key: "deps|vulnerable-backlog",
     });
@@ -583,7 +590,12 @@ export function renderVulnSection(r: RankedVulns, home?: string, top = 10): stri
   }
   const others = r.projects.filter((x) => x.kind !== "own");
   if (others.length) {
-    out.push("### Worktrees, caches, plugins and vendored copies", "", "Not fixed here: update the tool, the plugin or the main checkout instead.", "");
+    out.push(
+      "### Worktrees, caches, plugins, vendored copies and test fixtures",
+      "",
+      "Not fixed here: update the tool, the plugin or the main checkout instead; test fixtures are vulnerable on purpose.",
+      "",
+    );
     for (const p of others)
       out.push(`- ${tick(short(p.root))} (${KIND_LABEL[p.kind]}${p.mainRepo ? ` of ${tick(short(p.mainRepo))}` : ""}): ${tierCounts(p.counts)}`);
     out.push("");

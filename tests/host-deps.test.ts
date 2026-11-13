@@ -225,3 +225,21 @@ describe("scan deps", () => {
     expect(r.findings.some((f) => f.severity === "compromised" && f.title.includes("flatmap-stream@0.1.1, a malicious package (MAL-"))).toBe(true);
   }, 120_000);
 });
+
+describe("walk fairness", () => {
+  it("one project with a huge data folder does not starve the others: the folder is skipped and said", () => {
+    const root = tmp("ug-walk-");
+    for (const p of ["z-big", "b-app", "c-app"]) mkdirSync(join(root, p), { recursive: true });
+    writeFileSync(join(root, "b-app", "package-lock.json"), "{}");
+    writeFileSync(join(root, "c-app", "package-lock.json"), "{}");
+    const data = join(root, "z-big", "data", "audio");
+    mkdirSync(data, { recursive: true });
+    for (let i = 0; i < 60; i++) writeFileSync(join(data, `${i}.wav`), "");
+    const r = walk([root], { maxDirEntries: 1000, maxEntries: 40 });
+    // Level by level: both projects' lockfiles come before the cap, whatever sorts first.
+    expect(r.files.filter((f) => f.endsWith("package-lock.json")).length).toBe(2);
+    const r2 = walk([root], { maxDirEntries: 50 });
+    expect(r2.pruned["(folders of more than 20,000 entries: data sets)"]).toBe(1);
+    expect(r2.files.some((f) => f.endsWith(".wav"))).toBe(false);
+  });
+});

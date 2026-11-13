@@ -45,18 +45,29 @@ export interface WalkResult {
   pruned: Record<string, number>;
 }
 
-export function walk(roots: string[], opts: { maxDepth?: number; maxEntries?: number } = {}): WalkResult {
+/** A folder holding more entries than this is a data set (audio, images, a dump), not code: skipped, and said. */
+export const MAX_DIR_ENTRIES = 20_000;
+export const HUGE_DIRS = "(folders of more than 20,000 entries: data sets)";
+
+export function walk(roots: string[], opts: { maxDepth?: number; maxEntries?: number; maxDirEntries?: number } = {}): WalkResult {
   const maxDepth = opts.maxDepth ?? 6;
   const maxEntries = opts.maxEntries ?? 400_000;
+  const maxDirEntries = opts.maxDirEntries ?? MAX_DIR_ENTRIES;
   const out: WalkResult = { files: [], gitDirs: [], vscodeDirs: [], entries: 0, capped: false, unreadable: 0, pruned: {} };
-  const stack: { dir: string; depth: number }[] = roots.map((dir) => ({ dir, depth: 0 }));
-  while (stack.length) {
-    const { dir, depth } = stack.pop() as { dir: string; depth: number };
+  // Level by level: when the entry cap is reached, it cuts the deepest levels of every
+  // project, never whole projects that happen to sort after a large one.
+  const queue: { dir: string; depth: number }[] = roots.map((dir) => ({ dir, depth: 0 }));
+  for (let head = 0; head < queue.length; head++) {
+    const { dir, depth } = queue[head] as { dir: string; depth: number };
     let names: string[];
     try {
       names = readdirSync(dir);
     } catch {
       out.unreadable++;
+      continue;
+    }
+    if (depth > 0 && names.length > maxDirEntries) {
+      out.pruned[HUGE_DIRS] = (out.pruned[HUGE_DIRS] ?? 0) + 1;
       continue;
     }
     for (const name of names) {
@@ -87,7 +98,7 @@ export function walk(roots: string[], opts: { maxDepth?: number; maxEntries?: nu
           out.pruned["(deeper than --depth)"] = (out.pruned["(deeper than --depth)"] ?? 0) + 1;
           continue;
         }
-        stack.push({ dir: p, depth: depth + 1 });
+        queue.push({ dir: p, depth: depth + 1 });
       } else if (st.isFile()) out.files.push(p);
     }
   }

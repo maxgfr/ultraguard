@@ -1,7 +1,7 @@
 {
   "ref": "fix-audit-findings",
-  "commit": "dfae08a3bbe2b9ecffe2655d103464f16b658059",
+  "commit": "3b2b840b47f01c3a486cc05ec8a4494f0160889f",
   "version": "1.16.5",
-  "sha256": "4e9e162d04e2818693e0ea433856cd20234837d91043fc9723b27e290cbb2c6e",
-  "syncedAt": "2026-11-13T12:22:47.005Z"
+  "sha256": "979e5b7a31099c34ec45bf90cb5f7b7fa14fd5361eb5625a7ba8c32b27f33d72",
+  "syncedAt": "2026-11-13T13:51:57.204Z"
 }
