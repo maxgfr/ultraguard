@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // src/cli.ts
-import { existsSync as existsSync21, readFileSync as readFileSync22, realpathSync as realpathSync6, statSync as statSync16 } from "fs";
+import { existsSync as existsSync21, readFileSync as readFileSync22, realpathSync as realpathSync7, statSync as statSync16 } from "fs";
 import { homedir as homedir7 } from "os";
 import { join as join28, resolve as resolve6 } from "path";
 import { pathToFileURL } from "url";
@@ -10350,7 +10350,7 @@ function claimBlocks(lines) {
 
 // src/doctor.ts
 import { homedir as homedir3 } from "os";
-import { join as join16 } from "path";
+import { join as join17 } from "path";
 
 // src/feeds.ts
 import { existsSync as existsSync4, mkdirSync as mkdirSync2, readFileSync as readFileSync6, statSync as statSync6 } from "fs";
@@ -12009,9 +12009,9 @@ async function antivirusPass(runner2, opts) {
   let silent;
   let unfinished;
   for (const group of byPath ? batches(targets) : [targets]) {
-    const { listed, odd } = splitTargets(group);
+    const { listed: listed2, odd } = splitTargets(group);
     const list = join12(opts.listDir, "av-targets.txt");
-    writeFileAtomic(list, `${listed.join("\n")}
+    writeFileAtomic(list, `${listed2.join("\n")}
 `);
     const args = ["--infected", "--no-summary", `--file-list=${list}`];
     if (engine.name === "clamscan")
@@ -12130,10 +12130,10 @@ function yaraRuleFiles(path) {
   }
 }
 function splitTargets(targets) {
-  const listed = [];
+  const listed2 = [];
   const odd = [];
-  for (const t of targets) (/[\r\n]/.test(t) ? odd : listed).push(t);
-  return { listed, odd };
+  for (const t of targets) (/[\r\n]/.test(t) ? odd : listed2).push(t);
+  return { listed: listed2, odd };
 }
 function parseYaraOutput(stdout) {
   const out2 = [];
@@ -12177,8 +12177,8 @@ async function yaraPass(runner2, opts) {
   let failed;
   for (const group of byPath ? batches(targets) : [targets]) {
     if (byPath && !group.length) break;
-    const { listed, odd } = splitTargets(group);
-    writeFileAtomic(list, `${listed.join("\n")}
+    const { listed: listed2, odd } = splitTargets(group);
+    writeFileAtomic(list, `${listed2.join("\n")}
 `);
     const res = await runner2("yara", [...base2, "--scan-list", ...files, list], { timeoutMs });
     if (res.missing) {
@@ -12253,9 +12253,9 @@ ${out2}`;
 }
 
 // src/scan/deps.ts
-import { copyFileSync, existsSync as existsSync12, mkdirSync as mkdirSync6, readdirSync as readdirSync10, readFileSync as readFileSync13, rmSync as rmSync6, statSync as statSync11 } from "fs";
+import { closeSync as closeSync5, copyFileSync, existsSync as existsSync12, mkdirSync as mkdirSync6, openSync as openSync5, readdirSync as readdirSync11, readFileSync as readFileSync13, readSync as readSync4, realpathSync as realpathSync3, rmSync as rmSync6, statSync as statSync11 } from "fs";
 import { tmpdir as tmpdir4 } from "os";
-import { basename as basename6, dirname, isAbsolute as isAbsolute3, join as join14, relative, resolve, sep as sep2 } from "path";
+import { basename as basename6, dirname, isAbsolute as isAbsolute3, join as join15, relative, resolve, sep as sep2 } from "path";
 
 // src/ioc.ts
 var ISO_DATE = /^\d{4}-\d{2}-\d{2}(T[\d:.]+(Z|[+-]\d{2}:?\d{2})?)?$/;
@@ -12526,6 +12526,7 @@ var ADVISORY_ONLY = /* @__PURE__ */ new Set([
   "mix.lock",
   "Package.resolved"
 ]);
+var MANIFESTS = /* @__PURE__ */ new Set(["package.json", "pyproject.toml", "Pipfile", "Gemfile", "setup.py", "setup.cfg"]);
 function advisoryOnlyKind(path) {
   return ADVISORY_ONLY.has(basename5(path));
 }
@@ -12750,23 +12751,142 @@ function installedPackages(projects, globals = { node: [], python: [] }) {
   return { packages, read: read2 };
 }
 
+// src/scan/walk.ts
+import { lstatSync as lstatSync3, readdirSync as readdirSync10 } from "fs";
+import { join as join14 } from "path";
+var PRUNE = /* @__PURE__ */ new Set([
+  "node_modules",
+  ".git",
+  "Library",
+  ".Trash",
+  ".cache",
+  ".npm",
+  ".pnpm-store",
+  ".yarn",
+  ".cargo",
+  ".rustup",
+  ".gradle",
+  ".m2",
+  ".venv",
+  "venv",
+  "__pycache__",
+  ".next",
+  "dist",
+  "build",
+  "target",
+  ".docker",
+  ".local",
+  "Pictures",
+  "Movies",
+  "Music",
+  "Photos Library.photoslibrary"
+]);
+var MAX_DIR_ENTRIES = 2e4;
+var HUGE_DIRS = "(folders of more than 20,000 entries: data sets)";
+var listed = (paths) => `${paths.slice(0, 5).join(", ")}${paths.length > 5 ? ` and ${paths.length - 5} more` : ""}`;
+var keptName = (name) => !!lockfileKind(name) || advisoryOnlyKind(name) || MANIFESTS.has(name);
+function walk(roots, opts = {}) {
+  const maxDepth = opts.maxDepth ?? 6;
+  const maxEntries = opts.maxEntries ?? 4e5;
+  const maxDirEntries = opts.maxDirEntries ?? MAX_DIR_ENTRIES;
+  const out2 = { files: [], gitDirs: [], vscodeDirs: [], entries: 0, capped: false, unreadable: 0, pruned: {}, huge: [] };
+  const queue2 = roots.map((dir) => ({ dir, depth: 0 }));
+  for (let head2 = 0; head2 < queue2.length; head2++) {
+    const { dir, depth } = queue2[head2];
+    let names;
+    try {
+      names = readdirSync10(dir);
+    } catch {
+      out2.unreadable++;
+      continue;
+    }
+    if (depth > 0 && names.length > maxDirEntries) {
+      out2.pruned[HUGE_DIRS] = (out2.pruned[HUGE_DIRS] ?? 0) + 1;
+      out2.huge?.push(dir);
+      try {
+        names = readdirSync10(dir, { withFileTypes: true }).filter((e) => e.isDirectory() || e.name === ".git" || e.name === ".vscode" || e.isFile() && keptName(e.name)).map((e) => e.name);
+      } catch {
+        out2.unreadable++;
+        continue;
+      }
+    }
+    for (const name of names) {
+      if (++out2.entries > maxEntries) {
+        out2.capped = true;
+        return out2;
+      }
+      const p = join14(dir, name);
+      if (name === ".git") {
+        out2.gitDirs.push(dir);
+        continue;
+      }
+      if (name === ".vscode") out2.vscodeDirs.push(p);
+      let st;
+      try {
+        st = lstatSync3(p);
+      } catch {
+        out2.unreadable++;
+        continue;
+      }
+      if (st.isSymbolicLink()) continue;
+      if (st.isDirectory()) {
+        if (PRUNE.has(name)) {
+          out2.pruned[name] = (out2.pruned[name] ?? 0) + 1;
+          continue;
+        }
+        if (depth + 1 > maxDepth) {
+          out2.pruned["(deeper than --depth)"] = (out2.pruned["(deeper than --depth)"] ?? 0) + 1;
+          continue;
+        }
+        queue2.push({ dir: p, depth: depth + 1 });
+      } else if (st.isFile()) out2.files.push(p);
+    }
+  }
+  return out2;
+}
+
 // src/scan/deps.ts
 var FEED_STALE_DAYS = 1;
 var feedStale = (mtime, now) => now.getTime() - (typeof mtime === "number" ? mtime : Date.parse(mtime)) > FEED_STALE_DAYS * 864e5;
-var feedDir = (state) => join14(state, "package-checker", "data");
+var feedDir = (state) => join15(state, "package-checker", "data");
 var FEED_FILES = (() => {
   const map = /FEED_ECOSYSTEM_MAP=\(([\s\S]*?)\n\)/.exec(PACKAGE_CHECKER_SCRIPT)?.[1] ?? "";
   const types = [...map.matchAll(/"([a-z]+)\|/g)].map((m) => m[1]);
   return (types.length ? types : ["npm"]).flatMap((t) => ["ghsa", "osv"].map((k) => t === "npm" ? `${k}.purl` : `${k}-${t}.purl`));
 })();
+function feedFetchedAt(file) {
+  let head2 = "";
+  try {
+    const fd = openSync5(file, "r");
+    try {
+      const buf = Buffer.alloc(512);
+      head2 = buf.toString("utf8", 0, readSync4(fd, buf, 0, buf.length, 0));
+    } finally {
+      closeSync5(fd);
+    }
+  } catch {
+    return void 0;
+  }
+  let ref;
+  for (const line of head2.split("\n").slice(0, 4)) {
+    if (!line.startsWith("#")) break;
+    const t = Date.parse(/^# (?:generated|fetched): (\S+)/.exec(line)?.[1] ?? "");
+    if (!Number.isNaN(t)) ref = Math.max(ref ?? t, t);
+  }
+  try {
+    return ref ?? statSync11(file).mtimeMs;
+  } catch {
+    return void 0;
+  }
+}
 function localFeeds(dir, now = /* @__PURE__ */ new Date()) {
   let oldest = Number.POSITIVE_INFINITY;
   const names = /* @__PURE__ */ new Set();
   try {
-    for (const f of readdirSync10(dir)) {
+    for (const f of readdirSync11(dir)) {
       if (!f.endsWith(".purl")) continue;
       names.add(f);
-      oldest = Math.min(oldest, statSync11(join14(dir, f)).mtimeMs);
+      oldest = Math.min(oldest, feedFetchedAt(join15(dir, f)) ?? statSync11(join15(dir, f)).mtimeMs);
     }
   } catch {
     return void 0;
@@ -12795,7 +12915,7 @@ function feedSummary(feeds) {
 }
 function materializeChecker(dir) {
   mkdirSync6(dir, { recursive: true });
-  const p = join14(dir, `package-checker-${PACKAGE_CHECKER_VERSION}-${PACKAGE_CHECKER_SHA256.slice(0, 12)}.sh`);
+  const p = join15(dir, `package-checker-${PACKAGE_CHECKER_VERSION}-${PACKAGE_CHECKER_SHA256.slice(0, 12)}.sh`);
   if (!existsSync12(p) || statSync11(p).size !== Buffer.byteLength(PACKAGE_CHECKER_SCRIPT)) writeFileAtomic(p, PACKAGE_CHECKER_SCRIPT);
   return p;
 }
@@ -12807,13 +12927,13 @@ var checkerError = (out2) => {
   return (lines.find((l) => /(^|\s)Error:/.test(l)) ?? lines.at(-1))?.replace(/^❌\s*/, "").slice(0, 200);
 };
 async function updateCheckerFeeds(runner2, dir) {
-  const script = materializeChecker(join14(dir, "..", "bin"));
+  const script = materializeChecker(join15(dir, "..", "bin"));
   const res = await runner2("bash", [script, "--update-feeds", "--data-dir", dir], { timeoutMs: UPDATE_TIMEOUT_MIN * 6e4 });
   if (res.missing) return { ok: false, detail: "bash is not installed" };
   const summary = /Updated \d+ of \d+ feed\(s\)/.exec(res.stdout)?.[0];
   if (res.status === 0) return { ok: true, detail: summary ?? "feeds updated" };
   try {
-    for (const f of readdirSync10(dir)) if (/^\..+\.purl\.tmp\./.test(f)) rmSync6(join14(dir, f), { force: true });
+    for (const f of readdirSync11(dir)) if (/^\..+\.purl\.tmp\./.test(f)) rmSync6(join15(dir, f), { force: true });
   } catch {
   }
   if (res.status === TIMED_OUT) return { ok: false, detail: `timed out after ${UPDATE_TIMEOUT_MIN} min` };
@@ -12824,17 +12944,18 @@ ${res.stdout}`) ?? `exit ${res.status}` };
 var checkerFix = (error) => /bash 4|bash is not installed/i.test(error) ? "brew install bash (package-checker needs Bash 4 or newer), then re-run" : /^timed out/.test(error) ? "re-run with --roots narrowed to your code folders" : "re-run when online";
 var warningFix = (reason) => /\bfeed\b.*could not be (found|loaded)/.test(reason) ? "ultraguard rules update, then re-run scan deps" : /\bbun\b/.test(reason) ? "install bun (https://bun.sh) so package-checker can read bun.lockb, then re-run scan deps" : /could not be read/.test(reason) ? "check the permissions of those files, then re-run scan deps" : "check those lockfiles by hand";
 function defaultChecker(runner2, workDir, opts = {}) {
-  const script = materializeChecker(join14(workDir, "tools"));
+  const script = materializeChecker(join15(workDir, "tools"));
   const have2 = opts.dataDir ? localFeeds(opts.dataDir) : void 0;
   const feeds = opts.dataDir && have2 ? ["--data-dir", opts.dataDir, ...have2.missing.length ? [] : ["--max-feed-age", "0"]] : [];
   let n = 0;
   return async (dir) => {
-    const out2 = join14(workDir, `package-checker-${++n}.json`);
+    const out2 = join15(workDir, `package-checker-${++n}.json`);
     rmSync6(out2, { force: true });
     const res = await runner2(
       "bash",
-      // --no-default-prune: ultraguard's walk decides which folders count (Pods, .nuxt, site-packages included).
-      [script, dir, "--default-source-ghsa-osv", "--only-lockfiles", "--no-config", "--no-runtime-check", "--no-default-prune", ...feeds, "--export-json", out2],
+      // package-checker's default prune stays on (it keeps virtualenvs' site-packages out of a project's run): the
+      // lockfiles ultraguard's walk found under a pruned folder (Pods, .nuxt, site-packages) are staged on their own.
+      [script, dir, "--default-source-ghsa-osv", "--only-lockfiles", "--no-config", "--no-runtime-check", ...feeds, "--export-json", out2],
       {
         timeoutMs: CHECK_TIMEOUT_MIN * 6e4,
         cwd: workDir
@@ -12863,16 +12984,27 @@ ${res.stdout}`) ?? `exit ${res.status}` };
     };
   };
 }
+var realOr = (p) => {
+  try {
+    return realpathSync3(p);
+  } catch {
+    return p;
+  }
+};
 var rootOf = (d, roots) => roots.filter((r) => d === r || d.startsWith(r.endsWith(sep2) ? r : r + sep2)).sort((a, b) => b.length - a.length)[0];
 function rootLevelLockfiles(lockfiles, roots) {
   return lockfiles.filter((f) => rootOf(dirname(f), roots) === dirname(f));
 }
-var CHECKER_IGNORED = /* @__PURE__ */ new Set(["vendor"]);
+var CHECKER_IGNORED = [
+  "vendor",
+  ...[.../DEFAULT_PRUNE_PATHS=\(([^)]*)\)/.exec(PACKAGE_CHECKER_SCRIPT)?.[1]?.matchAll(/"([^"]+)"/g) ?? []].map((m) => m[1])
+];
 function ignoredByChecker(lockfiles, roots) {
   return lockfiles.filter((f) => {
     const d = dirname(f);
     const root = rootOf(d, roots);
-    return (root ? relative(root, d) : d).split(sep2).some((s) => CHECKER_IGNORED.has(s));
+    const rel = `/${(root ? relative(root, d) : d).split(sep2).filter(Boolean).join("/")}/`;
+    return CHECKER_IGNORED.some((p) => rel.includes(`/${p}/`));
   });
 }
 function checkerGroups(lockfiles, roots) {
@@ -12885,12 +13017,11 @@ function checkerGroups(lockfiles, roots) {
       continue;
     }
     const rel = relative(root, d).split(sep2).filter(Boolean);
-    if (rel.length) groups.add(join14(root, ...rel.slice(0, 2)));
+    if (rel.length) groups.add(join15(root, ...rel.slice(0, 2)));
   }
   const list = [...groups].sort();
   return list.filter((g) => !list.some((o) => o !== g && g.startsWith(o + sep2)));
 }
-var MANIFESTS = /* @__PURE__ */ new Set(["package.json", "pyproject.toml", "Pipfile", "Gemfile", "setup.py", "setup.cfg"]);
 async function scanDeps(iocs, tree, run, opts = {}) {
   const result = { surface: "deps", scanned: true, stats: {}, startedAt: (opts.now ?? /* @__PURE__ */ new Date()).toISOString() };
   const findings = [];
@@ -13029,6 +13160,13 @@ async function scanDeps(iocs, tree, run, opts = {}) {
       why: "the walk stops at --depth",
       fix: "re-run with a larger --depth, or --roots narrowed to your code folders"
     });
+  if (tree.huge?.length)
+    gaps.push({
+      surface: "deps",
+      what: `${tree.huge.length} folder(s) of more than ${MAX_DIR_ENTRIES.toLocaleString("en-US")} entries, read for their sub-folders, lockfiles and manifests only: ${listed(tree.huge)}`,
+      why: "a folder that large is a data set: its other files are skipped",
+      fix: "scan such a folder with --roots <it> (a walk root has no entry limit)"
+    });
   if (lockfiles + advisoryOnly.size === 0)
     gaps.push({
       surface: "deps",
@@ -13039,7 +13177,7 @@ async function scanDeps(iocs, tree, run, opts = {}) {
   result.stats.packages = where.size;
   if (unreadable) gaps.push({ surface: "deps", what: `${unreadable} lockfiles`, why: "could not be parsed or were over 64 MB" });
   if (opts.checker !== false && lockfiles + advisoryOnly.size > 0) {
-    const workDir = run ? join14(run.dir, "package-checker") : join14(tmpdir4(), `ultraguard-pc-${process.pid}`);
+    const workDir = run ? join15(run.dir, "package-checker") : join15(tmpdir4(), `ultraguard-pc-${process.pid}`);
     mkdirSync6(workDir, { recursive: true });
     const injected = opts.checker || void 0;
     const runner2 = injected ? void 0 : opts.runner;
@@ -13050,11 +13188,11 @@ async function scanDeps(iocs, tree, run, opts = {}) {
       const ignored = new Set(ignoredByChecker(all, roots));
       const staged = /* @__PURE__ */ new Map();
       for (const [i, f] of [.../* @__PURE__ */ new Set([...rootLevelLockfiles(all, roots), ...ignored])].entries()) {
-        const d = join14(workDir, "root-lockfiles", String(i + 1));
+        const d = join15(workDir, "root-lockfiles", String(i + 1));
         try {
           rmSync6(d, { recursive: true, force: true });
           mkdirSync6(d, { recursive: true });
-          copyFileSync(f, join14(d, basename6(f)));
+          copyFileSync(f, join15(d, basename6(f)));
           staged.set(d, f);
         } catch {
           gaps.push({ surface: "deps", what: `advisories for ${f}`, why: "the lockfile could not be copied for package-checker" });
@@ -13069,9 +13207,9 @@ async function scanDeps(iocs, tree, run, opts = {}) {
       ];
       let dataDir = opts.feedDir;
       if (runner2 && dataDir && groups.length > 1 && !localFeeds(dataDir)) {
-        const once = join14(workDir, "data");
-        await updateCheckerFeeds(runner2, once);
-        if (localFeeds(once)) dataDir = once;
+        const once2 = join15(workDir, "data");
+        await updateCheckerFeeds(runner2, once2);
+        if (localFeeds(once2)) dataDir = once2;
       }
       const checker2 = injected ?? defaultChecker(runner2, workDir, { dataDir });
       const vulns = [];
@@ -13095,7 +13233,7 @@ async function scanDeps(iocs, tree, run, opts = {}) {
           gaps.push({
             surface: "deps",
             what: `advisories for ${label}`,
-            why: `package-checker: ${orig ? w.split(join14(g, basename6(orig))).join(orig) : w}`,
+            why: `package-checker: ${orig ? w.split(join15(g, basename6(orig))).join(orig) : w}`,
             fix: warningFix(w)
           });
         for (const src of r.sources ?? []) {
@@ -13104,15 +13242,22 @@ async function scanDeps(iocs, tree, run, opts = {}) {
         }
         vulns.push(...orig ? r.vulnerabilities.map((v) => ({ ...v, file: orig })) : r.vulnerabilities);
       }
-      if (dataDir && dataDir !== opts.feedDir) rmSync6(dataDir, { recursive: true, force: true });
-      const feeds = [...sources.values()];
+      const once = dataDir && dataDir !== opts.feedDir ? dataDir : void 0;
+      if (once) rmSync6(once, { recursive: true, force: true });
+      const feeds = [...sources.values()].map(
+        (f) => once && f.origin && (f.origin === once || f.origin.startsWith(once + sep2)) ? { ...f, origin: "downloaded once for this scan", origin_type: "remote" } : f
+      );
       const local2 = feeds.filter((f) => f.status === "loaded" && f.origin_type === "local" && typeof f.age_days === "number");
       const feedAge = local2.length ? Math.max(...local2.map((f) => f.age_days)) : feeds.some((f) => f.status === "loaded") ? 0 : void 0;
       if (feedAge !== void 0) result.stats.feedAgeDays = feedAge;
       if (feeds.length) result.stats.feedEntries = feeds.reduce((n, f) => n + (f.status === "loaded" ? f.entries ?? 0 : 0), 0);
       if (run && feeds.length) run.setMeta({ advisoryFeeds: feeds });
       const now = opts.now ?? /* @__PURE__ */ new Date();
-      const stale = local2.filter((f) => f.date && !Number.isNaN(Date.parse(f.date)) ? feedStale(f.date, now) : f.age_days > FEED_STALE_DAYS);
+      const stale = local2.filter((f) => {
+        const fetched = feedFetchedAt(f.origin);
+        if (fetched !== void 0) return feedStale(fetched, now);
+        return f.date && !Number.isNaN(Date.parse(f.date)) ? feedStale(f.date, now) : f.age_days > FEED_STALE_DAYS;
+      });
       if (feedAge !== void 0 && stale.length) {
         const dirs = [...new Set(stale.map((f) => dirname(f.origin)))];
         gaps.push({
@@ -13132,11 +13277,15 @@ async function scanDeps(iocs, tree, run, opts = {}) {
       vulns.length = 0;
       vulns.push(...unique);
       result.stats.checkerRuns = groups.length - failed;
+      const handed = new Set(all);
+      let handedReal;
+      const wasHanded = (f) => handed.has(f) || (handedReal ??= new Set(all.map(realOr))).has(realOr(f));
+      const outside = [];
       let malicious = 0;
       for (const v of vulns) {
         const mal = v.advisories.filter((a) => (a.id ?? "").startsWith("MAL-"));
         if (!mal.length) {
-          backlog.push(v);
+          (wasHanded(v.file) ? backlog : outside).push(v);
           continue;
         }
         for (const a of mal) {
@@ -13156,13 +13305,25 @@ async function scanDeps(iocs, tree, run, opts = {}) {
       }
       result.stats.malicious = malicious;
       result.stats.vulnerable = backlog.length;
+      if (outside.length) {
+        const files = [...new Set(outside.map((v) => v.file))];
+        result.stats.vulnerableOutsideWalk = outside.length;
+        gaps.push({
+          surface: "deps",
+          what: `${outside.length} locked package version(s) with known CVEs in ${files.length} lockfile(s) under folders the walk skips (build outputs, virtualenvs): ${listed(files)}`,
+          why: "package-checker read them in a project's run, but they are not counted as your projects' backlog nor planned for a fix (deps-vulnerabilities.json, outsideWalk)",
+          fix: "if one is your code, scan its folder with --roots <it>"
+        });
+      }
+      const skipped = new Set(outside);
       if (run)
         run.write("deps-vulnerabilities.json", {
           checker: `package-checker.sh ${PACKAGE_CHECKER_VERSION}`,
           ref: PACKAGE_CHECKER_REF,
           sha256: PACKAGE_CHECKER_SHA256,
           sources: feeds,
-          vulnerabilities: vulns
+          vulnerabilities: vulns.filter((v) => !skipped.has(v)),
+          outsideWalk: outside
         });
       if (backlog.length) {
         const by = (sev) => backlog.filter((v) => v.severity === sev).length;
@@ -13323,7 +13484,7 @@ var Gh = class {
 
 // src/scan/xprotect.ts
 import { existsSync as existsSync13, readFileSync as readFileSync14, statSync as statSync12 } from "fs";
-import { basename as basename7, join as join15 } from "path";
+import { basename as basename7, join as join16 } from "path";
 var XPROTECT_BUNDLE = "/Library/Apple/System/Library/CoreServices/XProtect.bundle";
 var XPROTECT_STALE_DAYS = 30;
 var XPR_PREDICATE = 'subsystem == "com.apple.XProtectFramework.PluginAPI" && category == "XPEvent.structured"';
@@ -13337,19 +13498,19 @@ function parseXProtectVersion(text) {
 }
 async function detectXProtect(runner2, opts = {}) {
   const bundle = opts.bundle ?? XPROTECT_BUNDLE;
-  const res = join15(bundle, "Contents/Resources");
-  const rules = ["XProtect.yara", "XPScripts.yr"].map((n) => join15(res, n)).filter((p) => existsSync13(p));
+  const res = join16(bundle, "Contents/Resources");
+  const rules = ["XProtect.yara", "XPScripts.yr"].map((n) => join16(res, n)).filter((p) => existsSync13(p));
   if (!existsSync13(bundle)) return { bundle, rules, missing: `no XProtect bundle at ${bundle}` };
   const v = await runner2("xprotect", ["version"], { timeoutMs: 15e3 });
   let { version, installed: installed2 } = v.ok ? parseXProtectVersion(v.stdout) : {};
   if (!version) {
     try {
-      const plist = readFileSync14(join15(bundle, "Contents/Info.plist"), "utf8");
+      const plist = readFileSync14(join16(bundle, "Contents/Info.plist"), "utf8");
       version = /<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>/.exec(plist)?.[1];
     } catch {
     }
     if (!version) {
-      const p = await runner2("plutil", ["-extract", "CFBundleShortVersionString", "raw", "-o", "-", join15(bundle, "Contents/Info.plist")], {
+      const p = await runner2("plutil", ["-extract", "CFBundleShortVersionString", "raw", "-o", "-", join16(bundle, "Contents/Info.plist")], {
         timeoutMs: 1e4
       });
       if (p.ok) version = p.stdout.trim() || void 0;
@@ -13585,7 +13746,7 @@ ${r.stderr}`;
         `${key}=${value}`
       );
   }
-  for (const [name, apps] of REALTIME_TOOLS) if (opts.appDirs.some((d) => apps.some((a) => existsSync13(join15(d, a))))) hardening.realtimeTools.push(name);
+  for (const [name, apps] of REALTIME_TOOLS) if (opts.appDirs.some((d) => apps.some((a) => existsSync13(join16(d, a))))) hardening.realtimeTools.push(name);
   return { findings, gaps, hardening };
 }
 
@@ -13708,7 +13869,7 @@ async function doctor(runner2, opts = {}) {
       detail: xp.missing ? xp.missing : `XProtect ${xp.version ?? "?"}${xp.installed ? `, installed ${xp.installed.slice(0, 10)}` : ""}${xp.ageDays !== void 0 ? ` (${xp.ageDays} days old)` : ""}; ${xp.rules.length} rule file(s)${yara.ok ? "" : " (yara is needed to run them)"}`,
       fix: stale ? "turn on Install Security Responses and system files in Software Update (or sudo softwareupdate --background-critical)" : void 0
     });
-    const { hardening: h } = await hardeningFindings(runner2, { appDirs: opts.appDirs ?? ["/Applications", join16(homedir3(), "Applications")] });
+    const { hardening: h } = await hardeningFindings(runner2, { appDirs: opts.appDirs ?? ["/Applications", join17(homedir3(), "Applications")] });
     const unknown = (v) => v ?? "unknown (could not be read)";
     out2.push({
       check: "gatekeeper",
@@ -13756,16 +13917,16 @@ function formatDoctor(lines) {
 }
 
 // src/fix.ts
-import { existsSync as existsSync16, mkdirSync as mkdirSync7, readFileSync as readFileSync17, realpathSync as realpathSync3, writeFileSync as writeFileSync6 } from "fs";
-import { basename as basename10, dirname as dirname4, join as join19, relative as relative4, sep as sep4 } from "path";
+import { existsSync as existsSync16, mkdirSync as mkdirSync7, readFileSync as readFileSync17, realpathSync as realpathSync4, writeFileSync as writeFileSync6 } from "fs";
+import { basename as basename10, dirname as dirname4, join as join20, relative as relative4, sep as sep4 } from "path";
 
 // src/fixes.ts
 import { existsSync as existsSync15, readFileSync as readFileSync16 } from "fs";
-import { basename as basename9, dirname as dirname3, join as join18, relative as relative3 } from "path";
+import { basename as basename9, dirname as dirname3, join as join19, relative as relative3 } from "path";
 
 // src/vulns.ts
 import { existsSync as existsSync14, readFileSync as readFileSync15, statSync as statSync13 } from "fs";
-import { basename as basename8, dirname as dirname2, join as join17, relative as relative2, resolve as resolve2, sep as sep3 } from "path";
+import { basename as basename8, dirname as dirname2, join as join18, relative as relative2, resolve as resolve2, sep as sep3 } from "path";
 var TIERS = ["P0", "P1", "P2", "P3"];
 var EPSS_P1 = 0.1;
 var FIXTURE_SEGMENTS = /* @__PURE__ */ new Set(["test-fixtures", "test_fixtures", "fixtures", "__fixtures__", "testdata", "test-data", "test_data"]);
@@ -13813,37 +13974,40 @@ function pickFix(current2, fixes) {
 }
 var TOOL_SEGMENTS = /* @__PURE__ */ new Set([".tmp", "Caches", ".cache"]);
 var VENDORED_SEGMENTS = /* @__PURE__ */ new Set(["node_modules", "site-packages", "dist-packages", ".venv", "venv", ".tox", ".pnpm-store", "bower_components", "vendor"]);
-function projectOf(lockfile, home, cache = /* @__PURE__ */ new Map()) {
+function projectOf(lockfile, home, cache = /* @__PURE__ */ new Map(), roots = []) {
   const dir = dirname2(resolve2(lockfile));
   const hit3 = cache.get(dir);
   if (hit3) return hit3;
-  const info = classify(dir, home);
+  const info = classify(dir, home, roots);
   cache.set(dir, info);
   return info;
 }
 function gitRoot(dir, stop) {
   let d = dir;
   for (let i = 0; i < 40; i++) {
-    if (existsSync14(join17(d, ".git"))) return d;
+    if (existsSync14(join18(d, ".git"))) return d;
     const up = dirname2(d);
     if (up === d || d === stop) return void 0;
     d = up;
   }
   return void 0;
 }
-function classify(dir, home) {
+var inside = (dir, base2) => dir === base2 || dir.startsWith(base2.endsWith(sep3) ? base2 : base2 + sep3);
+function classify(dir, home, roots) {
   const parts = dir.split(sep3).filter(Boolean);
   const vi = parts.findIndex((p) => VENDORED_SEGMENTS.has(p));
   if (vi >= 0) return { root: dir, kind: "vendored" };
-  const fi = parts.findIndex((p) => FIXTURE_SEGMENTS.has(p));
-  if (fi >= 0) return { root: sep3 + parts.slice(0, fi + 1).join(sep3), kind: "fixture" };
-  const inHome = home && (dir === home || dir.startsWith(home.endsWith(sep3) ? home : home + sep3));
+  const base2 = gitRoot(dir, home) ?? roots.map((r) => resolve2(r)).filter((r) => inside(dir, r)).sort((a, b) => b.length - a.length)[0] ?? (home && inside(dir, home) ? home : dir);
+  const below = relative2(base2, dir).split(sep3).filter(Boolean);
+  const fi = below.findIndex((p) => FIXTURE_SEGMENTS.has(p));
+  if (fi >= 0) return { root: join18(base2, ...below.slice(0, fi + 1)), kind: "fixture" };
+  const inHome = home && inside(dir, home);
   const rel = inHome && home ? relative2(home, dir).split(sep3).filter(Boolean) : parts;
   if (inHome && (rel[0]?.startsWith(".") || rel[0] === "Library") || rel.some((p) => TOOL_SEGMENTS.has(p))) return { root: dir, kind: "tool" };
   const wt = /^(.*?)[/\\](?:\.claude[/\\]worktrees|\.worktrees)[/\\]([^/\\]+)/.exec(dir);
   if (wt) return { root: wt[0], kind: "worktree", mainRepo: wt[1] };
   const root = gitRoot(dir, home) ?? dir;
-  const dotGit = join17(root, ".git");
+  const dotGit = join18(root, ".git");
   try {
     if (existsSync14(dotGit) && statSync13(dotGit).isFile()) {
       const gitdir = /^gitdir:\s*(.+)$/m.exec(readFileSync15(dotGit, "utf8"))?.[1]?.trim();
@@ -13946,36 +14110,36 @@ function declaredDeps(lockfile) {
     }
   };
   if (["package-lock.json", "npm-shrinkwrap.json", "pnpm-lock.yaml", "yarn.lock", "bun.lock"].includes(name)) {
-    fromPackageJson(m, json2(join17(dir, "package.json")));
+    fromPackageJson(m, json2(join18(dir, "package.json")));
     if (name === "pnpm-lock.yaml") pnpmImporters(m, readText(lockfile) ?? "");
     if (name === "package-lock.json" || name === "npm-shrinkwrap.json") {
       const lock = json2(lockfile);
       for (const [k, v] of Object.entries(lock?.packages ?? {})) if (!k.includes("node_modules")) fromPackageJson(m, v);
     }
   } else if (["uv.lock", "poetry.lock", "pdm.lock"].includes(name)) {
-    fromPyproject(m, readText(join17(dir, "pyproject.toml")) ?? "");
+    fromPyproject(m, readText(join18(dir, "pyproject.toml")) ?? "");
   } else if (name === "Pipfile.lock") {
-    fromTomlTables(m, readText(join17(dir, "Pipfile")) ?? "", { packages: "direct", "dev-packages": "dev" }, normPy);
+    fromTomlTables(m, readText(join18(dir, "Pipfile")) ?? "", { packages: "direct", "dev-packages": "dev" }, normPy);
   } else if (/^requirements.*\.txt$/.test(name)) {
     const rel = /dev|test|lint/i.test(name) ? "dev" : "direct";
     for (const x of (readText(lockfile) ?? "").matchAll(/^[ \t]*([A-Za-z0-9][A-Za-z0-9_.-]*)/gm)) add2(m, normPy(x[1]), rel);
   } else if (name === "Cargo.lock") {
-    fromTomlTables(m, readText(join17(dir, "Cargo.toml")) ?? "", {
+    fromTomlTables(m, readText(join18(dir, "Cargo.toml")) ?? "", {
       dependencies: "direct",
       "workspace.dependencies": "direct",
       "dev-dependencies": "dev",
       "build-dependencies": "dev"
     });
   } else if (name === "go.sum" || name === "go.mod") {
-    for (const x of (readText(join17(dir, "go.mod")) ?? "").matchAll(/^\s*(?:require\s+)?([a-z0-9][^\s]*\.[^\s]+)\s+v\S+(\s*\/\/\s*indirect)?/gm))
+    for (const x of (readText(join18(dir, "go.mod")) ?? "").matchAll(/^\s*(?:require\s+)?([a-z0-9][^\s]*\.[^\s]+)\s+v\S+(\s*\/\/\s*indirect)?/gm))
       if (!x[2]) add2(m, x[1], "direct");
   } else if (name === "composer.lock") {
-    const j = json2(join17(dir, "composer.json"));
+    const j = json2(join18(dir, "composer.json"));
     for (const n of Object.keys(j?.require ?? {})) add2(m, n, "direct");
     for (const n of Object.keys(j?.["require-dev"] ?? {})) add2(m, n, "dev");
   } else if (name === "Gemfile.lock") {
     let dev = false;
-    for (const line of (readText(join17(dir, "Gemfile")) ?? "").split("\n")) {
+    for (const line of (readText(join18(dir, "Gemfile")) ?? "").split("\n")) {
       if (/^\s*group\b.*\bdo\b/.test(line)) dev = !/:production|:default/.test(line);
       else if (/^\s*end\b/.test(line)) dev = false;
       const g = /^\s*gem\s+["']([^"']+)["']/.exec(line);
@@ -14029,7 +14193,7 @@ function rankVulnerabilities(vulns, input = {}) {
     );
     const unfixed = advisories.filter((a) => !a.fix).map((a) => a.cve || a.ghsa || a.id || "?");
     const severity = (v.severity || advisories.map((a) => a.severity ?? "").sort((a, b) => (SEVERITY_RANK[b] ?? 0) - (SEVERITY_RANK[a] ?? 0))[0] || "unknown").toLowerCase();
-    const info = projectOf(v.file, input.home, cache);
+    const info = projectOf(v.file, input.home, cache, input.roots);
     if (!declared.has(v.file)) declared.set(v.file, info.kind === "own" || info.kind === "worktree" ? declaredDeps(v.file) : /* @__PURE__ */ new Map());
     const base2 = {
       name: v.name,
@@ -14210,7 +14374,7 @@ function commandFor(m, s, lockfile) {
     case "npm":
       return direct ? { command: `npm install ${s.name}@${s.to}${dev ? " --save-dev" : ""}` } : { ...pin(`${s.name}@${from2}`, s.to, 'package.json "overrides"', ["overrides"]), finally: "npm install" };
     case "pnpm": {
-      const ws = existsSync15(join18(dir, "pnpm-workspace.yaml"));
+      const ws = existsSync15(join19(dir, "pnpm-workspace.yaml"));
       return direct ? { command: `pnpm up${ws ? " -r" : ""} ${s.name}@${s.to}` } : {
         ...pin(`${s.name}@${from2}`, s.to, ws ? 'pnpm-workspace.yaml "overrides" (or package.json "pnpm.overrides")' : 'package.json "pnpm.overrides"', [
           "pnpm",
@@ -14330,7 +14494,7 @@ function renderFixes(plans, r) {
     out2.push(`## ${p.name}: \`${p.root}\``, "");
     if (p.kind !== "own")
       out2.push(
-        `This is ${p.kind === "worktree" ? `a git worktree${p.mainRepo ? ` of \`${p.mainRepo}\`` : ""}: fix the main checkout` : `a ${p.kind} folder: update the tool that owns it`} rather than this copy.`,
+        p.kind === "fixture" ? "These are test fixtures, vulnerable on purpose: nothing to fix." : `This is ${p.kind === "worktree" ? `a git worktree${p.mainRepo ? ` of \`${p.mainRepo}\`` : ""}: fix the main checkout` : `a ${p.kind} folder: update the tool that owns it`} rather than this copy.`,
         ""
       );
     if (!steps && !p.lockfiles.some((l) => l.unfixed.length)) out2.push("Nothing at P0-P2.", "");
@@ -14502,7 +14666,7 @@ function stamp(d) {
 }
 var real = (p) => {
   try {
-    return realpathSync3(p);
+    return realpathSync4(p);
   } catch {
     return p;
   }
@@ -14510,7 +14674,8 @@ var real = (p) => {
 var KIND_REFUSAL = {
   worktree: (p) => `${p.root} is a git worktree${p.mainRepo ? ` of ${p.mainRepo}: fix the main checkout (--project ${p.mainRepo})` : ": fix the main checkout"}`,
   tool: (p) => `${p.root} belongs to a tool, a cache or a plugin: update the tool that owns it, ultraguard does not fix it`,
-  vendored: (p) => `${p.root} is a vendored copy (node_modules, a virtualenv): update the package that ships it, ultraguard does not fix it`
+  vendored: (p) => `${p.root} is a vendored copy (node_modules, a virtualenv): update the package that ships it, ultraguard does not fix it`,
+  fixture: (p) => `${p.root} holds test fixtures (vulnerable on purpose): ultraguard does not fix them`
 };
 async function prepare(ranked, opts, deps) {
   const { runner: runner2 } = deps;
@@ -14577,10 +14742,10 @@ async function prepare(ranked, opts, deps) {
   const branch = `ultraguard/fix-${now.day}-${commit.slice(0, 7)}`;
   if (await exists(`refs/heads/${branch}`))
     throw new UsageError(`fix refused: the branch ${branch} already exists in ${repo}: finish or drop that fix first (git -C ${repo} branch -D ${branch})`);
-  const worktree = join19(deps.state, "fixes", `${basename10(repo)}-${now.minute}`);
+  const worktree = join20(deps.state, "fixes", `${basename10(repo)}-${now.minute}`);
   if (existsSync16(worktree))
     throw new UsageError(`fix refused: ${worktree} already exists: wait a minute, or remove it (git -C ${repo} worktree remove ${worktree})`);
-  const inWt = (p) => join19(worktree, relative4(real(repo), real(p)));
+  const inWt = (p) => join20(worktree, relative4(real(repo), real(p)));
   const actions = [];
   const expected = /* @__PURE__ */ new Set();
   let n = 0;
@@ -14598,7 +14763,7 @@ async function prepare(ranked, opts, deps) {
     expected.add(at(basename10(l.lockfile)));
     for (const m of MANIFEST[l.manager] ?? []) expected.add(at(m));
     for (const s of steps) if (s.edit) expected.add(at(s.edit.file));
-    if (l.manager === "pnpm" && steps.some((s) => s.edit) && existsSync16(join19(l.dir, "pnpm-workspace.yaml")) && hasWorkspaceOverrides(join19(l.dir, "pnpm-workspace.yaml")))
+    if (l.manager === "pnpm" && steps.some((s) => s.edit) && existsSync16(join20(l.dir, "pnpm-workspace.yaml")) && hasWorkspaceOverrides(join20(l.dir, "pnpm-workspace.yaml")))
       expected.add(at("pnpm-workspace.yaml"));
     if (steps.some((s) => / -r /.test(s.command)))
       notes.push(`${rel || "."}: pnpm up -r also changes the package.json of the workspace packages that declare the package`);
@@ -14637,18 +14802,18 @@ function applyEdit(step, dir) {
   const e = step.edit;
   if (!e) return;
   if (!e.field) {
-    editLine(join19(dir, e.file), e.key, e.value);
+    editLine(join20(dir, e.file), e.key, e.value);
     return;
   }
-  const ws = join19(dir, "pnpm-workspace.yaml");
+  const ws = join20(dir, "pnpm-workspace.yaml");
   if (e.field.join(".") === "pnpm.overrides" && existsSync16(ws) && editWorkspaceOverrides(ws, e.key, e.value)) return;
-  editJson(join19(dir, e.file), e.field, e.key, e.value);
+  editJson(join20(dir, e.file), e.field, e.key, e.value);
 }
 function detectTest(dir) {
-  const has = (f) => existsSync16(join19(dir, f));
+  const has = (f) => existsSync16(join20(dir, f));
   const read2 = (f) => {
     try {
-      return readFileSync17(join19(dir, f), "utf8");
+      return readFileSync17(join20(dir, f), "utf8");
     } catch {
       return "";
     }
@@ -14710,7 +14875,7 @@ ${r.stderr}`);
   const before = new Set(
     (project?.items ?? []).flatMap((i) => adv(rel(i.file), i.name, i.version, [...i.cves, ...i.ghsas])).map((x) => `${x.lockfile}|${x.name}|${x.id}`)
   );
-  const checker2 = deps.checker ?? defaultChecker(runner2, join19(run.dir, "package-checker", `fix-${record.name}`), { dataDir: feedDir(deps.state) });
+  const checker2 = deps.checker ?? defaultChecker(runner2, join20(run.dir, "package-checker", `fix-${record.name}`), { dataDir: feedDir(deps.state) });
   const c = await checker2(record.worktree);
   if (!c.ok) record.recheck = { ok: false, error: c.error ?? "package-checker failed", closed: [], remaining: [], introduced: [] };
   else if (c.warnings?.length) record.recheck = { ok: false, error: `incomplete: ${c.warnings.join("; ")}`, closed: [], remaining: [], introduced: [] };
@@ -15335,7 +15500,7 @@ async function searchNews(run, opts = {}) {
 
 // src/run.ts
 import { existsSync as existsSync17, mkdirSync as mkdirSync9, readFileSync as readFileSync19 } from "fs";
-import { join as join20, resolve as resolve4 } from "path";
+import { join as join21, resolve as resolve4 } from "path";
 var Run = class {
   dir;
   constructor(dir) {
@@ -15343,7 +15508,7 @@ var Run = class {
     mkdirSync9(this.dir, { recursive: true });
   }
   path(name) {
-    return join20(this.dir, name);
+    return join21(this.dir, name);
   }
   read(name, fallback) {
     const p = this.path(name);
@@ -15979,7 +16144,7 @@ async function scanGithub(iocs, runner2, opts = {}) {
   accountRes.finishedAt = (/* @__PURE__ */ new Date()).toISOString();
   let repos;
   let allListed;
-  let listed = true;
+  let listed2 = true;
   if (opts.repos?.length) {
     const got = await mapPool(opts.repos, 8, (r) => gh.api(`repos/${r}`));
     repos = got.filter((g) => g.ok && g.data).map((g) => g.data);
@@ -15988,11 +16153,11 @@ async function scanGithub(iocs, runner2, opts = {}) {
         reported.add(`repos/${opts.repos[i]}`);
         repG.push({ surface: "github:repos", what: opts.repos[i], why: g.error ?? `HTTP ${g.status}` });
       }
-    listed = repos.length > 0;
+    listed2 = repos.length > 0;
   } else {
     const list = await gh.paged("user/repos?affiliation=owner,collaborator,organization_member", { maxPages: 50 });
     listGap(repG, "github:repos", "the list of your repositories", list, "user/repos");
-    listed = list.ok;
+    listed2 = list.ok;
     allListed = list.data ?? [];
     repos = allListed.filter((r) => r.permissions?.push && !r.archived);
     repos.sort((a, b) => String(b.pushed_at ?? "").localeCompare(String(a.pushed_at ?? "")));
@@ -16612,7 +16777,7 @@ async function scanGithub(iocs, runner2, opts = {}) {
     const reads = poolLog.filter((l) => l.path.startsWith(`repos/${r}/`));
     return reads.length > 0 && reads.every((l) => !l.answered);
   });
-  reposRes.scanned = listed && !(repos.length > 0 && unread.length === repos.length);
+  reposRes.scanned = listed2 && !(repos.length > 0 && unread.length === repos.length);
   if (unread.length)
     repG.push({
       surface: "github:repos",
@@ -16705,13 +16870,13 @@ async function scanGithub(iocs, runner2, opts = {}) {
 
 // src/scan/host.ts
 import { createHash as createHash5 } from "crypto";
-import { closeSync as closeSync7, existsSync as existsSync19, lstatSync as lstatSync5, openSync as openSync7, readdirSync as readdirSync14, readFileSync as readFileSync21, readSync as readSync6, realpathSync as realpathSync5, statSync as statSync15 } from "fs";
+import { closeSync as closeSync8, existsSync as existsSync19, lstatSync as lstatSync6, openSync as openSync8, readdirSync as readdirSync15, readFileSync as readFileSync21, readSync as readSync7, realpathSync as realpathSync6, statSync as statSync15 } from "fs";
 import { homedir as homedir5, platform, tmpdir as tmpdir5 } from "os";
-import { basename as basename14, dirname as dirname6, join as join24 } from "path";
+import { basename as basename14, dirname as dirname6, join as join25 } from "path";
 
 // src/scan/agents.ts
-import { closeSync as closeSync5, existsSync as existsSync18, openSync as openSync5, readdirSync as readdirSync11, readFileSync as readFileSync20, readSync as readSync4, statSync as statSync14 } from "fs";
-import { basename as basename11, dirname as dirname5, join as join21, resolve as resolve5 } from "path";
+import { closeSync as closeSync6, existsSync as existsSync18, openSync as openSync6, readdirSync as readdirSync12, readFileSync as readFileSync20, readSync as readSync5, statSync as statSync14 } from "fs";
+import { basename as basename11, dirname as dirname5, join as join22, resolve as resolve5 } from "path";
 var MAX = 2 * 1024 * 1024;
 function readJson4(p) {
   try {
@@ -16735,14 +16900,14 @@ function isBinaryExecutable(p) {
 function readHead(p, bytes, encoding = "utf8") {
   let fd;
   try {
-    fd = openSync5(p, "r");
+    fd = openSync6(p, "r");
     const buf = Buffer.alloc(bytes);
-    const n = readSync4(fd, buf, 0, bytes, 0);
+    const n = readSync5(fd, buf, 0, bytes, 0);
     return buf.subarray(0, n).toString(encoding);
   } catch {
     return void 0;
   } finally {
-    if (fd !== void 0) closeSync5(fd);
+    if (fd !== void 0) closeSync6(fd);
   }
 }
 function readText2(p) {
@@ -16769,22 +16934,22 @@ function agentConfigPaths(home) {
     "Library/Application Support/Code/User/settings.json",
     ".config/Code/User/mcp.json",
     ".config/Code/User/settings.json"
-  ].map((r) => join21(home, r)).filter((p) => existsSync18(p));
+  ].map((r) => join22(home, r)).filter((p) => existsSync18(p));
 }
 function pluginConfigPaths(home) {
   const out2 = [];
-  const cache = join21(home, ".claude/plugins/cache");
+  const cache = join22(home, ".claude/plugins/cache");
   for (const market of listDir(cache))
-    for (const plugin of listDir(join21(cache, market)))
-      for (const version of listDir(join21(cache, market, plugin)).slice(0, 20)) {
-        const root = join21(cache, market, plugin, version);
-        for (const rel of ["hooks/hooks.json", ".mcp.json"]) if (existsSync18(join21(root, rel))) out2.push({ path: join21(root, rel), root });
+    for (const plugin of listDir(join22(cache, market)))
+      for (const version of listDir(join22(cache, market, plugin)).slice(0, 20)) {
+        const root = join22(cache, market, plugin, version);
+        for (const rel of ["hooks/hooks.json", ".mcp.json"]) if (existsSync18(join22(root, rel))) out2.push({ path: join22(root, rel), root });
       }
   return out2.slice(0, 500);
 }
 function listDir(d) {
   try {
-    return readdirSync11(d).filter((n) => !n.startsWith("."));
+    return readdirSync12(d).filter((n) => !n.startsWith("."));
   } catch {
     return [];
   }
@@ -16798,7 +16963,7 @@ function projectConfigPaths(repo) {
     ".cursor/hooks.json",
     ".vscode/mcp.json",
     ".gemini/settings.json"
-  ].map((r) => join21(repo, r)).filter((p) => existsSync18(p));
+  ].map((r) => join22(repo, r)).filter((p) => existsSync18(p));
 }
 var FLAG_WITH_VALUE = /* @__PURE__ */ new Set([
   "--registry",
@@ -16948,13 +17113,13 @@ var INSTRUCTION_FILES = [
 ];
 var NESTED_INSTRUCTIONS = /* @__PURE__ */ new Set(["CLAUDE.md", "AGENTS.md", "GEMINI.md", "CLAUDE.local.md"]);
 function steeringFiles(dir) {
-  return [...ruleFiles(join21(dir, ".cursor/rules")), ...ruleFiles(join21(dir, ".claude/rules")), ...ruleFiles(join21(dir, ".github/instructions"))];
+  return [...ruleFiles(join22(dir, ".cursor/rules")), ...ruleFiles(join22(dir, ".claude/rules")), ...ruleFiles(join22(dir, ".github/instructions"))];
 }
 function commandingFiles(dir) {
   return [
-    ...ruleFiles(join21(dir, ".claude/commands")),
-    ...ruleFiles(join21(dir, ".claude/agents")),
-    ...listDir(join21(dir, ".claude/skills")).slice(0, 200).map((s) => join21(dir, ".claude/skills", s, "SKILL.md"))
+    ...ruleFiles(join22(dir, ".claude/commands")),
+    ...ruleFiles(join22(dir, ".claude/agents")),
+    ...listDir(join22(dir, ".claude/skills")).slice(0, 200).map((s) => join22(dir, ".claude/skills", s, "SKILL.md"))
   ];
 }
 function projectRoot(config, clones) {
@@ -17096,13 +17261,13 @@ function scanAgents(home, clones, m, opts = {}) {
   let instructionFiles = 0;
   const steering = /* @__PURE__ */ new Set();
   const commanding = /* @__PURE__ */ new Set();
-  for (const d of [join21(home, ".claude"), ...clones]) {
-    for (const f of [...INSTRUCTION_FILES.map((x) => join21(d, x)), ...steeringFiles(d)]) steering.add(f);
+  for (const d of [join22(home, ".claude"), ...clones]) {
+    for (const f of [...INSTRUCTION_FILES.map((x) => join22(d, x)), ...steeringFiles(d)]) steering.add(f);
     for (const f of commandingFiles(d)) commanding.add(f);
   }
-  for (const f of [join21(home, ".codex/AGENTS.md"), join21(home, ".gemini/GEMINI.md")]) steering.add(f);
-  for (const root of [join21(home, ".claude/skills"), join21(home, ".agents/skills")])
-    for (const s of listDir(root).slice(0, 200)) commanding.add(join21(root, s, "SKILL.md"));
+  for (const f of [join22(home, ".codex/AGENTS.md"), join22(home, ".gemini/GEMINI.md")]) steering.add(f);
+  for (const root of [join22(home, ".claude/skills"), join22(home, ".agents/skills")])
+    for (const s of listDir(root).slice(0, 200)) commanding.add(join22(root, s, "SKILL.md"));
   for (const f of (opts.files ?? []).filter((x) => NESTED_INSTRUCTIONS.has(basename11(x))).slice(0, 2e3)) steering.add(f);
   for (const p of [...steering, ...commanding]) {
     const text = existsSync18(p) ? readText2(p) : void 0;
@@ -17180,30 +17345,30 @@ function scriptSignals(path, home, content = [], depth = 0) {
 }
 function ruleFiles(dir) {
   try {
-    return readdirSync11(dir).filter((f) => /\.(mdc|md)$/.test(f)).slice(0, 200).map((f) => join21(dir, f));
+    return readdirSync12(dir).filter((f) => /\.(mdc|md)$/.test(f)).slice(0, 200).map((f) => join22(dir, f));
   } catch {
     return [];
   }
 }
 
 // src/scan/macos.ts
-import { lstatSync as lstatSync3, readdirSync as readdirSync12 } from "fs";
-import { basename as basename12, join as join22 } from "path";
+import { lstatSync as lstatSync4, readdirSync as readdirSync13 } from "fs";
+import { basename as basename12, join as join23 } from "path";
 var MAX_APPS = 2e3;
 function listApps(dirs) {
   const out2 = [];
   const visit = (dir, depth) => {
     let names = [];
     try {
-      names = readdirSync12(dir);
+      names = readdirSync13(dir);
     } catch {
       return;
     }
     for (const n of names.sort()) {
       if (out2.length >= MAX_APPS) return;
-      const p = join22(dir, n);
+      const p = join23(dir, n);
       try {
-        const st = lstatSync3(p);
+        const st = lstatSync4(p);
         if (st.isSymbolicLink() || !st.isDirectory()) continue;
         if (n.endsWith(".app")) out2.push(p);
         else if (depth > 0 && !n.startsWith(".")) visit(p, depth - 1);
@@ -17248,7 +17413,7 @@ async function appFindings(runner2, dirs, opts) {
   const apps = await mapPool(listApps(dirs), 8, async (path) => {
     let changed = 0;
     try {
-      changed = changedMs(lstatSync3(path), opts.nowMs);
+      changed = changedMs(lstatSync4(path), opts.nowMs);
     } catch {
     }
     if (changed >= opts.sinceMs) recent.add(path);
@@ -17294,11 +17459,11 @@ async function appFindings(runner2, dirs, opts) {
 }
 
 // src/scan/stealer.ts
-import { closeSync as closeSync6, fstatSync, lstatSync as lstatSync4, openSync as openSync6, readdirSync as readdirSync13, readSync as readSync5, realpathSync as realpathSync4 } from "fs";
-import { basename as basename13, join as join23 } from "path";
+import { closeSync as closeSync7, fstatSync, lstatSync as lstatSync5, openSync as openSync7, readdirSync as readdirSync14, readSync as readSync6, realpathSync as realpathSync5 } from "fs";
+import { basename as basename13, join as join24 } from "path";
 var readdirOr2 = (d) => {
   try {
-    return readdirSync13(d);
+    return readdirSync14(d);
   } catch {
     return [];
   }
@@ -17306,14 +17471,14 @@ var readdirOr2 = (d) => {
 function head(p, n) {
   let fd;
   try {
-    fd = openSync6(p, "r");
+    fd = openSync7(p, "r");
     const buf = Buffer.alloc(n);
-    const got = readSync5(fd, buf, 0, n, 0);
+    const got = readSync6(fd, buf, 0, n, 0);
     return buf.subarray(0, got);
   } catch {
     return void 0;
   } finally {
-    if (fd !== void 0) closeSync6(fd);
+    if (fd !== void 0) closeSync7(fd);
   }
 }
 function binaryKind(p) {
@@ -17335,9 +17500,9 @@ function hiddenHomePrograms(home, items) {
   const out2 = [];
   for (const n of readdirOr2(home)) {
     if (!n.startsWith(".") || n === "." || n === "..") continue;
-    const p = join23(home, n);
+    const p = join24(home, n);
     try {
-      if (!lstatSync4(p).isFile()) continue;
+      if (!lstatSync5(p).isFile()) continue;
     } catch {
       continue;
     }
@@ -17354,17 +17519,17 @@ function hiddenHomePrograms(home, items) {
 }
 function appleLookalikeFolders(dirs) {
   const out2 = [];
-  for (const d of dirs) for (const n of readdirOr2(d)) if (/^\.com\.apple\./i.test(n)) out2.push(join23(d, n));
+  for (const d of dirs) for (const n of readdirOr2(d)) if (/^\.com\.apple\./i.test(n)) out2.push(join24(d, n));
   return out2;
 }
 function zipEntries(p, max = 2e4) {
   let fd;
   try {
-    fd = openSync6(p, "r");
+    fd = openSync7(p, "r");
     const size = fstatSync(fd).size;
     const tailLen = Math.min(size, 65557);
     const tail2 = Buffer.alloc(tailLen);
-    readSync5(fd, tail2, 0, tailLen, size - tailLen);
+    readSync6(fd, tail2, 0, tailLen, size - tailLen);
     let eocd = -1;
     for (let i = tailLen - 22; i >= 0; i--)
       if (tail2.readUInt32LE(i) === 101010256) {
@@ -17378,7 +17543,7 @@ function zipEntries(p, max = 2e4) {
     if ((cdOffset === 4294967295 || count === 65535) && eocd >= 20 && tail2.readUInt32LE(eocd - 20) === 117853008) {
       const rec = Number(tail2.readBigUInt64LE(eocd - 20 + 8));
       const z = Buffer.alloc(56);
-      readSync5(fd, z, 0, 56, rec);
+      readSync6(fd, z, 0, 56, rec);
       if (z.readUInt32LE(0) !== 101075792) return void 0;
       count = Number(z.readBigUInt64LE(32));
       cdSize = Number(z.readBigUInt64LE(40));
@@ -17386,7 +17551,7 @@ function zipEntries(p, max = 2e4) {
     }
     if (cdOffset + cdSize > size) return void 0;
     const cd = Buffer.alloc(Math.min(cdSize, 16 * 1024 * 1024));
-    readSync5(fd, cd, 0, cd.length, cdOffset);
+    readSync6(fd, cd, 0, cd.length, cdOffset);
     const names = [];
     let at = 0;
     for (let i = 0; i < count && names.length < max && at + 46 <= cd.length; i++) {
@@ -17401,7 +17566,7 @@ function zipEntries(p, max = 2e4) {
   } catch {
     return void 0;
   } finally {
-    if (fd !== void 0) closeSync6(fd);
+    if (fd !== void 0) closeSync7(fd);
   }
 }
 var STOLEN = /(^|\/)(Login Data|Cookies|Local State|Web Data|logins\.json|key4\.db|cookies\.sqlite)$|\.keychain(-db)?$|Safe Storage/i;
@@ -17418,7 +17583,7 @@ async function stagingArchives(runner2, dirs, opts) {
   for (const d of dirs) {
     let real2 = d;
     try {
-      real2 = realpathSync4(d);
+      real2 = realpathSync5(d);
     } catch {
     }
     if (!seen.has(real2)) level.push({ dir: d, root: d });
@@ -17435,7 +17600,7 @@ async function stagingArchives(runner2, dirs, opts) {
       }
       let list = [];
       try {
-        list = readdirSync13(dir, { withFileTypes: true });
+        list = readdirSync14(dir, { withFileTypes: true });
       } catch {
         continue;
       }
@@ -17446,12 +17611,12 @@ async function stagingArchives(runner2, dirs, opts) {
           stopped.add(root);
           break;
         }
-        const p = join23(dir, e.name);
+        const p = join24(dir, e.name);
         if (e.isDirectory()) {
           if (depth < 2 && !opts.skip(p)) next.push({ dir: p, root });
         } else if (e.isFile() && ARCHIVE.test(e.name) && !opts.skip(p))
           try {
-            if (changedMs(lstatSync4(p), opts.nowMs) >= opts.sinceMs) archives.push(p);
+            if (changedMs(lstatSync5(p), opts.nowMs) >= opts.sinceMs) archives.push(p);
           } catch {
           }
       }
@@ -17515,11 +17680,11 @@ function sha256File(p, max = Number.POSITIVE_INFINITY) {
   try {
     const st = statSync15(p);
     if (!st.isFile() || st.size > max) return void 0;
-    fd = openSync7(p, "r");
+    fd = openSync8(p, "r");
     const h = createHash5("sha256");
     const buf = Buffer.alloc(1024 * 1024);
     for (; ; ) {
-      const n = readSync6(fd, buf, 0, buf.length, null);
+      const n = readSync7(fd, buf, 0, buf.length, null);
       if (n <= 0) break;
       h.update(buf.subarray(0, n));
     }
@@ -17527,7 +17692,7 @@ function sha256File(p, max = Number.POSITIVE_INFINITY) {
   } catch {
     return void 0;
   } finally {
-    if (fd !== void 0) closeSync7(fd);
+    if (fd !== void 0) closeSync8(fd);
   }
 }
 var MAX_TEXT = 2 * 1024 * 1024;
@@ -17542,12 +17707,12 @@ function readText3(p, max = MAX_TEXT) {
 }
 var hitOf = iocHit;
 function startupDirs(home, os) {
-  if (os === "darwin") return [join24(home, "Library/LaunchAgents"), "/Library/LaunchAgents", "/Library/LaunchDaemons"];
+  if (os === "darwin") return [join25(home, "Library/LaunchAgents"), "/Library/LaunchAgents", "/Library/LaunchDaemons"];
   return [
-    join24(home, ".config/systemd/user"),
-    join24(home, ".local/share/systemd/user"),
-    join24(home, ".config/autostart"),
-    join24(home, ".config/environment.d"),
+    join25(home, ".config/systemd/user"),
+    join25(home, ".local/share/systemd/user"),
+    join25(home, ".config/autostart"),
+    join25(home, ".config/environment.d"),
     "/etc/systemd/system",
     "/etc/cron.d",
     "/etc/cron.hourly",
@@ -17565,26 +17730,26 @@ function startupDirs(home, os) {
 function defaultDropDirs(home) {
   return [
     ...dropFolders(home),
-    join24(home, "Library/Caches"),
+    join25(home, "Library/Caches"),
     "/Library/Caches",
-    join24(home, "Library/Application Support"),
-    join24(home, ".local/share"),
-    join24(home, ".local/bin"),
-    join24(home, ".config"),
-    join24(home, ".cache")
+    join25(home, "Library/Application Support"),
+    join25(home, ".local/share"),
+    join25(home, ".local/bin"),
+    join25(home, ".config"),
+    join25(home, ".cache")
   ];
 }
 var HOME_ANCHOR = /^(~|\$HOME|\$\{HOME\}|%USERPROFILE%)[/\\]/i;
-var realOr = (p) => {
+var realOr2 = (p) => {
   try {
-    return realpathSync5(p);
+    return realpathSync6(p);
   } catch {
     return p;
   }
 };
 var readdirOr3 = (d) => {
   try {
-    return readdirSync14(d);
+    return readdirSync15(d);
   } catch {
     return [];
   }
@@ -17600,7 +17765,7 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
   const inventory = { startupItems: [], credentials: [], recentExtensions: [], shellStartup: [] };
   const dropDirs = opts.dropDirs ?? defaultDropDirs(home);
   const startupFolders = opts.startupDirs ?? startupDirs(home, os);
-  const appDirs = opts.appDirs ?? ["/Applications", join24(home, "Applications")];
+  const appDirs = opts.appDirs ?? ["/Applications", join25(home, "Applications")];
   const M = {
     file: matchers(iocs, "file", "workflow_file"),
     hash: matchers(iocs, "sha256"),
@@ -17616,7 +17781,7 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
   const hashed = /* @__PURE__ */ new Set();
   const fileSeen = /* @__PURE__ */ new Set();
   const reportFile = (p, m, isDir = false) => {
-    const real2 = realOr(p);
+    const real2 = realOr2(p);
     if (fileSeen.has(p) || fileSeen.has(real2)) return;
     fileSeen.add(p).add(real2);
     if (isDir) {
@@ -17654,10 +17819,10 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
   const probe = (p, m) => {
     const name = basename14(p);
     if (/[*?]/.test(dirname6(p))) return;
-    const hits = /[*?]/.test(name) ? readdirOr3(dirname6(p)).filter((n) => globRegex(name).test(n)).slice(0, 50).map((n) => join24(dirname6(p), n)) : [p];
+    const hits = /[*?]/.test(name) ? readdirOr3(dirname6(p)).filter((n) => globRegex(name).test(n)).slice(0, 50).map((n) => join25(dirname6(p), n)) : [p];
     for (const h of hits) {
       try {
-        const st = lstatSync5(h);
+        const st = lstatSync6(h);
         if (st.isDirectory()) reportFile(h, m, true);
         else if (st.isFile()) reportFile(h, m);
       } catch {
@@ -17669,47 +17834,67 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
     if (m.indicator.regex) continue;
     const raw = m.indicator.value.trim().replace(/[/\\]+$/, "");
     if (!raw) continue;
-    if (HOME_ANCHOR.test(raw)) probe(join24(home, raw.replace(HOME_ANCHOR, "").replace(/\\/g, "/")), m);
+    if (HOME_ANCHOR.test(raw)) probe(join25(home, raw.replace(HOME_ANCHOR, "").replace(/\\/g, "/")), m);
     else if (raw.startsWith("/")) {
       probe(raw, m);
       const other = /^\/(Users|home)\/[^/]+\/(.+)$/.exec(raw);
-      if (other && !raw.startsWith(`${home}/`)) probe(join24(home, other[2]), m);
+      if (other && !raw.startsWith(`${home}/`)) probe(join25(home, other[2]), m);
       if (/^\/(tmp|var)\//.test(raw)) probe(`/private${raw}`, m);
-    } else if (raw.includes("/")) probe(join24(home, raw), m);
+    } else if (raw.includes("/")) probe(join25(home, raw), m);
     else {
       nameDirs ??= [.../* @__PURE__ */ new Set([home, ...dropDirs, ...startupFolders])].flatMap((d) => [
         d,
-        ...readdirOr3(d).slice(0, 2e3).map((n) => join24(d, n)).filter((x) => {
+        ...readdirOr3(d).slice(0, 2e3).map((n) => join25(d, n)).filter((x) => {
           try {
-            return lstatSync5(x).isDirectory();
+            return lstatSync6(x).isDirectory();
           } catch {
             return false;
           }
         }).slice(0, 500)
       ]);
-      for (const d of nameDirs) probe(join24(d, raw), m);
+      for (const d of nameDirs) probe(join25(d, raw), m);
     }
   }
   if (M.file.length)
     for (const clone of tree.gitDirs) {
-      const nm = join24(clone, "node_modules");
-      const pkgs = readdirOr3(nm).slice(0, 5e3).flatMap((n) => n.startsWith("@") ? readdirOr3(join24(nm, n)).map((x) => join24(nm, n, x)) : [join24(nm, n)]);
+      const nm = join25(clone, "node_modules");
+      const pkgs = readdirOr3(nm).slice(0, 5e3).flatMap((n) => n.startsWith("@") ? readdirOr3(join25(nm, n)).map((x) => join25(nm, n, x)) : [join25(nm, n)]);
       const site = [".venv", "venv"].flatMap(
-        (v) => readdirOr3(join24(clone, v, "lib")).filter((x) => x.startsWith("python")).map((x) => join24(clone, v, "lib", x, "site-packages"))
+        (v) => readdirOr3(join25(clone, v, "lib")).filter((x) => x.startsWith("python")).map((x) => join25(clone, v, "lib", x, "site-packages"))
       );
       for (const dir of [...pkgs.slice(0, 5e3), ...site])
         for (const n of readdirOr3(dir).slice(0, 2e3)) {
-          const p = join24(dir, n);
+          const p = join25(dir, n);
           const m = M.file.find((x) => x.test(p));
           if (!m) continue;
           try {
-            const st = lstatSync5(p);
+            const st = lstatSync6(p);
             if (st.isFile()) reportFile(p, m);
             else if (st.isDirectory()) reportFile(p, m, true);
           } catch {
           }
         }
     }
+  if (M.file.length)
+    for (const dir of tree.huge ?? [])
+      for (const n of readdirOr3(dir)) {
+        const p = join25(dir, n);
+        const m = M.file.find((x) => x.test(p));
+        if (!m) continue;
+        try {
+          const st = lstatSync6(p);
+          if (st.isFile()) reportFile(p, m);
+          else if (st.isDirectory()) reportFile(p, m, true);
+        } catch {
+        }
+      }
+  if (tree.huge?.length)
+    gaps.push({
+      surface: "host",
+      what: `the files of ${tree.huge.length} folder(s) of more than ${MAX_DIR_ENTRIES.toLocaleString("en-US")} entries, beyond their names: ${listed(tree.huge)}`,
+      why: "a folder that large is a data set: its sub-folders, lockfiles and manifests were read, and its other files matched by name against the campaign's file indicators only (no hash, no content)",
+      fix: "scan such a folder with --roots <it> (a walk root has no entry limit)"
+    });
   if (tree.capped)
     gaps.push({
       surface: "host",
@@ -17737,7 +17922,7 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
     });
   }
   for (const dir of tree.vscodeDirs) {
-    const p = join24(dir, "tasks.json");
+    const p = join25(dir, "tasks.json");
     const text = existsSync19(p) ? readText3(p) : void 0;
     if (!text || !/"runOn"\s*:\s*"folderOpen"/.test(text)) continue;
     const line = text.split("\n").findIndex((l) => /folderOpen/.test(l)) + 1;
@@ -17790,11 +17975,11 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
       continue;
     }
     for (const name of readdirOr3(dir)) {
-      const p = join24(dir, name);
+      const p = join25(dir, name);
       if (/\.(d|wants|requires)$/.test(name)) {
         try {
           if (statSync15(p).isDirectory()) {
-            for (const n of readdirOr3(p).slice(0, 200)) startupFiles.push(join24(p, n));
+            for (const n of readdirOr3(p).slice(0, 200)) startupFiles.push(join25(p, n));
             continue;
           }
         } catch {
@@ -17924,7 +18109,7 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
       });
   }
   if (os === "darwin") {
-    const support = opts.supportDirs ?? [join24(home, "Library/Application Support"), ...opts.skipLive ? [] : ["/Library/Application Support"]];
+    const support = opts.supportDirs ?? [join25(home, "Library/Application Support"), ...opts.skipLive ? [] : ["/Library/Application Support"]];
     for (const d of appleLookalikeFolders(support))
       if (!fileSeen.has(d))
         findings.push({
@@ -17965,7 +18150,7 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
   findings.push(...rc.findings);
   inventory.shellStartup = rc.lines;
   findings.push(...configFindings(home, sinceMs, nowMs));
-  const traces = [".zsh_history", ".bash_history", ".local/share/fish/fish_history", ".python_history", ...shellStartupFiles(home)].map((f) => join24(home, f));
+  const traces = [".zsh_history", ".bash_history", ".local/share/fish/fish_history", ".python_history", ...shellStartupFiles(home)].map((f) => join25(home, f));
   traces.push("/etc/hosts");
   for (const p of traces) {
     const text = existsSync19(p) ? readText3(p, 20 * 1024 * 1024) : void 0;
@@ -18034,11 +18219,11 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
       );
       if (m) {
         findings.push(
-          hitOf(m, { subject: join24(dir, name), title: `Editor extension ${id}@${version} is installed`, evidence: { kind: "file", ref: join24(dir, name) } })
+          hitOf(m, { subject: join25(dir, name), title: `Editor extension ${id}@${version} is installed`, evidence: { kind: "file", ref: join25(dir, name) } })
         );
         continue;
       }
-      const entry = extensionEntryFile(join24(dir, name));
+      const entry = extensionEntryFile(join25(dir, name));
       if (!entry) continue;
       const c = M.content.find((x) => x.test(entry.text));
       if (c)
@@ -18111,13 +18296,13 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
   if (opts.hitRepos?.length) {
     const wanted = new Set(opts.hitRepos.map((r) => r.toLowerCase()));
     for (const dir of tree.gitDirs) {
-      const cfg = readText3(join24(dir, ".git/config")) ?? "";
+      const cfg = readText3(join25(dir, ".git/config")) ?? "";
       const urls = [...cfg.matchAll(/url\s*=\s*(\S+)/g)].map((x) => x[1] ?? "");
       const repo = urls.map((u) => /github\.com[:/]([^/]+\/[^/]+?)(?:\.git)?\/?$/.exec(u)?.[1]?.toLowerCase()).find((r) => r && wanted.has(r));
       if (!repo) continue;
       let fetched;
       try {
-        fetched = statSync15(join24(dir, ".git/FETCH_HEAD")).mtime.toISOString();
+        fetched = statSync15(join25(dir, ".git/FETCH_HEAD")).mtime.toISOString();
       } catch {
       }
       findings.push({
@@ -18126,7 +18311,7 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
         subject: dir,
         title: `Local clone of ${repo}, a repository the GitHub scan found hit${fetched ? ` (last fetch ${fetched})` : ""}`,
         at: fetched,
-        evidence: { kind: "file", ref: join24(dir, ".git/config") },
+        evidence: { kind: "file", ref: join25(dir, ".git/config") },
         key: `host|${dir}|clone|${repo}`
       });
     }
@@ -18304,7 +18489,7 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
     const beyond = Math.max(0, all.length - MAX_HASHED);
     const files = all.slice(0, MAX_HASHED).flatMap((t) => {
       try {
-        return statSync15(t).isDirectory() ? readdirOr3(t).slice(0, 500).map((n) => join24(t, n)) : [t];
+        return statSync15(t).isDirectory() ? readdirOr3(t).slice(0, 500).map((n) => join25(t, n)) : [t];
       } catch {
         return [];
       }
@@ -18424,7 +18609,7 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
     why: "not read: the background task database needs an admin (sfltool dumpbtm), and Safari keeps its extensions inside app bundles",
     fix: "System Settings > General > Login Items; Safari > Settings > Extensions"
   });
-  const pruned = Object.entries(tree.pruned ?? {}).sort((a, b) => b[1] - a[1]);
+  const pruned = Object.entries(tree.pruned ?? {}).filter(([n]) => n !== HUGE_DIRS).sort((a, b) => b[1] - a[1]);
   gaps.push({
     surface: "host",
     what: `files outside the scanned roots${pruned.length ? `, and inside skipped folders: ${pruned.slice(0, 8).map(([n, c]) => `${n} (${c})`).join(", ")}` : ""}`,
@@ -18437,7 +18622,7 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
 
 // src/scan/software.ts
 import { existsSync as existsSync20 } from "fs";
-import { join as join25 } from "path";
+import { join as join26 } from "path";
 var KEV_RECENT_DAYS = 30;
 var PRODUCTS = [
   { vendor: /^apple$/i, product: /macos|os x|multiple products|safari|webkit/i, system: "macOS" },
@@ -18486,7 +18671,7 @@ function parseSoftwareUpdate(text) {
   return out2;
 }
 async function appVersion(runner2, app) {
-  const r = await runner2("plutil", ["-extract", "CFBundleShortVersionString", "raw", join25(app, "Contents", "Info.plist")], { timeoutMs: 1e4 });
+  const r = await runner2("plutil", ["-extract", "CFBundleShortVersionString", "raw", join26(app, "Contents", "Info.plist")], { timeoutMs: 1e4 });
   return r.ok ? r.stdout.trim() || void 0 : void 0;
 }
 async function scanSoftware(opts) {
@@ -18543,7 +18728,7 @@ ${su.stderr}`;
   const wantedApps = new Set(PRODUCTS.flatMap((p) => p.apps ?? []));
   for (const name of wantedApps)
     for (const dir of opts.appsDirs) {
-      const path = join25(dir, `${name}.app`);
+      const path = join26(dir, `${name}.app`);
       if (!installed2.has(name) && existsSync20(path)) installed2.set(name, { path, version: await appVersion(runner2, path) });
     }
   res.stats.appsChecked = installed2.size;
@@ -18722,6 +18907,7 @@ async function assessVulnerabilities(backlog, run, deps) {
     kev: kevMap,
     epss: epss?.data,
     home: deps.home,
+    roots: deps.roots,
     now,
     feeds: {
       kev: kev?.data ? { fetchedAt: kev.fetchedAt, catalogVersion: kev.data.catalogVersion, stale: kev.stale } : void 0,
@@ -18852,92 +19038,6 @@ async function scanNpmPublishes(iocs, opts) {
       fix: "re-run scan deps later"
     });
   return { findings, gaps, stats, user };
-}
-
-// src/scan/walk.ts
-import { lstatSync as lstatSync6, readdirSync as readdirSync15 } from "fs";
-import { join as join26 } from "path";
-var PRUNE = /* @__PURE__ */ new Set([
-  "node_modules",
-  ".git",
-  "Library",
-  ".Trash",
-  ".cache",
-  ".npm",
-  ".pnpm-store",
-  ".yarn",
-  ".cargo",
-  ".rustup",
-  ".gradle",
-  ".m2",
-  ".venv",
-  "venv",
-  "__pycache__",
-  ".next",
-  "dist",
-  "build",
-  "target",
-  ".docker",
-  ".local",
-  "Pictures",
-  "Movies",
-  "Music",
-  "Photos Library.photoslibrary"
-]);
-var MAX_DIR_ENTRIES = 2e4;
-var HUGE_DIRS = "(folders of more than 20,000 entries: data sets)";
-function walk(roots, opts = {}) {
-  const maxDepth = opts.maxDepth ?? 6;
-  const maxEntries = opts.maxEntries ?? 4e5;
-  const maxDirEntries = opts.maxDirEntries ?? MAX_DIR_ENTRIES;
-  const out2 = { files: [], gitDirs: [], vscodeDirs: [], entries: 0, capped: false, unreadable: 0, pruned: {} };
-  const queue2 = roots.map((dir) => ({ dir, depth: 0 }));
-  for (let head2 = 0; head2 < queue2.length; head2++) {
-    const { dir, depth } = queue2[head2];
-    let names;
-    try {
-      names = readdirSync15(dir);
-    } catch {
-      out2.unreadable++;
-      continue;
-    }
-    if (depth > 0 && names.length > maxDirEntries) {
-      out2.pruned[HUGE_DIRS] = (out2.pruned[HUGE_DIRS] ?? 0) + 1;
-      continue;
-    }
-    for (const name of names) {
-      if (++out2.entries > maxEntries) {
-        out2.capped = true;
-        return out2;
-      }
-      const p = join26(dir, name);
-      if (name === ".git") {
-        out2.gitDirs.push(dir);
-        continue;
-      }
-      if (name === ".vscode") out2.vscodeDirs.push(p);
-      let st;
-      try {
-        st = lstatSync6(p);
-      } catch {
-        out2.unreadable++;
-        continue;
-      }
-      if (st.isSymbolicLink()) continue;
-      if (st.isDirectory()) {
-        if (PRUNE.has(name)) {
-          out2.pruned[name] = (out2.pruned[name] ?? 0) + 1;
-          continue;
-        }
-        if (depth + 1 > maxDepth) {
-          out2.pruned["(deeper than --depth)"] = (out2.pruned["(deeper than --depth)"] ?? 0) + 1;
-          continue;
-        }
-        queue2.push({ dir: p, depth: depth + 1 });
-      } else if (st.isFile()) out2.files.push(p);
-    }
-  }
-  return out2;
 }
 
 // src/version.ts
@@ -19440,6 +19540,7 @@ antivirus (--av-full): ${st.avScanned} file(s) scanned, ${st.avSkipped ?? 0} unc
       state: stateDir(argValue(a, "state")),
       runner,
       home: homedir7(),
+      roots,
       software: softwareScan
     });
     Object.assign(r2.result.stats, v.stats);
@@ -19836,7 +19937,7 @@ Run \`ultraguard --help\`.
 }
 function isStartedFile() {
   try {
-    return !!process.argv[1] && pathToFileURL(realpathSync6(process.argv[1])).href === import.meta.url;
+    return !!process.argv[1] && pathToFileURL(realpathSync7(process.argv[1])).href === import.meta.url;
   } catch {
     return false;
   }
