@@ -35,7 +35,7 @@ import { scanHost } from "./scan/host.js";
 import { walk, type WalkResult } from "./scan/walk.js";
 import { type Campaign, type IocFile, SURFACES, type Surface } from "./types.js";
 import { VERSION } from "./version.js";
-import { stateDir, watchCommit, watchPlan } from "./watch.js";
+import { EXIT_INCOMPLETE, stateDir, watchCommit, watchPlan } from "./watch.js";
 
 export const HELP = `ultraguard v${VERSION} (webindex ${ENGINE_VERSION})
 An AI antivirus for an agent: the agent finds attack news on the web, turns
@@ -85,6 +85,8 @@ SCAN FLAGS
   --set <name>          rules update: core (default, highest precision), extended or full
   --no-osv              deps: skip package-checker (OSV and GHSA feeds, malicious packages)
   --surfaces <list>     sweep: github,host,deps,cloud (default: all)
+  scan and sweep exit 20 when GitHub was asked for and could not be scanned
+  (logged out, every read refused): its verdict is UNKNOWN, never CLEAN.
   --limit <n>           search: hits to aim for (default 10)
 
 ROUTINE (watch)
@@ -199,6 +201,9 @@ function walkFor(a: CommandArgs): WalkResult {
   return walk(roots.length ? roots : [homedir()], { maxDepth: argInt(a, "depth", { min: 1, max: 20 }) ?? 6 });
 }
 
+/** Set by runScan when the GitHub surface was asked for and came back unscanned: sweep and scan then exit 20. */
+let githubBlind = false;
+
 async function runScan(surface: "github" | "host" | "deps" | "cloud", a: CommandArgs, run: Run, iocs: IocFile, tree?: () => WalkResult): Promise<string> {
   if (surface === "github") {
     const r = await scanGithub(iocs, runner, {
@@ -209,7 +214,17 @@ async function runScan(surface: "github" | "host" | "deps" | "cloud", a: Command
     const accF = run.recordSurface(r.account.result, r.account.findings, r.account.gaps);
     const repF = run.recordSurface(r.repos.result, r.repos.findings, r.repos.gaps);
     run.setMeta({ login: r.login, hitRepos: r.hitRepos });
-    return `github: ${r.repos.result.stats.repos ?? 0} repositories as ${r.login ?? "?"}; ${accF.length} account finding(s), ${repF.length} repository finding(s)`;
+    // Zero findings from a scan that read nothing must not read as clean.
+    const blind = [r.account, r.repos].filter((x) => !x.result.scanned);
+    if (blind.length) githubBlind = true;
+    if (blind.length === 2) {
+      const g = r.account.gaps[r.account.gaps.length - 1] ?? r.repos.gaps[0];
+      return `github: NOT SCANNED (${g ? `${g.what}: ${g.why}` : "gh failed"}). Fix: ${g?.fix ?? "gh auth login"}`;
+    }
+    const line = `github: ${r.repos.result.stats.repos ?? 0} repositories as ${r.login ?? "?"}; ${accF.length} account finding(s), ${repF.length} repository finding(s)`;
+    return blind.length
+      ? `${line}\n${blind.map((x) => `${x.result.surface} NOT SCANNED: ${x.gaps.find((g) => g.fix)?.what ?? "see gaps.json"}`).join("\n")}`
+      : line;
   }
   if (surface === "host") {
     // Stale signatures miss this month's malware: refresh them first (ClamAV and YARA-Forge, each only if older than 7 days).
@@ -385,8 +400,9 @@ async function dispatch(a: CommandArgs): Promise<number> {
       if (surface !== "github" && surface !== "host" && surface !== "deps" && surface !== "cloud")
         throw new UsageError("scan takes github, host, deps or cloud");
       const run = needRun(a);
+      githubBlind = false;
       out(await runScan(surface, a, run, needIocs(run)));
-      return EXIT_OK;
+      return githubBlind ? EXIT_INCOMPLETE : EXIT_OK;
     }
     case "sweep": {
       const run = needRun(a);
@@ -397,12 +413,13 @@ async function dispatch(a: CommandArgs): Promise<number> {
       const ORDER = ["github", "host", "deps", "cloud"] as const;
       const list = ORDER.filter((s) => !wanted.length || wanted.includes(s));
       let tree: WalkResult | undefined;
+      githubBlind = false;
       const shared = () => (tree ??= walkFor(a));
       // GitHub first: the host scan looks for local clones of the repositories it found hit.
       for (const s of list) out(await runScan(s, a, run, iocs, shared));
       const { verdicts: vs } = writeReport(run);
       out(`\n${vs.map((v) => `${v.surface.padEnd(15)} ${v.verdict}`).join("\n")}\n\nreport: ${run.path("REPORT.md")}`);
-      return EXIT_OK;
+      return githubBlind ? EXIT_INCOMPLETE : EXIT_OK;
     }
     case "report": {
       const run = needRun(a);

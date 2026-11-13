@@ -57,12 +57,15 @@ ultraguard doctor --probe                    # what this machine lets ultraguard
 `gh` must be logged in (`gh auth status`). Cloud checks run only for the CLIs
 (`aws`, `gcloud`, `az`) already logged in.
 
-**GitHub API budget.** A sweep costs about 10 REST calls per repository pushed
-to since the campaign started, and 1 per other repository (about 2,000 for
-200 active repositories), out of 5,000 an hour, and the search API
-allows 30 calls a minute. Run one sweep at a time, and keep some budget for
-judging the findings with `gh api` afterwards. A refused call is recorded as a
-coverage gap; `gh api rate_limit` shows what is left.
+**GitHub API budget.** A sweep costs up to about 16 REST calls per repository
+pushed to since the campaign started, 1 or 2 per other repository and 3 more
+per repository you administer (about 3,500 for 200 active repositories), out
+of 5,000 an hour; the search API allows 30 calls a minute (code search 10).
+Run one sweep at a time, and keep some budget for judging the findings with
+`gh api` afterwards. A refused call is recorded as a coverage gap; when the
+budget runs out the gap names the repositories left with the `--repos` to
+re-run. `gh api rate_limit` shows what is left. `scan github` and `sweep`
+exit 20 when GitHub could not be scanned at all (UNKNOWN, never CLEAN).
 
 ## Routing
 
