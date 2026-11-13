@@ -15,7 +15,8 @@ import type { Runner } from "../runner.js";
 import type { Finding, Gap, IocFile, SurfaceResult } from "../types.js";
 import { readJson, scanAgents } from "./agents.js";
 import { appFindings } from "./macos.js";
-import { antivirusPass, avTargetList, dropFolders, excludedBy, yaraPass } from "./antivirus.js";
+import { antivirusPass, avTargetList, dropFolders, excludedBy, yaraPass, yaraRuleFiles } from "./antivirus.js";
+import { DEFAULT_RESCAN_DAYS, fullFiles, type Incremental, ruleSetKey, ScanCache } from "./avcache.js";
 import {
   appBundleOf,
   backdated,
@@ -78,6 +79,8 @@ export interface HostScanOptions {
   community?: { source: string; compiled?: string; label: string; sourceId?: string; ageDays: number };
   /** yara is installed but no community rules are: say how to get them. */
   communityMissing?: boolean;
+  /** --av-full: days before a file scanned clean is scanned again even if unchanged (default 7). */
+  avRescanDays?: number;
   /** macOS: folders holding installed apps (default /Applications and ~/Applications). Read with the live checks. */
   appDirs?: string[];
 }
@@ -882,6 +885,38 @@ export async function scanHost(
   );
   const flagged = findings.map((f) => f.subject).filter((s) => s.startsWith("/"));
   const full = opts.av === "full";
+  // --av-full: every file under the roots, listed once for every scanner, each skipping what its cache already saw clean.
+  let fullList: ReturnType<typeof fullFiles> | undefined;
+  const everyFile = () => {
+    if (!fullList) {
+      fullList = fullFiles(opts.roots ?? [home], exclude);
+      result.stats.fullFiles = fullList.files.length;
+      if (fullList.unreadable)
+        gaps.push({
+          surface: "host",
+          what: `${fullList.unreadable} folder(s) or file(s) under the full-pass roots`,
+          why: "this user cannot list or stat them",
+        });
+      if (fullList.capped)
+        gaps.push({
+          surface: "host",
+          what: `files past the first ${fullList.files.length} of the full pass`,
+          why: "the full pass is capped",
+          fix: "narrow --roots",
+        });
+    }
+    return fullList.files;
+  };
+  const rescanMs = (opts.avRescanDays ?? DEFAULT_RESCAN_DAYS) * 86_400_000;
+  const incremental = (name: string, ruleFiles: string[]): Incremental | undefined =>
+    full
+      ? {
+          files: everyFile(),
+          cache: opts.stateDir ? ScanCache.open(opts.stateDir, name, ruleSetKey(ruleFiles)) : undefined,
+          nowMs,
+          maxAgeMs: rescanMs,
+        }
+      : undefined;
   let targetList: ReturnType<typeof avTargetList> | undefined;
   const targets = () => {
     targetList ??= avTargetList(home, inventory, flagged, sinceMs, { exclude, folders: opts.dropDirs ? dropDirs : undefined, nowMs });
@@ -939,16 +974,23 @@ export async function scanHost(
       listDir,
       now: opts.now,
       exclude,
-      full: full ? (opts.roots ?? [home]) : undefined,
       targets: full ? undefined : targets(),
+      incremental: full ? { files: everyFile(), nowMs, maxAgeMs: rescanMs, stateDir: opts.stateDir } : undefined,
     });
     findings.push(...av.findings);
     gaps.push(...av.gaps);
     Object.assign(result.stats, av.stats);
   } else if (opts.av === "off") gaps.push({ surface: "host", what: "the antivirus pass", why: "--no-av" });
-  const yaraTargets = () => (full ? (opts.roots ?? [home]) : targets().targets);
+  const yaraTargets = () => (full ? [] : targets().targets);
   if (opts.yara) {
-    const y = await yaraPass(runner, { rules: opts.yara, targets: yaraTargets(), recursive: full, listDir, source: opts.yaraSource, exclude });
+    const y = await yaraPass(runner, {
+      rules: opts.yara,
+      targets: yaraTargets(),
+      listDir,
+      source: opts.yaraSource,
+      exclude,
+      incremental: incremental("yara", yaraRuleFiles(opts.yara)),
+    });
     findings.push(...y.findings);
     gaps.push(...y.gaps);
     Object.assign(result.stats, y.stats);
@@ -962,7 +1004,7 @@ export async function scanHost(
       community: true,
       label: c.label,
       targets: yaraTargets(),
-      recursive: full,
+      incremental: incremental("yara-forge", [c.compiled ?? c.source]),
       listDir,
       source: c.sourceId,
       // The rule text (.yar) sits next to the compiled set (.yarc): it holds every string the rules look for.
