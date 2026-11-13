@@ -14,6 +14,7 @@ import {
   FEED_FILES,
   feedDir,
   feedSummary,
+  localFeeds,
   scanDeps,
   updateCheckerFeeds,
 } from "../src/scan/deps.js";
@@ -181,6 +182,42 @@ describe("package-checker runs", () => {
       });
     expect((await aged(20)).gaps.some((g) => g.what.startsWith("advisories newer than"))).toBe(false);
     expect((await aged(30)).gaps.find((g) => g.what.startsWith("advisories newer than"))?.what).toContain("newer than 1 days");
+  });
+
+  it("one clock for the feed age: the fetch date, not the date upstream built the feeds", async () => {
+    const NOW = new Date("2026-11-13T12:00:00Z");
+    const iso = (hours: number) => new Date(NOW.getTime() - hours * 3_600_000).toISOString();
+    // Fetched now, built upstream 30 hours ago: current for the scan, the refresh and doctor alike.
+    const feeds = tmp("ug-g1-");
+    for (const f of FEED_FILES) put(feeds, f, `# generated: ${iso(30)}\n# fetched: ${iso(0)}\npkg:npm/x@1\n`);
+    expect(localFeeds(feeds, NOW)?.stale).toBe(false);
+    const root = tmp("ug-g1r-");
+    put(root, "app/package-lock.json", npmLock({ a: "1.0.0" }));
+    const source = {
+      kind: "osv",
+      ecosystem: "npm",
+      file: "osv.purl",
+      status: "loaded",
+      origin: join(feeds, "osv.purl"),
+      origin_type: "local",
+      entries: 1,
+    } as const;
+    const s = await scanDeps(NO_PKG, walk([root]), new Run(tmp()), {
+      runner: fakeChecker(0, { vulnerabilities: [], sources: [{ ...source, date: iso(30), age_days: 1 }] }),
+      roots: [root],
+      now: NOW,
+    });
+    expect(s.gaps.some((g) => g.what.startsWith("advisories newer than"))).toBe(false);
+    // Fetched 30 hours ago, whatever its mtime: stale for all three.
+    const old = tmp("ug-g1o-");
+    for (const f of FEED_FILES) put(old, f, `# fetched: ${iso(30)}\npkg:npm/x@1\n`);
+    expect(localFeeds(old, NOW)?.stale).toBe(true);
+    const t = await scanDeps(NO_PKG, walk([root]), new Run(tmp()), {
+      runner: fakeChecker(0, { vulnerabilities: [], sources: [{ ...source, origin: join(old, "osv.purl"), date: iso(30), age_days: 1 }] }),
+      roots: [root],
+      now: NOW,
+    });
+    expect(t.gaps.find((g) => g.what.startsWith("advisories newer than"))?.fix).toMatch(/^ultraguard rules update/);
   });
 
   it("deps-7: exit 2 is a failure with package-checker's reason (Bash 3: install Bash)", async () => {

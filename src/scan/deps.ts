@@ -9,7 +9,7 @@
 //     them to vulns.ts, which ranks them and replaces that line. The feeds are
 //     ultraguard's own copy in the state folder (--data-dir), and completeness
 //     is package-checker's exit code and JSON report (3, incomplete_reasons).
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
+import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { writeFileAtomic } from "../engine.js";
@@ -74,7 +74,38 @@ export const FEED_FILES: string[] = (() => {
   return (types.length ? types : ["npm"]).flatMap((t) => ["ghsa", "osv"].map((k) => (t === "npm" ? `${k}.purl` : `${k}-${t}.purl`)));
 })();
 
-/** The feed copy in `dir`: how many files, the feeds it lacks, and the age in whole days of the oldest one. */
+/**
+ * When a feed file was last fetched, in ms: the newest of its "# generated:" and "# fetched:" header dates (the date
+ * package-checker judges freshness by), else its mtime. One clock for the refresh, doctor and the stale-feed gap:
+ * a copy fetched now of feeds upstream built 30 hours ago is current, a download would bring the same build.
+ */
+export function feedFetchedAt(file: string): number | undefined {
+  let head = "";
+  try {
+    const fd = openSync(file, "r");
+    try {
+      const buf = Buffer.alloc(512);
+      head = buf.toString("utf8", 0, readSync(fd, buf, 0, buf.length, 0));
+    } finally {
+      closeSync(fd);
+    }
+  } catch {
+    return undefined;
+  }
+  let ref: number | undefined;
+  for (const line of head.split("\n").slice(0, 4)) {
+    if (!line.startsWith("#")) break;
+    const t = Date.parse(/^# (?:generated|fetched): (\S+)/.exec(line)?.[1] ?? "");
+    if (!Number.isNaN(t)) ref = Math.max(ref ?? t, t);
+  }
+  try {
+    return ref ?? statSync(file).mtimeMs;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The feed copy in `dir`: how many files, the feeds it lacks, and the age in whole days of the least recently fetched one. */
 export function localFeeds(dir: string, now = new Date()): { files: number; missing: string[]; ageDays: number; date: string; stale: boolean } | undefined {
   let oldest = Number.POSITIVE_INFINITY;
   const names = new Set<string>();
@@ -82,7 +113,7 @@ export function localFeeds(dir: string, now = new Date()): { files: number; miss
     for (const f of readdirSync(dir)) {
       if (!f.endsWith(".purl")) continue;
       names.add(f);
-      oldest = Math.min(oldest, statSync(join(dir, f)).mtimeMs);
+      oldest = Math.min(oldest, feedFetchedAt(join(dir, f)) ?? statSync(join(dir, f)).mtimeMs);
     }
   } catch {
     return undefined;
@@ -551,9 +582,14 @@ export async function scanDeps(
       if (feedAge !== undefined) result.stats.feedAgeDays = feedAge;
       if (feeds.length) result.stats.feedEntries = feeds.reduce((n, f) => n + (f.status === "loaded" ? (f.entries ?? 0) : 0), 0);
       if (run && feeds.length) run.setMeta({ advisoryFeeds: feeds });
-      // Stale from the file date when package-checker gives it: its age_days is floored to whole days.
+      // Stale from when the copy was fetched (the clock of the refresh and doctor), not from when upstream built
+      // it: else package-checker's date, whose age_days is floored to whole days.
       const now = opts.now ?? new Date();
-      const stale = local.filter((f) => (f.date && !Number.isNaN(Date.parse(f.date)) ? feedStale(f.date, now) : (f.age_days as number) > FEED_STALE_DAYS));
+      const stale = local.filter((f) => {
+        const fetched = feedFetchedAt(f.origin as string);
+        if (fetched !== undefined) return feedStale(fetched, now);
+        return f.date && !Number.isNaN(Date.parse(f.date)) ? feedStale(f.date, now) : (f.age_days as number) > FEED_STALE_DAYS;
+      });
       if (feedAge !== undefined && stale.length) {
         const dirs = [...new Set(stale.map((f) => dirname(f.origin as string)))];
         gaps.push({
