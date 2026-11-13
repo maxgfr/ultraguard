@@ -117,9 +117,10 @@ Everything collected is in `<run>/host-inventory.json`.
 lockfiles, unpinned `requirements*.txt` lines, `package.json` files with no
 lockfile, `node_modules` and virtualenvs, and the global npm, nvm, bun, uv and
 pipx installs. It runs the vendored `package-checker.sh` (OSV and GHSA feeds,
-Bash 4+) for malicious packages (compromised) and known CVEs (one info line,
-the list in `<run>/deps-vulnerabilities.json`: a patching backlog, not a
-compromise). A feed it could not load, or a stale local copy of it, is a gap.
+Bash 4+) for malicious packages (compromised) and known CVEs. Known CVEs are
+a patching backlog, not a compromise: they are ranked with CISA KEV and EPSS
+(see Vulnerabilities and fixes), always info. A feed it could not load, or a
+stale local copy of it, is a gap.
 It also lists the npm packages the user maintains (`npm whoami`, or
 `--npm-user`) and flags every version published inside a campaign window: a
 worm holding their npm token republishes them with an install script
@@ -195,6 +196,34 @@ Write `<run>/ANSWER.md` in the user's language:
 
 Then `ultraguard check <run>/ANSWER.md --out <run>` and fix what it reports.
 
+## Vulnerabilities and fixes
+
+`scan deps` (and `sweep`) also ranks the known CVEs of the user's lockfiles and
+of this Mac's software: **P0** in CISA KEV (exploited in the wild), **P1** EPSS
+>= 10% or critical with a fix, **P2** high with a fix, **P3** the rest. The
+user's own projects (git repositories) come first; worktrees, caches, plugins
+and vendored copies get one line each. On macOS it adds the pending updates
+(`softwareupdate --list`) and the KEV entries of the last 30 days for what is
+installed (macOS, Chrome, Firefox, Docker...). All of it is info, except a
+pending security or restart update (REVIEW): a CVE never makes a surface
+EXPOSED or COMPROMISED. Ranked list: `<run>/vulnerabilities.json`; section
+"Vulnerabilities to fix" in REPORT.md.
+
+1. After the verdict, show the P0 and P1 items: the machine updates first,
+   then each project with its top CVEs, KEV status and fixed version. Say
+   which are dev-only (lower risk) and which need a major upgrade.
+2. Offer to fix them. `ultraguard fixes --out <run> [--project <path>]`
+   prints the smallest upgrades that close P0-P2, with the exact command for
+   the project's package manager, and writes FIXES.md. It runs nothing.
+3. **Only when the user says yes**, per project: create a worktree or branch,
+   apply the plan, run the project's install and tests, show the diff, and
+   commit or open a PR only as the user asks. I0 binds ultraguard, not this
+   step, and this step needs the user's go-ahead every time. Never touch a
+   cache, plugin or vendored copy: update the tool that owns it.
+
+[vulnerabilities](references/vulnerabilities.md) has the tiers, the feeds
+and the fix workflow per package manager.
+
 ## Orchestration
 
 With subagents (Claude Code), you may fan out the reading: one agent per
@@ -209,10 +238,12 @@ finding before answering. Without subagents, do the same steps in order.
 - Guess an IOC the sources do not state, or call a surface clean because a
   scan could not reach it.
 - Read secrets' values: `gh secret list` names them, which is enough to rotate.
+- Fix a vulnerability without the user's go-ahead, or outside a branch.
 - Upload anything: the only network calls are `gh` (GitHub API), your search
-  queries, page fetches of your sources, and the download of the OSV and GHSA
-  advisory feeds from raw.githubusercontent.com (package names never leave
-  the machine).
+  queries, page fetches of your sources, the download of the OSV and GHSA
+  advisory feeds from raw.githubusercontent.com, the CISA KEV catalog, EPSS
+  scores (CVE ids only) from api.first.org, and Chrome's and Node.js's
+  release lists (package names never leave the machine).
 
 ## References
 
@@ -225,4 +256,5 @@ finding before answering. Without subagents, do the same steps in order.
 - [cloud-persistence](references/cloud-persistence.md): AWS, GCP, Azure
 - [verdicts](references/verdicts.md): severities, verdicts, judging REVIEW
 - [routine](references/routine.md): `watch` as a daily cloud or local routine
+- [vulnerabilities](references/vulnerabilities.md): known CVEs ranked (KEV, EPSS), the fix plan and workflow
 - [citation-format](references/citation-format.md): `[S#]`, `[F#]` and what `check` enforces

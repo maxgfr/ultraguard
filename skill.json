@@ -11,11 +11,19 @@
   "usageFloor": 27,
   "forks": {},
   "allowedForeignFlags": [
+    "conservative",
+    "dev",
     "file-info",
+    "group",
+    "list",
+    "precise",
     "require",
+    "save-dev",
+    "upgrade-package",
     "user",
     "verbose",
-    "verify"
+    "verify",
+    "with-dependencies"
   ],
   "repin": {
     "artifacts": [

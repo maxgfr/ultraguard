@@ -5,7 +5,8 @@
 //     (maxgfr/package-checker.sh, 12 ecosystems), vendored and pinned. A
 //     malicious-package advisory (MAL-*) is a compromise and cites its OSV
 //     page as a source; ordinary CVEs are a patching backlog, summed up in
-//     one info finding and listed in deps-vulnerabilities.json.
+//     one info finding and listed in deps-vulnerabilities.json. The CLI hands
+//     them to vulns.ts, which ranks them and replaces that line.
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -176,10 +177,12 @@ export async function scanDeps(
   tree: WalkResult,
   run: Run | undefined,
   opts: DepsScanOptions = {},
-): Promise<{ result: SurfaceResult; findings: NewFinding[]; gaps: Gap[] }> {
+): Promise<{ result: SurfaceResult; findings: NewFinding[]; gaps: Gap[]; vulnerable: CheckerVuln[] }> {
   const result: SurfaceResult = { surface: "deps", scanned: true, stats: {}, startedAt: (opts.now ?? new Date()).toISOString() };
   const findings: NewFinding[] = [];
   const gaps: Gap[] = [];
+  // The locked versions with known CVEs (not malicious): what `vulns` ranks.
+  const backlog: CheckerVuln[] = [];
   const pkgs = matchers(iocs, "package");
 
   const where = new Map<string, Set<string>>(); // "eco|name|version" -> lockfiles
@@ -387,7 +390,6 @@ export async function scanDeps(
       vulns.push(...unique);
       result.stats.checkerRuns = groups.length - failed;
       let malicious = 0;
-      const backlog: CheckerVuln[] = [];
       for (const v of vulns) {
         const mal = v.advisories.filter((a) => (a.id ?? "").startsWith("MAL-"));
         if (!mal.length) {
@@ -437,5 +439,5 @@ export async function scanDeps(
     why: "only lockfiles, package.json, node_modules, virtualenvs and global install folders are read",
   });
   result.finishedAt = new Date().toISOString();
-  return { result, findings, gaps };
+  return { result, findings, gaps, vulnerable: backlog };
 }
