@@ -126,6 +126,40 @@ describe("package-checker runs", () => {
     expect(existsSync(once)).toBe(false);
   });
 
+  it("the feeds of the one-shot copy are reported as downloaded during the scan, never by the deleted folder", async () => {
+    const root = tmp("ug-c1-");
+    for (const g of ["a/x", "b/y"]) put(root, `${g}/package-lock.json`, npmLock({ a: "1.0.0" }));
+    const runner: Runner = async (_cmd, args) => {
+      const dir = args[args.indexOf("--data-dir") + 1] as string;
+      if (args.includes("--update-feeds")) for (const f of FEED_FILES) put(dir, f, "pkg:npm/x@1\n");
+      else
+        writeFileSync(
+          args[args.indexOf("--export-json") + 1] as string,
+          JSON.stringify({
+            vulnerabilities: [],
+            sources: ["ghsa", "osv"].map((k) => ({
+              kind: k,
+              ecosystem: "npm",
+              status: "loaded",
+              origin: join(dir, `${k}.purl`),
+              origin_type: "local",
+              entries: 3,
+              age_days: 0,
+            })),
+          }),
+        );
+      return { ok: true, status: 0, stdout: "", stderr: "" };
+    };
+    const run = new Run(tmp());
+    const s = await scanDeps(NO_PKG, walk([root]), run, { runner, roots: [root], feedDir: tmp("ug-c1s-") });
+    const feeds = run.meta().advisoryFeeds ?? [];
+    expect(feeds).toHaveLength(2);
+    for (const f of feeds) expect(f.origin?.startsWith(run.dir)).toBe(false);
+    expect(feedSummary(feeds)).toBe("2 loaded, 6 entries; 2 downloaded during the scan");
+    expect(JSON.stringify(run.read("deps-vulnerabilities.json", {}))).not.toContain(join(run.dir, "package-checker", "data"));
+    expect(s.gaps.some((g) => g.what.startsWith("advisories newer than"))).toBe(false);
+  });
+
   it("deps-9: a report left by an earlier scan is never read as this run's", async () => {
     const work = tmp("ug-pc9-");
     writeFileSync(join(work, "package-checker-1.json"), JSON.stringify({ vulnerabilities: [] }));

@@ -574,9 +574,15 @@ export async function scanDeps(
         }
         vulns.push(...(orig ? r.vulnerabilities.map((v) => ({ ...v, file: orig })) : r.vulnerabilities));
       }
-      if (dataDir && dataDir !== opts.feedDir) rmSync(dataDir, { recursive: true, force: true });
+      // The one-shot copy is removed after the runs: its feeds are named as downloaded during the scan, not by a deleted folder.
+      const once = dataDir && dataDir !== opts.feedDir ? dataDir : undefined;
+      if (once) rmSync(once, { recursive: true, force: true });
       // The feeds the runs loaded: where from, how many entries, how old.
-      const feeds = [...sources.values()];
+      const feeds = [...sources.values()].map((f) =>
+        once && f.origin && (f.origin === once || f.origin.startsWith(once + sep))
+          ? { ...f, origin: "downloaded once for this scan", origin_type: "remote" as const }
+          : f,
+      );
       const local = feeds.filter((f) => f.status === "loaded" && f.origin_type === "local" && typeof f.age_days === "number");
       const feedAge = local.length ? Math.max(...local.map((f) => f.age_days as number)) : feeds.some((f) => f.status === "loaded") ? 0 : undefined;
       if (feedAge !== undefined) result.stats.feedAgeDays = feedAge;
