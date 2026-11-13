@@ -1,6 +1,7 @@
 // doctor: what this machine lets ultraguard see. Run it first: every "no" is a
 // surface that will come back UNKNOWN, and the fix is printed next to it.
 import type { Runner } from "./runner.js";
+import { EPSS_URL, feedCache, KEV_URL } from "./feeds.js";
 import { installedRules, rulesAgeDays } from "./rules.js";
 import { detectAv } from "./scan/antivirus.js";
 import { Gh } from "./scan/gh.js";
@@ -111,6 +112,30 @@ export async function doctor(runner: Runner, opts: { probe?: boolean; state?: st
       fix: !meta || age > 14 ? "ultraguard rules update" : undefined,
     });
   }
+
+  // scan deps ranks known CVEs with CISA KEV and FIRST EPSS, cached for 24 hours in the state folder.
+  const cache = opts.state ? feedCache(opts.state) : {};
+  const age = (h: number) => (h < 48 ? `${h} h old` : `${Math.floor(h / 24)} days old`);
+  const cached = [
+    cache.kev ? `CISA KEV ${cache.kev.catalogVersion ?? ""} cached, ${age(cache.kev.ageHours)}`.replace("  ", " ") : "CISA KEV not cached yet",
+    cache.epss ? `EPSS scores for ${cache.epss.entries} CVE(s) cached, ${age(cache.epss.ageHours)}` : "EPSS not cached yet",
+  ].join("; ");
+  let reach: { kev: boolean; epss: boolean } | undefined;
+  if (opts.probe) {
+    const probe = async (url: string, head: boolean) =>
+      (
+        await runner("curl", [...(head ? ["--head"] : []), "--silent", "--fail", "--connect-timeout", "10", "--max-time", "30", "--output", "/dev/null", url], {
+          timeoutMs: 40_000,
+        })
+      ).ok;
+    reach = { kev: await probe(KEV_URL, true), epss: await probe(`${EPSS_URL}?cve=CVE-2021-44228`, false) };
+  }
+  out.push({
+    check: "vulnerability feeds",
+    ok: !reach || (reach.kev && reach.epss),
+    detail: `${cached}${reach ? `; ${reach.kev ? "cisa.gov reachable" : "cisa.gov unreachable"}, ${reach.epss ? "api.first.org reachable" : "api.first.org unreachable"}` : ""} (ranking of known CVEs in scan deps)`,
+    fix: reach && !(reach.kev && reach.epss) ? "check the network; without the feeds, scan deps ranks CVEs by severity only and says so" : undefined,
+  });
 
   if (opts.probe) {
     // Where scan deps downloads the OSV and GHSA feeds from, the way package-checker does it.
