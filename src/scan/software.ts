@@ -231,6 +231,21 @@ export async function scanSoftware(opts: SoftwareOpts): Promise<SoftwareResult> 
       const distinct = [...new Set(statuses)];
       const status = distinct.length === 1 ? (distinct[0] as string) : carriers.map((c, i) => `${c}: ${statuses[i]}`).join("; ");
       const what = versions.map((v) => `${v.name}${v.version ? ` ${v.version}` : ""}`).join(", ");
+      // KEV names products, not affected versions. A CVE numbered two or more years before
+      // today, on an OS release made since, was most likely fixed before that release.
+      const cveYear = Number(/^CVE-(\d{4})-/.exec(k.cveID)?.[1]);
+      const old = carriers.length === 1 && carriers[0] === "macOS" && cveYear > 0 && now.getUTCFullYear() - cveYear >= 2;
+      if (old) {
+        res.findings.push({
+          surface: "deps",
+          severity: "info",
+          subject: what,
+          title: `${k.cveID} (${k.vendorProject} ${k.product}) was added to CISA KEV on ${k.dateAdded}, but it dates from ${cveYear}: ${what} most likely already has the fix (KEV does not list affected versions; confirm on Apple's security notes)`,
+          evidence: { kind: "url", ref: `https://nvd.nist.gov/vuln/detail/${k.cveID}`, excerpt: `CISA KEV ${k.dateAdded}` },
+          key: `deps|kev|${k.cveID}`,
+        });
+        continue;
+      }
       res.findings.push({
         surface: "deps",
         severity: "info",

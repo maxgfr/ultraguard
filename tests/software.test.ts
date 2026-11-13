@@ -144,7 +144,8 @@ describe("machine software", () => {
       "info: CVE-2026-125350 (Google Chromium: Chromium V8 Type Confusion) is in CISA KEV since 2026-11-10, exploited in the wild; installed here: Google Chrome 157.0.8103.79, Brave Browser 1.2.3; Google Chrome: Chrome is behind the current stable 157.0.8103.92: update it; Brave Browser: update the app (check its About window)",
     );
     expect(t).toContain(
-      "info: CVE-2024-27834 (Apple Multiple Products) is in CISA KEV since 2026-11-04, exploited in the wild; installed here: macOS 27.2; update pending (macOS 27.2.1): install it",
+      // An old CVE KEV adds late, on a much newer macOS: most likely fixed already, never "exploited here".
+      "info: CVE-2024-27834 (Apple Multiple Products) was added to CISA KEV on 2026-11-04, but it dates from 2024: macOS 27.2 most likely already has the fix (KEV does not list affected versions; confirm on Apple's security notes)",
     );
     expect(t).toContain("info: Node.js 22.3.0: 1 security release(s) since (v22.4.1): upgrade to 22.5.0");
     // Office is not installed; the Firefox entry is older than 30 days.
@@ -156,7 +157,6 @@ describe("machine software", () => {
       "Google Chrome CVE-2026-125350 Chrome is behind the current stable 157.0.8103.92: update it",
       "Brave Browser CVE-2026-125350 update the app (check its About window)",
       "OpenSSH CVE-2026-123158 update pending (macOS 27.2.1): install it",
-      "macOS CVE-2024-27834 update pending (macOS 27.2.1): install it",
     ]);
     expect(r.gaps).toEqual([]);
     expect(r.stats).toMatchObject({ pendingUpdates: 2, kevInstalled: 3, appsChecked: 3 });
@@ -172,7 +172,7 @@ describe("machine software", () => {
     });
     expect(quiet.findings.map((f) => f.title)).toEqual([
       "CVE-2026-123158 (OpenBSD OpenSSH) is in CISA KEV since 2026-11-09, exploited in the wild; installed here: OpenSSH 10.5p1; macOS reports no pending update: patched if Apple has shipped the fix",
-      "CVE-2024-27834 (Apple Multiple Products) is in CISA KEV since 2026-11-04, exploited in the wild; installed here: macOS 27.2; macOS reports no pending update: patched if Apple has shipped the fix",
+      "CVE-2024-27834 (Apple Multiple Products) was added to CISA KEV on 2026-11-04, but it dates from 2024: macOS 27.2 most likely already has the fix (KEV does not list affected versions; confirm on Apple's security notes)",
     ]);
     expect(quiet.findings.every((f) => f.severity === "info")).toBe(true);
 

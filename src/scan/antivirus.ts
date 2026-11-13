@@ -8,9 +8,9 @@
 // `--av-full` scans every root. ultraguard never installs ClamAV; it refreshes
 // stale signatures before a scan (defenses.ts), and if that fails, they are a
 // coverage gap.
-import { accessSync, constants, readdirSync, realpathSync, statSync } from "node:fs";
+import { accessSync, closeSync, constants, openSync, readdirSync, readSync, realpathSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { writeFileAtomic } from "../engine.js";
 import type { Runner } from "../runner.js";
 import type { Finding, Gap } from "../types.js";
@@ -114,6 +114,41 @@ export function excludedBy(dirs: string[]): (p: string) => boolean {
   const roots = [...new Set(dirs.filter(Boolean).flatMap((d) => [d, realOf(d)].map((x) => x.replace(/\/+$/, ""))))];
   const under = (p: string) => roots.some((d) => p === d || p.startsWith(`${d}/`));
   return (p: string) => roots.length > 0 && (under(p) || under(realOf(p)));
+}
+
+/** YARA and ClamAV signature databases, by extension. */
+const SIGNATURE_EXT = /\.(yar|yara|yarc|yr|cvd|cld|cud|ndb|hdb|hsb|ldb|mdb|ndu|ign2)$/i;
+
+/**
+ * A copy of a rule set (YARA source or compiled, ClamAV databases, a downloaded
+ * rule-set archive): it holds the very patterns the scanners look for, so
+ * every rule "matches" it. Never a detection; listed once as not scanned.
+ */
+export function isSignatureFile(p: string): boolean {
+  if (SIGNATURE_EXT.test(p)) return true;
+  if (/\.zip$/i.test(p) && /yara|sigma|signature|rules/i.test(basename(p))) return true;
+  let fd: number | undefined;
+  try {
+    fd = openSync(p, "r");
+    const b = Buffer.alloc(4);
+    // yarac's compiled rules start with "YARA".
+    return readSync(fd, b, 0, 4, 0) === 4 && b.toString("latin1") === "YARA";
+  } catch {
+    return false;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
+/** A gap naming the rule-set copies a pass met and did not report. */
+export function signatureFilesGap(paths: string[], label: string): Gap | undefined {
+  const uniq = [...new Set(paths)];
+  if (!uniq.length) return undefined;
+  return {
+    surface: "host",
+    what: `${uniq.length} copy(ies) of a rule set, not judged by the ${label} pass: ${uniq.slice(0, 3).join(", ")}${uniq.length > 3 ? ", ..." : ""}`,
+    why: "a YARA or ClamAV rule set holds the patterns it detects, so every rule matches it; check you put it there",
+  };
 }
 
 /** Folders a dropper writes to, scanned for recent files: Downloads first, then the temp folders (macOS's per-user $TMPDIR too). */
@@ -356,7 +391,10 @@ export async function antivirusPass(
   }
   // Heuristics.Limits.Exceeded.*: a file over the size limits, not a detection.
   const tooBig = all.filter((h) => /^Heuristics\.Limits\.Exceeded/.test(h.signature));
-  const hits = all.filter((h) => !/^Heuristics\.Limits\.Exceeded/.test(h.signature));
+  const sigCopies = all.filter((h) => isSignatureFile(h.path)).map((h) => h.path);
+  const sigGap = signatureFilesGap(sigCopies, "antivirus");
+  if (sigGap) gaps.push(sigGap);
+  const hits = all.filter((h) => !/^Heuristics\.Limits\.Exceeded/.test(h.signature) && !isSignatureFile(h.path));
   if (tooBig.length)
     gaps.push({
       surface: "host",
@@ -373,11 +411,13 @@ export async function antivirusPass(
   for (const h of hits) {
     // PUA.* is ClamAV's "potentially unwanted": adware, bundlers, hacking tools. Worth a look, not proof.
     const pua = /^PUA\./i.test(h.signature);
+    // EICAR is the industry's harmless test file: someone tested an antivirus, nothing more.
+    const eicar = /^Eicar-(Test-)?Signature/i.test(h.signature);
     findings.push({
       surface: "host",
-      severity: pua ? "suspicious" : "compromised",
+      severity: eicar ? "info" : pua ? "suspicious" : "compromised",
       subject: h.path,
-      title: `ClamAV detects ${h.signature} in ${h.path}${pua ? " (potentially unwanted program)" : ""}`,
+      title: `ClamAV detects ${h.signature} in ${h.path}${eicar ? " (the harmless EICAR antivirus test file)" : pua ? " (potentially unwanted program)" : ""}`,
       evidence: {
         kind: "command",
         ref: `${engine.name} --no-summary ${h.path}`,
@@ -571,7 +611,13 @@ export async function yaraPass(
   // The rule files contain the strings they look for: never report them, nor ultraguard's own folders.
   const ruleSet = new Set(files);
   const skip = excludedBy(opts.exclude ?? []);
-  for (const h of parseYaraOutput(stdout).filter((x) => !ruleSet.has(x.path) && !skip(x.path))) {
+  const parsed = parseYaraOutput(stdout).filter((x) => !ruleSet.has(x.path) && !skip(x.path));
+  const sigGap = signatureFilesGap(
+    parsed.filter((x) => isSignatureFile(x.path)).map((x) => x.path),
+    label,
+  );
+  if (sigGap) gaps.push(sigGap);
+  for (const h of parsed.filter((x) => !isSignatureFile(x.path))) {
     const weak = opts.community && (h.score ?? 0) < COMMUNITY_SCORE;
     findings.push({
       surface: "host",

@@ -7,6 +7,7 @@ import {
   avTargetList,
   avTargets,
   dropFolders,
+  isSignatureFile,
   parseClamOutput,
   readableTargets,
   parseClamVersion,
@@ -337,5 +338,37 @@ describe("antivirus and yara regressions", () => {
       exclude: [run],
     });
     expect(y.findings.map((f) => f.subject)).toEqual([join(home, "Downloads/real.bin")]);
+  });
+});
+
+describe("rule-set copies and the EICAR test file", () => {
+  it("knows a rule set by extension, by yarac's YARA header and by a rule-set archive name", () => {
+    const dir = tmp("ug-sig-");
+    const compiled = join(dir, "rules.bin");
+    writeFileSync(compiled, Buffer.concat([Buffer.from("YARA"), Buffer.alloc(16)]));
+    const plain = join(dir, "notes.txt");
+    writeFileSync(plain, "rule x { condition: true }");
+    expect(isSignatureFile(join(dir, "core.yar"))).toBe(true);
+    expect(isSignatureFile(join(dir, "main.cvd"))).toBe(true);
+    expect(isSignatureFile(join(dir, "yara-forge-rules-core.zip"))).toBe(true);
+    expect(isSignatureFile(compiled)).toBe(true);
+    expect(isSignatureFile(plain)).toBe(false);
+    expect(isSignatureFile(join(dir, "invoice.zip"))).toBe(false);
+  });
+
+  it("ClamAV: a rule-set copy is a coverage note, EICAR is info, a real detection stays compromised", async () => {
+    const dir = tmp("ug-sig2-");
+    const out = "/x/copy/core.yar: Html.Backdoor.WebshellNoop-1 FOUND\n/x/eicar.com: Eicar-Test-Signature FOUND\n/x/evil.app: Osx.Trojan.Amos-1 FOUND\n";
+    const runner = async (cmd: string, args: string[]) => {
+      if (cmd === "clamdscan") return { ok: false, status: 2, stdout: "", stderr: "" };
+      if (args[0] === "--version") return { ok: true, status: 0, stdout: "ClamAV 1.5.4/28181/Thu Nov 12 07:27:14 2026", stderr: "" };
+      return { ok: false, status: 1, stdout: out, stderr: "" };
+    };
+    const r = await antivirusPass(runner, { home: dir, inventory: inv(), flagged: [], sinceMs: 0, listDir: dir, now: NOW, full: ["/x"] });
+    expect(r.findings.map((f) => [f.severity, f.subject])).toEqual([
+      ["info", "/x/eicar.com"],
+      ["compromised", "/x/evil.app"],
+    ]);
+    expect(r.gaps.some((g) => g.what.startsWith("1 copy(ies) of a rule set") && g.what.includes("/x/copy/core.yar"))).toBe(true);
   });
 });

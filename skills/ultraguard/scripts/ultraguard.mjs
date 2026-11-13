@@ -10593,9 +10593,9 @@ function rulesAgeDays(meta, now = /* @__PURE__ */ new Date()) {
 }
 
 // src/scan/antivirus.ts
-import { accessSync as accessSync2, constants as constants2, readdirSync as readdirSync8, realpathSync as realpathSync2, statSync as statSync9 } from "fs";
+import { accessSync as accessSync2, closeSync as closeSync4, constants as constants2, openSync as openSync4, readdirSync as readdirSync8, readSync as readSync3, realpathSync as realpathSync2, statSync as statSync9 } from "fs";
 import { tmpdir } from "os";
-import { join as join12 } from "path";
+import { basename as basename4, join as join12 } from "path";
 
 // src/scan/avcache.ts
 import { createHash as createHash3 } from "crypto";
@@ -11873,6 +11873,30 @@ function excludedBy(dirs) {
   const under = (p) => roots.some((d) => p === d || p.startsWith(`${d}/`));
   return (p) => roots.length > 0 && (under(p) || under(realOf(p)));
 }
+var SIGNATURE_EXT = /\.(yar|yara|yarc|yr|cvd|cld|cud|ndb|hdb|hsb|ldb|mdb|ndu|ign2)$/i;
+function isSignatureFile(p) {
+  if (SIGNATURE_EXT.test(p)) return true;
+  if (/\.zip$/i.test(p) && /yara|sigma|signature|rules/i.test(basename4(p))) return true;
+  let fd;
+  try {
+    fd = openSync4(p, "r");
+    const b = Buffer.alloc(4);
+    return readSync3(fd, b, 0, 4, 0) === 4 && b.toString("latin1") === "YARA";
+  } catch {
+    return false;
+  } finally {
+    if (fd !== void 0) closeSync4(fd);
+  }
+}
+function signatureFilesGap(paths, label) {
+  const uniq2 = [...new Set(paths)];
+  if (!uniq2.length) return void 0;
+  return {
+    surface: "host",
+    what: `${uniq2.length} copy(ies) of a rule set, not judged by the ${label} pass: ${uniq2.slice(0, 3).join(", ")}${uniq2.length > 3 ? ", ..." : ""}`,
+    why: "a YARA or ClamAV rule set holds the patterns it detects, so every rule matches it; check you put it there"
+  };
+}
 function dropFolders(home) {
   return [join12(home, "Downloads"), tmpdir(), "/tmp", "/var/tmp", "/Users/Shared", "/dev/shm"];
 }
@@ -12039,7 +12063,10 @@ ${res.stderr}`;
     }
   }
   const tooBig = all.filter((h) => /^Heuristics\.Limits\.Exceeded/.test(h.signature));
-  const hits = all.filter((h) => !/^Heuristics\.Limits\.Exceeded/.test(h.signature));
+  const sigCopies = all.filter((h) => isSignatureFile(h.path)).map((h) => h.path);
+  const sigGap = signatureFilesGap(sigCopies, "antivirus");
+  if (sigGap) gaps.push(sigGap);
+  const hits = all.filter((h) => !/^Heuristics\.Limits\.Exceeded/.test(h.signature) && !isSignatureFile(h.path));
   if (tooBig.length)
     gaps.push({
       surface: "host",
@@ -12049,11 +12076,12 @@ ${res.stderr}`;
     });
   for (const h of hits) {
     const pua = /^PUA\./i.test(h.signature);
+    const eicar = /^Eicar-(Test-)?Signature/i.test(h.signature);
     findings.push({
       surface: "host",
-      severity: pua ? "suspicious" : "compromised",
+      severity: eicar ? "info" : pua ? "suspicious" : "compromised",
       subject: h.path,
-      title: `ClamAV detects ${h.signature} in ${h.path}${pua ? " (potentially unwanted program)" : ""}`,
+      title: `ClamAV detects ${h.signature} in ${h.path}${eicar ? " (the harmless EICAR antivirus test file)" : pua ? " (potentially unwanted program)" : ""}`,
       evidence: {
         kind: "command",
         ref: `${engine.name} --no-summary ${h.path}`,
@@ -12200,7 +12228,13 @@ ${out2}`;
     });
   const ruleSet = new Set(files);
   const skip = excludedBy(opts.exclude ?? []);
-  for (const h of parseYaraOutput(stdout).filter((x) => !ruleSet.has(x.path) && !skip(x.path))) {
+  const parsed = parseYaraOutput(stdout).filter((x) => !ruleSet.has(x.path) && !skip(x.path));
+  const sigGap = signatureFilesGap(
+    parsed.filter((x) => isSignatureFile(x.path)).map((x) => x.path),
+    label
+  );
+  if (sigGap) gaps.push(sigGap);
+  for (const h of parsed.filter((x) => !isSignatureFile(x.path))) {
     const weak = opts.community && (h.score ?? 0) < COMMUNITY_SCORE;
     findings.push({
       surface: "host",
@@ -12355,7 +12389,7 @@ var Gh = class {
 
 // src/scan/xprotect.ts
 import { existsSync as existsSync11, readFileSync as readFileSync12, statSync as statSync10 } from "fs";
-import { basename as basename4, join as join13 } from "path";
+import { basename as basename5, join as join13 } from "path";
 var XPROTECT_BUNDLE = "/Library/Apple/System/Library/CoreServices/XProtect.bundle";
 var XPROTECT_STALE_DAYS = 30;
 var XPR_PREDICATE = 'subsystem == "com.apple.XProtectFramework.PluginAPI" && category == "XPEvent.structured"';
@@ -12420,7 +12454,7 @@ async function xprotectYara(runner2, info, opts) {
       fix: "System Settings > General > Software Update > Automatic Updates: turn on Install Security Responses and system files (or sudo softwareupdate --background-critical)"
     });
   for (const rules of info.rules) {
-    const key = basename4(rules) === "XPScripts.yr" ? "xpscripts" : "xprotect";
+    const key = basename5(rules) === "XPScripts.yr" ? "xpscripts" : "xprotect";
     const y = await yaraPass(runner2, {
       rules,
       targets: opts.targets,
@@ -12486,7 +12520,7 @@ async function remediatorFindings(runner2) {
     if (!status) continue;
     scans++;
     if (CLEAN_STATUS.test(status)) continue;
-    const family = /XProtectRemediator(\w+)$/.exec(ev.processImagePath ?? "")?.[1] ?? basename4(ev.processImagePath ?? "unknown plugin");
+    const family = /XProtectRemediator(\w+)$/.exec(ev.processImagePath ?? "")?.[1] ?? basename5(ev.processImagePath ?? "unknown plugin");
     const causedBy = (Array.isArray(msg.caused_by) ? msg.caused_by : []).map((c) => typeof c === "string" ? c : JSON.stringify(c)).filter(Boolean).slice(0, 20);
     const k = `${family}|${status}|${causedBy.join(",")}`;
     const at = logTime(ev.timestamp);
@@ -12781,11 +12815,11 @@ function formatDoctor(lines) {
 
 // src/fixes.ts
 import { existsSync as existsSync13, readFileSync as readFileSync14 } from "fs";
-import { basename as basename6, dirname as dirname2, join as join16, relative as relative2 } from "path";
+import { basename as basename7, dirname as dirname2, join as join16, relative as relative2 } from "path";
 
 // src/vulns.ts
 import { existsSync as existsSync12, readFileSync as readFileSync13, statSync as statSync11 } from "fs";
-import { basename as basename5, dirname, join as join15, relative, resolve, sep as sep2 } from "path";
+import { basename as basename6, dirname, join as join15, relative, resolve, sep as sep2 } from "path";
 var TIERS = ["P0", "P1", "P2", "P3"];
 var EPSS_P1 = 0.1;
 var SEVERITY_RANK = { critical: 4, high: 3, moderate: 2, medium: 2, low: 1 };
@@ -12953,7 +12987,7 @@ function fromTomlTables(m, text, tables, norm2 = (n) => n) {
 function declaredDeps(lockfile) {
   const m = /* @__PURE__ */ new Map();
   const dir = dirname(lockfile);
-  const name = basename5(lockfile);
+  const name = basename6(lockfile);
   const json2 = (p) => {
     const t = readText(p);
     try {
@@ -13066,7 +13100,7 @@ function rankVulnerabilities(vulns, input = {}) {
     const item = { tier: tierOf(base2), ...base2 };
     let p = projects.get(info.root);
     if (!p) {
-      p = { root: info.root, name: basename5(info.root), kind: info.kind, mainRepo: info.mainRepo, lockfiles: [], counts: zero(), items: [] };
+      p = { root: info.root, name: basename6(info.root), kind: info.kind, mainRepo: info.mainRepo, lockfiles: [], counts: zero(), items: [] };
       projects.set(info.root, p);
     }
     if (!p.lockfiles.includes(v.file)) p.lockfiles.push(v.file);
@@ -13115,7 +13149,7 @@ function vulnFindings(r, runDir) {
       evidence: {
         kind: "command",
         ref: `ultraguard fixes --out ${runDir ?? "<run>"} --project ${p.root}`,
-        excerpt: `${p.lockfiles.map((f) => relative(p.root, f) || basename5(f)).join(", ")}; vulnerabilities.json`
+        excerpt: `${p.lockfiles.map((f) => relative(p.root, f) || basename6(f)).join(", ")}; vulnerabilities.json`
       },
       key: `deps|vulns|${p.root}`
     });
@@ -13157,7 +13191,7 @@ function renderVulnSection(r, home, top = 10) {
   for (const p of r.projects.filter((x) => x.kind === "own")) {
     out2.push(`### ${p.name} (${tick(short(p.root))}): ${tierCounts(p.counts)}`, "");
     for (const i of p.items.slice(0, top)) {
-      const lock = relative(p.root, i.file) || basename5(i.file);
+      const lock = relative(p.root, i.file) || basename6(i.file);
       out2.push(
         `- **${i.tier}** ${tick(`${i.name}@${i.version}`)} -> ${i.fix ? tick(i.fix) : "no fix yet"}${i.majorBump ? " (major upgrade)" : ""}: ${i.severity}${i.relation !== "unknown" ? `, ${i.relation === "dev" ? "dev-only (lower risk)" : i.relation}` : ""}${i.kev.length ? `, CISA KEV since ${i.kev[0]?.dateAdded}` : ""}${i.epss ? `, EPSS ${pct(i.epss.score)}` : ""} (${[...i.cves, ...i.ghsas].slice(0, 3).join(", ") || "no id"}; ${lock})`
       );
@@ -13182,7 +13216,7 @@ function renderVulnSection(r, home, top = 10) {
 
 // src/fixes.ts
 function managerOf(lockfile) {
-  const name = basename6(lockfile);
+  const name = basename7(lockfile);
   if (name === "package-lock.json" || name === "npm-shrinkwrap.json") return "npm";
   if (name === "pnpm-lock.yaml") return "pnpm";
   if (name === "yarn.lock") {
@@ -13240,7 +13274,7 @@ function commandFor(m, s, lockfile) {
     case "pipenv":
       return direct ? { command: `pipenv install${dev ? " --dev" : ""} "${s.name}>=${s.to}"` } : { command: `pipenv update ${s.name}` };
     case "pip":
-      return { ...line(basename6(lockfile), `${s.name}==${s.to}`), finally: `pip install -r ${basename6(lockfile)}` };
+      return { ...line(basename7(lockfile), `${s.name}==${s.to}`), finally: `pip install -r ${basename7(lockfile)}` };
     case "cargo":
       return direct && s.majorBump ? { ...line("Cargo.toml", `${s.name} = "${s.to}"`), finally: "cargo update" } : { command: `cargo update -p ${s.name}@${from2} --precise ${s.to}` };
     case "go":
@@ -13340,10 +13374,10 @@ function renderFixes(plans, r) {
     if (!steps && !p.lockfiles.some((l) => l.unfixed.length)) out2.push("Nothing at P0-P2.", "");
     for (const l of p.lockfiles) {
       if (!l.steps.length && !l.unfixed.length) {
-        out2.push(`- \`${relative2(p.root, l.lockfile) || basename6(l.lockfile)}\`: ${l.p3} P3 only, no plan`, "");
+        out2.push(`- \`${relative2(p.root, l.lockfile) || basename7(l.lockfile)}\`: ${l.p3} P3 only, no plan`, "");
         continue;
       }
-      out2.push(`### \`${relative2(p.root, l.lockfile) || basename6(l.lockfile)}\` (${l.manager})`, "");
+      out2.push(`### \`${relative2(p.root, l.lockfile) || basename7(l.lockfile)}\` (${l.manager})`, "");
       for (const s of l.steps)
         out2.push(
           `- **${s.tier}** ${s.name} ${s.from.join(", ")} -> ${s.to} (${REL_WORD[s.relation]}): closes ${s.closes.slice(0, 4).join(", ")}${s.closes.length > 4 ? ` and ${s.closes.length - 4} more` : ""}${s.note ? `. ${s.note}` : ""}`
@@ -14425,7 +14459,7 @@ async function scanCloud(iocs, runner2, opts = {}) {
 // src/scan/deps.ts
 import { copyFileSync, existsSync as existsSync16, mkdirSync as mkdirSync8, readFileSync as readFileSync18, rmSync as rmSync6, statSync as statSync13 } from "fs";
 import { tmpdir as tmpdir4 } from "os";
-import { basename as basename8, dirname as dirname3, isAbsolute as isAbsolute3, join as join19, relative as relative3, resolve as resolve4, sep as sep3 } from "path";
+import { basename as basename9, dirname as dirname3, isAbsolute as isAbsolute3, join as join19, relative as relative3, resolve as resolve4, sep as sep3 } from "path";
 
 // src/vendor/package-checker-script.ts
 var PACKAGE_CHECKER_VERSION = "1.16.4";
@@ -14437,7 +14471,7 @@ import { existsSync as existsSync15, readdirSync as readdirSync9, readFileSync a
 import { join as join18 } from "path";
 
 // src/scan/lockfiles.ts
-import { basename as basename7 } from "path";
+import { basename as basename8 } from "path";
 var LOCKFILES = {
   "package-lock.json": "npm",
   "npm-shrinkwrap.json": "npm",
@@ -14464,10 +14498,10 @@ var ADVISORY_ONLY = /* @__PURE__ */ new Set([
   "Package.resolved"
 ]);
 function advisoryOnlyKind(path) {
-  return ADVISORY_ONLY.has(basename7(path));
+  return ADVISORY_ONLY.has(basename8(path));
 }
 function lockfileKind(path) {
-  const name = basename7(path);
+  const name = basename8(path);
   if (LOCKFILES[name]) return name;
   if (/^requirements.*\.txt$/.test(name)) return "requirements.txt";
   return void 0;
@@ -14802,7 +14836,7 @@ async function scanDeps(iocs, tree, run, opts = {}) {
     }
   };
   for (const p of tree.files) {
-    if (MANIFESTS.has(basename8(p))) manifests.push(p);
+    if (MANIFESTS.has(basename9(p))) manifests.push(p);
     if (!lockfileKind(p)) {
       if (advisoryOnlyKind(p)) advisoryOnly.add(p);
       continue;
@@ -14838,7 +14872,7 @@ async function scanDeps(iocs, tree, run, opts = {}) {
   if (pkgs.length && orphans.length) {
     let unread = 0;
     for (const m of orphans) {
-      if (basename8(m) !== "package.json") {
+      if (basename9(m) !== "package.json") {
         unread++;
         continue;
       }
@@ -14922,7 +14956,7 @@ async function scanDeps(iocs, tree, run, opts = {}) {
         try {
           rmSync6(d, { recursive: true, force: true });
           mkdirSync8(d, { recursive: true });
-          copyFileSync(f, join19(d, basename8(f)));
+          copyFileSync(f, join19(d, basename9(f)));
           staged.set(d, f);
         } catch {
           gaps.push({ surface: "deps", what: `advisories for ${f}`, why: "the lockfile could not be copied for package-checker" });
@@ -16037,13 +16071,13 @@ async function scanGithub(iocs, runner2, opts = {}) {
 
 // src/scan/host.ts
 import { createHash as createHash5 } from "crypto";
-import { closeSync as closeSync6, existsSync as existsSync18, lstatSync as lstatSync5, openSync as openSync6, readdirSync as readdirSync13, readFileSync as readFileSync20, readSync as readSync5, realpathSync as realpathSync4, statSync as statSync15 } from "fs";
+import { closeSync as closeSync7, existsSync as existsSync18, lstatSync as lstatSync5, openSync as openSync7, readdirSync as readdirSync13, readFileSync as readFileSync20, readSync as readSync6, realpathSync as realpathSync4, statSync as statSync15 } from "fs";
 import { homedir as homedir5, platform, tmpdir as tmpdir5 } from "os";
-import { basename as basename12, dirname as dirname5, join as join23 } from "path";
+import { basename as basename13, dirname as dirname5, join as join23 } from "path";
 
 // src/scan/agents.ts
-import { closeSync as closeSync4, existsSync as existsSync17, openSync as openSync4, readdirSync as readdirSync10, readFileSync as readFileSync19, readSync as readSync3, statSync as statSync14 } from "fs";
-import { basename as basename9, dirname as dirname4, join as join20, resolve as resolve5 } from "path";
+import { closeSync as closeSync5, existsSync as existsSync17, openSync as openSync5, readdirSync as readdirSync10, readFileSync as readFileSync19, readSync as readSync4, statSync as statSync14 } from "fs";
+import { basename as basename10, dirname as dirname4, join as join20, resolve as resolve5 } from "path";
 var MAX = 2 * 1024 * 1024;
 function readJson4(p) {
   try {
@@ -16067,14 +16101,14 @@ function isBinaryExecutable(p) {
 function readHead(p, bytes, encoding = "utf8") {
   let fd;
   try {
-    fd = openSync4(p, "r");
+    fd = openSync5(p, "r");
     const buf = Buffer.alloc(bytes);
-    const n = readSync3(fd, buf, 0, bytes, 0);
+    const n = readSync4(fd, buf, 0, bytes, 0);
     return buf.subarray(0, n).toString(encoding);
   } catch {
     return void 0;
   } finally {
-    if (fd !== void 0) closeSync4(fd);
+    if (fd !== void 0) closeSync5(fd);
   }
 }
 function readText2(p) {
@@ -16148,7 +16182,7 @@ var FLAG_WITH_VALUE = /* @__PURE__ */ new Set([
 ]);
 function launcherPackage(command2, args = [], depth = 0) {
   if (typeof command2 !== "string") return void 0;
-  const cmd = basename9(command2);
+  const cmd = basename10(command2);
   if (cmd === "env" && depth < 3) {
     const i = args.findIndex((a) => !/^-|^[A-Za-z_][A-Za-z0-9_]*=/.test(a));
     return i < 0 ? void 0 : launcherPackage(args[i], args.slice(i + 1), depth + 1);
@@ -16435,7 +16469,7 @@ function scanAgents(home, clones, m, opts = {}) {
   for (const f of [join20(home, ".codex/AGENTS.md"), join20(home, ".gemini/GEMINI.md")]) steering.add(f);
   for (const root of [join20(home, ".claude/skills"), join20(home, ".agents/skills")])
     for (const s of listDir(root).slice(0, 200)) commanding.add(join20(root, s, "SKILL.md"));
-  for (const f of (opts.files ?? []).filter((x) => NESTED_INSTRUCTIONS.has(basename9(x))).slice(0, 2e3)) steering.add(f);
+  for (const f of (opts.files ?? []).filter((x) => NESTED_INSTRUCTIONS.has(basename10(x))).slice(0, 2e3)) steering.add(f);
   for (const p of [...steering, ...commanding]) {
     const text = existsSync17(p) ? readText2(p) : void 0;
     if (text === void 0) continue;
@@ -16491,9 +16525,9 @@ function scriptSignals(path, home, content = [], depth = 0) {
   const out2 = /* @__PURE__ */ new Set();
   const lines = text.split("\n");
   for (const l of lines.slice(0, 5e3))
-    if (l.trim() && !/^\s*#/.test(l)) for (const s of riskSignals(l, void 0, home, { location: false })) out2.add(`its script ${basename9(path)} ${s}`);
+    if (l.trim() && !/^\s*#/.test(l)) for (const s of riskSignals(l, void 0, home, { location: false })) out2.add(`its script ${basename10(path)} ${s}`);
   const plain2 = text.replace(WASM_B64, "");
-  if (plain2.split("\n").some((l) => l.length >= 2e4) || BLOB.test(plain2)) out2.add(`its script ${basename9(path)} holds a large encoded blob`);
+  if (plain2.split("\n").some((l) => l.length >= 2e4) || BLOB.test(plain2)) out2.add(`its script ${basename10(path)} holds a large encoded blob`);
   if (depth === 0)
     for (const mm of [...text.matchAll(/(?:require\(|import\(|from\s+|import\s+)\s*["'](\.{1,2}\/[^"']+)["']/g)].slice(0, 20)) {
       const base2 = resolve5(dirname4(path), mm[1]);
@@ -16520,7 +16554,7 @@ function ruleFiles(dir) {
 
 // src/scan/macos.ts
 import { lstatSync as lstatSync3, readdirSync as readdirSync11 } from "fs";
-import { basename as basename10, join as join21 } from "path";
+import { basename as basename11, join as join21 } from "path";
 var MAX_APPS = 2e3;
 function listApps(dirs) {
   const out2 = [];
@@ -16572,7 +16606,7 @@ var APPLE_NAMES = new Set(
   ].map((n) => n.toLowerCase().replace(/\s+/g, ""))
 );
 function appleLike(path, bundleId) {
-  return APPLE_NAMES.has(basename10(path, ".app").toLowerCase().replace(/\s+/g, "")) || /^com\.apple\./i.test(bundleId ?? "");
+  return APPLE_NAMES.has(basename11(path, ".app").toLowerCase().replace(/\s+/g, "")) || /^com\.apple\./i.test(bundleId ?? "");
 }
 async function appFindings(runner2, dirs, opts) {
   const findings = [];
@@ -16589,7 +16623,7 @@ async function appFindings(runner2, dirs, opts) {
     return app;
   });
   for (const app of apps) {
-    const name = basename10(app.path);
+    const name = basename11(app.path);
     const bundle = app.bundleId ? opts.bundle.find((x) => x.test(app.bundleId ?? "")) : void 0;
     const team = app.signature?.team ? opts.team.find((x) => x.test(app.signature?.team ?? "")) : void 0;
     const m = bundle ?? team;
@@ -16626,8 +16660,8 @@ async function appFindings(runner2, dirs, opts) {
 }
 
 // src/scan/stealer.ts
-import { closeSync as closeSync5, fstatSync, lstatSync as lstatSync4, openSync as openSync5, readdirSync as readdirSync12, readSync as readSync4, realpathSync as realpathSync3 } from "fs";
-import { basename as basename11, join as join22 } from "path";
+import { closeSync as closeSync6, fstatSync, lstatSync as lstatSync4, openSync as openSync6, readdirSync as readdirSync12, readSync as readSync5, realpathSync as realpathSync3 } from "fs";
+import { basename as basename12, join as join22 } from "path";
 var readdirOr2 = (d) => {
   try {
     return readdirSync12(d);
@@ -16638,14 +16672,14 @@ var readdirOr2 = (d) => {
 function head(p, n) {
   let fd;
   try {
-    fd = openSync5(p, "r");
+    fd = openSync6(p, "r");
     const buf = Buffer.alloc(n);
-    const got = readSync4(fd, buf, 0, n, 0);
+    const got = readSync5(fd, buf, 0, n, 0);
     return buf.subarray(0, got);
   } catch {
     return void 0;
   } finally {
-    if (fd !== void 0) closeSync5(fd);
+    if (fd !== void 0) closeSync6(fd);
   }
 }
 function binaryKind(p) {
@@ -16692,11 +16726,11 @@ function appleLookalikeFolders(dirs) {
 function zipEntries(p, max = 2e4) {
   let fd;
   try {
-    fd = openSync5(p, "r");
+    fd = openSync6(p, "r");
     const size = fstatSync(fd).size;
     const tailLen = Math.min(size, 65557);
     const tail = Buffer.alloc(tailLen);
-    readSync4(fd, tail, 0, tailLen, size - tailLen);
+    readSync5(fd, tail, 0, tailLen, size - tailLen);
     let eocd = -1;
     for (let i = tailLen - 22; i >= 0; i--)
       if (tail.readUInt32LE(i) === 101010256) {
@@ -16710,7 +16744,7 @@ function zipEntries(p, max = 2e4) {
     if ((cdOffset === 4294967295 || count === 65535) && eocd >= 20 && tail.readUInt32LE(eocd - 20) === 117853008) {
       const rec = Number(tail.readBigUInt64LE(eocd - 20 + 8));
       const z = Buffer.alloc(56);
-      readSync4(fd, z, 0, 56, rec);
+      readSync5(fd, z, 0, 56, rec);
       if (z.readUInt32LE(0) !== 101075792) return void 0;
       count = Number(z.readBigUInt64LE(32));
       cdSize = Number(z.readBigUInt64LE(40));
@@ -16718,7 +16752,7 @@ function zipEntries(p, max = 2e4) {
     }
     if (cdOffset + cdSize > size) return void 0;
     const cd = Buffer.alloc(Math.min(cdSize, 16 * 1024 * 1024));
-    readSync4(fd, cd, 0, cd.length, cdOffset);
+    readSync5(fd, cd, 0, cd.length, cdOffset);
     const names = [];
     let at = 0;
     for (let i = 0; i < count && names.length < max && at + 46 <= cd.length; i++) {
@@ -16733,7 +16767,7 @@ function zipEntries(p, max = 2e4) {
   } catch {
     return void 0;
   } finally {
-    if (fd !== void 0) closeSync5(fd);
+    if (fd !== void 0) closeSync6(fd);
   }
 }
 var STOLEN = /(^|\/)(Login Data|Cookies|Local State|Web Data|logins\.json|key4\.db|cookies\.sqlite)$|\.keychain(-db)?$|Safe Storage/i;
@@ -16806,7 +16840,7 @@ async function stagingArchives(runner2, dirs, opts) {
       if (r.ok) names = r.stdout.split("\n").filter(Boolean).slice(0, 2e4);
     }
     if (!names) unlisted.push(p);
-    const stolen = [...new Set((names ?? []).filter((x) => STOLEN.test(x.replace(/\/+$/, ""))).map((x) => basename11(x.replace(/\/+$/, ""))))];
+    const stolen = [...new Set((names ?? []).filter((x) => STOLEN.test(x.replace(/\/+$/, ""))).map((x) => basename12(x.replace(/\/+$/, ""))))];
     if (stolen.length)
       findings.push({
         surface: "host",
@@ -16820,12 +16854,12 @@ async function stagingArchives(runner2, dirs, opts) {
         },
         key: `host|staging|${p}`
       });
-    else if (LOOT_NAME.test(basename11(p)))
+    else if (LOOT_NAME.test(basename12(p)))
       findings.push({
         surface: "host",
         severity: "suspicious",
         subject: p,
-        title: `Archive ${basename11(p)} in ${p.slice(0, -basename11(p).length - 1)} is named like a macOS stealer's loot (osalogging.zip, out.zip)${names ? `: ${names.length} file(s) inside` : ""}`,
+        title: `Archive ${basename12(p)} in ${p.slice(0, -basename12(p).length - 1)} is named like a macOS stealer's loot (osalogging.zip, out.zip)${names ? `: ${names.length} file(s) inside` : ""}`,
         evidence: { kind: "file", ref: p, excerpt: (names ?? []).slice(0, 8).join(" | ").slice(0, 300) },
         key: `host|staging|${p}`
       });
@@ -16847,11 +16881,11 @@ function sha256File(p, max = Number.POSITIVE_INFINITY) {
   try {
     const st = statSync15(p);
     if (!st.isFile() || st.size > max) return void 0;
-    fd = openSync6(p, "r");
+    fd = openSync7(p, "r");
     const h = createHash5("sha256");
     const buf = Buffer.alloc(1024 * 1024);
     for (; ; ) {
-      const n = readSync5(fd, buf, 0, buf.length, null);
+      const n = readSync6(fd, buf, 0, buf.length, null);
       if (n <= 0) break;
       h.update(buf.subarray(0, n));
     }
@@ -16859,7 +16893,7 @@ function sha256File(p, max = Number.POSITIVE_INFINITY) {
   } catch {
     return void 0;
   } finally {
-    if (fd !== void 0) closeSync6(fd);
+    if (fd !== void 0) closeSync7(fd);
   }
 }
 var MAX_TEXT = 2 * 1024 * 1024;
@@ -16984,7 +17018,7 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
     if (m) reportFile(p, m);
   }
   const probe = (p, m) => {
-    const name = basename12(p);
+    const name = basename13(p);
     if (/[*?]/.test(dirname5(p))) return;
     const hits = /[*?]/.test(name) ? readdirOr3(dirname5(p)).filter((n) => globRegex(name).test(n)).slice(0, 50).map((n) => join23(dirname5(p), n)) : [p];
     for (const h of hits) {
@@ -17057,13 +17091,13 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
     });
   let oddNames = 0;
   for (const p of tree.files) {
-    if (!hasControlChar(basename12(p)) || basename12(p) === "Icon\r" || oddNames >= 50) continue;
+    if (!hasControlChar(basename13(p)) || basename13(p) === "Icon\r" || oddNames >= 50) continue;
     oddNames++;
     findings.push({
       surface: "host",
       severity: "suspicious",
       subject: p,
-      title: `File name with a control character (line break or similar), a trick to hide from tools: ${JSON.stringify(basename12(p))} in ${p.slice(0, p.length - basename12(p).length)}`,
+      title: `File name with a control character (line break or similar), a trick to hide from tools: ${JSON.stringify(basename13(p))} in ${p.slice(0, p.length - basename13(p).length)}`,
       evidence: { kind: "file", ref: JSON.stringify(p) },
       key: `host|odd-name|${p}`
     });
@@ -17136,7 +17170,7 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
     }
   }
   for (const p of startupFiles) {
-    const name = basename12(p);
+    const name = basename13(p);
     let st;
     try {
       st = statSync15(p);
@@ -17202,7 +17236,7 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
       }
     }
     const label = /<key>Label<\/key>\s*<string>([^<]+)<\/string>/.exec(text)?.[1] ?? name.replace(/\.plist$/, "");
-    const appleProgram = /^\/(System|usr\/libexec|usr\/sbin|Library\/Apple)\//.test(executable ?? "") && !INTERPRETERS.test(basename12(executable ?? ""));
+    const appleProgram = /^\/(System|usr\/libexec|usr\/sbin|Library\/Apple)\//.test(executable ?? "") && !INTERPRETERS.test(basename13(executable ?? ""));
     if (/^com\.apple\./i.test(label) && !appleProgram) item.signals.unshift(`is named like an Apple service (${label}) but is not Apple's`);
     const bundle = item.exists ? appBundleOf(executable) : void 0;
     const bundleId = bundle && M.bundle.length ? await bundleIdOf(bundle, opts.skipLive ? void 0 : runner2) : void 0;
@@ -17341,7 +17375,7 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
         surface: "host",
         severity: "suspicious",
         subject: p,
-        title: `${basename12(p)} line ${c.line}: a pasted command that ${c.signals.join("; ")} (the ClickFix pattern of macOS stealers)`,
+        title: `${basename13(p)} line ${c.line}: a pasted command that ${c.signals.join("; ")} (the ClickFix pattern of macOS stealers)`,
         at: c.at,
         evidence: { kind: "file", ref: `${p}:${c.line}`, excerpt: c.text.slice(0, 200) },
         key: `host|${p}|clickfix|${c.line}`
@@ -17386,7 +17420,7 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
           surface: "host",
           severity: "suspicious",
           subject: entry.path,
-          title: `Editor extension ${id}@${version} hides a run of invisible Unicode variation selectors in its code (the GlassWorm technique): read ${basename12(entry.path)} with a hex viewer`,
+          title: `Editor extension ${id}@${version} hides a run of invisible Unicode variation selectors in its code (the GlassWorm technique): read ${basename13(entry.path)} with a hex viewer`,
           evidence: { kind: "file", ref: entry.path },
           key: `host|${entry.path}|selectors`
         });
@@ -17576,7 +17610,7 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
     });
   inventory.credentials = credentialInventory(
     home,
-    tree.files.filter((f) => /^\.env(\.[\w-]+)?$/.test(basename12(f)) && !/\.(example|sample|template|dist)$/.test(f))
+    tree.files.filter((f) => /^\.env(\.[\w-]+)?$/.test(basename13(f)) && !/\.(example|sample|template|dist)$/.test(f))
   );
   if (inventory.credentials.length) {
     const kinds = [...new Set(inventory.credentials.map((c) => c.kind))];
@@ -17929,6 +17963,19 @@ ${su.stderr}`;
       const distinct = [...new Set(statuses)];
       const status = distinct.length === 1 ? distinct[0] : carriers.map((c, i) => `${c}: ${statuses[i]}`).join("; ");
       const what = versions.map((v) => `${v.name}${v.version ? ` ${v.version}` : ""}`).join(", ");
+      const cveYear = Number(/^CVE-(\d{4})-/.exec(k.cveID)?.[1]);
+      const old = carriers.length === 1 && carriers[0] === "macOS" && cveYear > 0 && now.getUTCFullYear() - cveYear >= 2;
+      if (old) {
+        res.findings.push({
+          surface: "deps",
+          severity: "info",
+          subject: what,
+          title: `${k.cveID} (${k.vendorProject} ${k.product}) was added to CISA KEV on ${k.dateAdded}, but it dates from ${cveYear}: ${what} most likely already has the fix (KEV does not list affected versions; confirm on Apple's security notes)`,
+          evidence: { kind: "url", ref: `https://nvd.nist.gov/vuln/detail/${k.cveID}`, excerpt: `CISA KEV ${k.dateAdded}` },
+          key: `deps|kev|${k.cveID}`
+        });
+        continue;
+      }
       res.findings.push({
         surface: "deps",
         severity: "info",
