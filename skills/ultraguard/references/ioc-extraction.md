@@ -54,11 +54,11 @@ The full worked example, with all 27 indicators of that article, is
 | `pr_title` | exact title (or regex) | PRs you opened anywhere; PRs in repos you can push to; run titles |
 | `commit_message` | exact first line (or regex) | commits on default branches; run titles |
 | `workflow_file` | glob, e.g. `.github/workflows/build-audit-*.yml` | workflow files on default branches, files on disk |
-| `file` | glob on the name (`.ci-*.sh`) or the path tail (`public/fonts/x.woff2`) | repo root files, install hooks, files on disk |
+| `file` | glob on the name (`.ci-*.sh`), the path tail (`public/fonts/x.woff2`), or a path as the source writes it (`~/.dev-env/`, `$HOME/.config/x.py`, `/tmp/x`): a folder counts | repo root files, install hooks, files on disk (the walk, the exact path, drop folders, package folders) |
 | `string` | substring | workflow file contents, startup items, VS Code tasks, crontab, shell history |
 | `ip`, `domain`, `url` | the address, defanged or not | the same contents, plus open connections (IPs) |
-| `sha256` | 64 hex characters | files named like a `file` IOC, startup items |
-| `package` | name, with `ecosystem` and optional `versions` | every lockfile; editor extensions (`ecosystem: "vscode"`) |
+| `sha256` | 64 hex characters | files named like a `file` IOC, startup items and the programs and scripts they run, the antivirus target list (recent Downloads and temp files, flagged files, new extensions), `.pth` files |
+| `package` | name, with `ecosystem` and optional `versions` | every lockfile; editor extensions (`ecosystem: "vscode"`); browser extensions (`ecosystem: "chrome"` with the 32-letter ID, or `"firefox"` with the add-on ID) |
 | `cache_key_prefix`, `artifact_prefix` | prefix | GitHub Actions caches and artifacts |
 | `cron_tag` | substring | crontab, startup items |
 | `process` | substring | running processes |
