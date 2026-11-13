@@ -95,6 +95,25 @@ describe("projects", () => {
     expect(projectOf(own, home).kind).toBe("own");
   });
 
+  it("a fixture folder is looked up below the project's git root or the scan root, never in the folders above it", () => {
+    const home = tmp("ug-fx1-");
+    // A repository named fixtures, and one under a test-data folder: the user's own projects.
+    mkdirSync(join(home, "code/fixtures/.git"), { recursive: true });
+    mkdirSync(join(home, "work/test-data/masenko/.git"), { recursive: true });
+    const named = put(home, "code/fixtures/bun.lock");
+    const under = put(home, "work/test-data/masenko/web/bun.lock");
+    expect(projectOf(named, home)).toEqual({ root: join(home, "code/fixtures"), kind: "own" });
+    expect(projectOf(under, home)).toEqual({ root: join(home, "work/test-data/masenko"), kind: "own" });
+    // A home or a scan root under a testdata folder: no project below it is a fixture.
+    const vol = join(tmp("ug-fx1v-"), "testdata");
+    const loose = put(vol, "me/code/app/package-lock.json");
+    expect(projectOf(loose, join(vol, "me")).kind).toBe("own");
+    expect(projectOf(loose, undefined, new Map(), [join(vol, "me/code")]).kind).toBe("own");
+    // A test-fixtures folder inside a repository stays a fixture, rooted at that folder.
+    const inner = put(home, "code/fixtures/test-fixtures/npm/package-lock.json");
+    expect(projectOf(inner, home)).toEqual({ root: join(home, "code/fixtures/test-fixtures"), kind: "fixture" });
+  });
+
   it("reads which packages a project declares, and which are dev-only", () => {
     const d = tmp("ug-decl-");
     put(d, "js/package.json", JSON.stringify({ dependencies: { next: "^16" }, devDependencies: { vitest: "^4", next: "^16" } }));

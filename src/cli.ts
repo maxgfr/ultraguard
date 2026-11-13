@@ -442,6 +442,7 @@ async function runScan(surface: "github" | "host" | "deps" | "cloud", a: Command
       state: stateDir(argValue(a, "state")),
       runner,
       home: homedir(),
+      roots,
       software: softwareScan,
     });
     Object.assign(r.result.stats, v.stats);
