@@ -394,6 +394,67 @@ const SHELL_RISK: Rule[] = [
   [(s) => s.split(/\s+/).some(inTemp), "runs from a temporary or shared folder"],
 ];
 
+/**
+ * ClickFix and what 2026 macOS stealers run once pasted into Terminal (AMOS,
+ * MacSync, Phexia...): a download piped into osascript, a download decoded
+ * and decompressed into a shell, a fake password dialog, a password checked
+ * with dscl or piped into sudo, quarantine stripped from an app, Gatekeeper
+ * turned off. Matched in shell history, where the pasted command stays.
+ */
+const CLICKFIX: Rule[] = [
+  [
+    (s) => {
+      const rest = from(s, FETCHER);
+      return !!rest && /\|\s*(sudo\s+(-\S+\s+)*)?(\S*\/)?osascript\b/i.test(rest);
+    },
+    "pipes a download into osascript (ClickFix)",
+  ],
+  [
+    (s) =>
+      FETCHER.test(s) &&
+      /\bbase64\s+(-\w*[dD]\b|--decode\b)/.test(s) &&
+      /\b(gunzip|zcat|gzip\s+(-\w*d\b|--decompress\b))/.test(s) &&
+      /\|\s*(sudo\s+(-\S+\s+)*)?(\S*\/)?((ba|z|da|k)?sh|osascript)\b/.test(s),
+    "downloads, decodes and decompresses a payload into a shell (ClickFix)",
+  ],
+  [
+    (s) => {
+      const rest = from(s, /\bosascript\b/i);
+      return !!rest && /display dialog/i.test(rest) && /hidden answer/i.test(rest);
+    },
+    "shows a fake password dialog (osascript display dialog with hidden answer)",
+  ],
+  [/\bdscl\s+\.\s+-authonly\b/, "checks a password with dscl . -authonly, how stealers validate a phished password"],
+  [
+    (s) => {
+      const rest = from(s, /\bxattr\b/);
+      return !!rest && /\s-[a-z]*[cd][a-z]*\b/.test(rest) && /\.app\b/i.test(rest);
+    },
+    "strips macOS's quarantine from an app, which skips Gatekeeper's check",
+  ],
+  [/\becho\b[^|\n]*\|\s*sudo\b[^|\n]*\s-[a-zA-Z]*S\b/, "pipes a password into sudo -S"],
+  [/\bspctl\s+(--master-disable|--global-disable)\b/, "turns Gatekeeper off"],
+];
+
+/** The ClickFix signals of one command line. */
+export function clickfixSignals(rawLine: string): string[] {
+  const line = rawLine.length > 4000 ? rawLine.slice(0, 4000) : rawLine;
+  return CLICKFIX.filter(([rule]) => hit(rule, line)).map(([, label]) => label);
+}
+
+/** History lines with ClickFix signals: the 1-based line, the command (zsh's ": <time>:0;" prefix off), when zsh recorded it. */
+export function clickfixLines(text: string): { line: number; text: string; signals: string[]; at?: string }[] {
+  const out: { line: number; text: string; signals: string[]; at?: string }[] = [];
+  for (const { line, text: raw } of logicalLines(text)) {
+    const zsh = /^: (\d+):\d+;/.exec(raw);
+    const cmd = (zsh ? raw.slice(zsh[0].length) : raw.replace(/^- cmd: /, "")).trim();
+    if (!cmd) continue;
+    const signals = clickfixSignals(cmd);
+    if (signals.length) out.push({ line, text: cmd, signals, at: zsh ? new Date(Number(zsh[1]) * 1000).toISOString() : undefined });
+  }
+  return out;
+}
+
 /** Physical lines joined where a line ends with a backslash, each with its first line number. */
 function logicalLines(text: string): { line: number; text: string }[] {
   const out: { line: number; text: string }[] = [];
@@ -808,6 +869,13 @@ export async function processFindings(runner: Runner, home: string, os: NodeJS.P
         }
       }
     }
+    // A cryptocurrency miner (Phexia installs XMRig): its name, or a mining pool on its command line.
+    if (
+      /^(xmrig|xmr-stak)/i.test(basename(exe)) ||
+      /^(xmrig|xmr-stak)/i.test(basename(cmdline.split(/\s+/)[0] ?? "")) ||
+      /\bstratum\+(tcp|ssl|tls):\/\//i.test(cmdline)
+    )
+      signals = ["looks like a cryptocurrency miner (xmrig, or a stratum mining pool on its command line)", ...signals];
     if (!signals.length || seen.has(subject)) continue;
     seen.add(subject);
     out.push({

@@ -28,7 +28,7 @@ export interface AvEngine {
 }
 
 const MAX_TARGETS = 20_000;
-const MAX_FOLDER_ENTRIES = 200_000;
+const MAX_FOLDER_ENTRIES = 50_000;
 /** Recent files kept per drop folder, and how deep the listing goes: stealers stage in nested random folders of /tmp and $TMPDIR. */
 export const RECENT_CAP = 10_000;
 export const RECENT_DEPTH = 6;

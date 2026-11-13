@@ -15,6 +15,7 @@ import type { Runner } from "../runner.js";
 import type { Finding, Gap, IocFile, SurfaceResult } from "../types.js";
 import { readJson, scanAgents } from "./agents.js";
 import { appFindings } from "./macos.js";
+import { appleLookalikeFolders, hiddenHomePrograms, stagingArchives } from "./stealer.js";
 import { antivirusPass, avTargetList, dropFolders, excludedBy, yaraPass, yaraRuleFiles } from "./antivirus.js";
 import { DEFAULT_RESCAN_DAYS, fullFiles, type Incremental, ruleSetKey, ScanCache } from "./avcache.js";
 import {
@@ -24,6 +25,7 @@ import {
   bundleIdOf,
   codesignInfo,
   changedMs,
+  clickfixLines,
   configFindings,
   credentialInventory,
   EXTENSION_ENTRY,
@@ -84,6 +86,10 @@ export interface HostScanOptions {
   avRescanDays?: number;
   /** macOS: XProtect's version and rule files (detectXProtect), with the run's [S#] for them. Without it, no XProtect YARA pass. */
   xprotect?: XProtectInfo;
+  /** Where stealers stage their loot archives (default /tmp, $TMPDIR, /Users/Shared; the drop folders when those are given). */
+  stagingDirs?: string[];
+  /** macOS: Application Support folders checked for hidden Apple look-alikes (default ~/Library/Application Support, and /Library/Application Support with the live checks). */
+  supportDirs?: string[];
   /** macOS: folders holding installed apps (default /Applications and ~/Applications). Read with the live checks. */
   appDirs?: string[];
 }
@@ -114,6 +120,8 @@ export function sha256File(p: string, max = Number.POSITIVE_INFINITY): string | 
 }
 
 const MAX_TEXT = 2 * 1024 * 1024;
+/** Targets hashed against sha256 IOCs: the scanners read the whole target list, hashing stays on the short part of it. */
+const MAX_HASHED = 5000;
 
 function readText(p: string, max = MAX_TEXT): string | undefined {
   try {
@@ -411,6 +419,14 @@ export async function scanHost(
   }
   result.stats.vscodeDirs = tree.vscodeDirs.length;
 
+  const hashOf = (f: string | undefined) => {
+    if (!f || !hashes.size) return undefined;
+    hashed.add(f);
+    return hashes.get(sha256File(f) ?? "");
+  };
+  // ultraguard's own folders: never targets, never findings.
+  const ownDirs = [opts.listDir, opts.stateDir].filter((x): x is string => !!x);
+
   // 3. Startup items: an IOC inside is a compromise. Without one, the item's
   // facts decide: who signed what it runs, where that lives, what the command
   // does, and whether it changed recently. A risk signal is worth a look
@@ -527,11 +543,6 @@ export async function scanHost(
     // A strong signal (fetch-and-run, reverse shell, temp folder) is suspicious at any date.
     const strong = item.signals.some((s) => !s.startsWith("points to") && !s.startsWith("is not signed"));
     // An IOC in the item, in the script it runs, its name, or the hash of the item, its program or its script.
-    const hashOf = (f: string | undefined) => {
-      if (!f || !hashes.size) return undefined;
-      hashed.add(f);
-      return hashes.get(sha256File(f) ?? "");
-    };
     // The launchd label, the file name without its extension (a systemd unit's name), the signing team, the app bundle.
     const unit = name.replace(/\.(plist|service|timer|socket|path|desktop)$/, "");
     const idHit =
@@ -573,6 +584,46 @@ export async function scanHost(
   }
   result.stats.startupItems = startupCount;
 
+  // 3b. Hidden programs in the home folder (AMOS's ~/.agent and ~/.mainhelper), hidden Apple look-alike folders, loot archives.
+  for (const h of hiddenHomePrograms(home, inventory.startupItems)) {
+    if (fileSeen.has(h.path)) continue;
+    const m = hashOf(h.path) ?? M.content.find((x) => x.test(h.path));
+    if (m)
+      findings.push(
+        hitOf(m, { subject: h.path, title: `Hidden file ${h.path} (${h.why}) matches "${m.indicator.value}"`, evidence: { kind: "file", ref: h.path } }),
+      );
+    else
+      findings.push({
+        surface: "host",
+        severity: "suspicious",
+        subject: h.path,
+        title: `Hidden program in your home folder: ${h.path} is ${h.why}. macOS backdoors hide there (AMOS's ~/.agent, ~/.mainhelper)`,
+        evidence: { kind: "file", ref: h.path, excerpt: h.runBy ? `run by ${h.runBy}` : undefined },
+        key: `host|hidden-home|${h.path}`,
+      });
+  }
+  if (os === "darwin") {
+    const support = opts.supportDirs ?? [join(home, "Library/Application Support"), ...(opts.skipLive ? [] : ["/Library/Application Support"])];
+    for (const d of appleLookalikeFolders(support))
+      if (!fileSeen.has(d))
+        findings.push({
+          surface: "host",
+          severity: "suspicious",
+          subject: d,
+          title: `Hidden folder named like Apple's: ${d}. Apple does not hide its folders in Application Support; AMOS stages its backdoor in .com.apple.* folders there`,
+          evidence: { kind: "file", ref: d },
+          key: `host|apple-lookalike|${d}`,
+        });
+  }
+  const staging = await stagingArchives(runner, opts.stagingDirs ?? opts.dropDirs ?? [tmpdir(), "/tmp", "/Users/Shared"], {
+    sinceMs,
+    nowMs,
+    skip: excludedBy(ownDirs),
+  });
+  findings.push(...staging.findings.filter((f) => !fileSeen.has(f.subject)));
+  gaps.push(...staging.gaps);
+  result.stats.stagingArchives = staging.archives;
+
   // 4a. AI coding agents: hooks, MCP servers, base URLs, instruction files (home and every clone).
   // One malformed config must not stop the surface: an exception is a gap.
   try {
@@ -610,7 +661,23 @@ export async function scanHost(
     const text = existsSync(p) ? readText(p, 20 * 1024 * 1024) : undefined;
     if (!text) continue;
     const lines = text.split("\n");
+    // A pasted ClickFix chain in history: suspicious alone, compromised when it names an IOC.
+    const pasted = /_history$/.test(p) ? clickfixLines(text) : [];
+    const chained = new Set<number>();
     for (const m of M.content) {
+      const c = pasted.find((x) => m.test(x.text));
+      if (c) {
+        chained.add(c.line);
+        findings.push(
+          hitOf(m, {
+            subject: p,
+            title: `${p} line ${c.line}: a pasted command that ${c.signals.join("; ")}, with "${m.indicator.value}"`,
+            at: c.at,
+            evidence: { kind: "file", ref: `${p}:${c.line}`, excerpt: c.text.slice(0, 200) },
+          }),
+        );
+        continue;
+      }
       const ln = lines.findIndex((l) => m.test(l));
       if (ln < 0) continue;
       findings.push(
@@ -630,6 +697,24 @@ export async function scanHost(
         }),
       );
     }
+    const rest = pasted.filter((c) => !chained.has(c.line));
+    for (const c of rest.slice(0, 20))
+      findings.push({
+        surface: "host",
+        severity: "suspicious",
+        subject: p,
+        title: `${basename(p)} line ${c.line}: a pasted command that ${c.signals.join("; ")} (the ClickFix pattern of macOS stealers)`,
+        at: c.at,
+        evidence: { kind: "file", ref: `${p}:${c.line}`, excerpt: c.text.slice(0, 200) },
+        key: `host|${p}|clickfix|${c.line}`,
+      });
+    if (rest.length > 20)
+      gaps.push({
+        surface: "host",
+        what: `${rest.length - 20} more ClickFix-like line(s) in ${p}`,
+        why: "only the first 20 are reported",
+        fix: `grep -n osascript ${p}`,
+      });
   }
 
   // 5. Editor extensions named by an IOC, in VS Code and every fork (Cursor, Windsurf, VSCodium, Antigravity, Kiro...),
@@ -719,10 +804,11 @@ export async function scanHost(
       key: "host|browser-ext-recent",
     });
 
-  // 5c. macOS apps: bundle_id and team_id IOCs. Live: codesign and plutil run.
+  // 5c. macOS apps: bundle_id and team_id IOCs; new unsigned apps and Apple look-alikes. Live: codesign and plutil run.
   if (os === "darwin" && !opts.skipLive) {
     const apps = await appFindings(runner, appDirs, {
       nowMs,
+      sinceMs,
       team: M.team,
       bundle: M.bundle,
     });
@@ -935,7 +1021,10 @@ export async function scanHost(
   if (hashes.size) {
     const skip = excludedBy(exclude);
     let tooBig = 0;
-    const files = targets().targets.flatMap((t) => {
+    // The first 5,000 targets: startup programs, flagged files and new extensions come first; the temp folders' recent files fill the rest.
+    const all = targets().targets;
+    const beyond = Math.max(0, all.length - MAX_HASHED);
+    const files = all.slice(0, MAX_HASHED).flatMap((t) => {
       try {
         return statSync(t).isDirectory()
           ? readdirOr(t)
@@ -970,7 +1059,7 @@ export async function scanHost(
     result.stats.hashed = hashed.size;
     gaps.push({
       surface: "host",
-      what: `sha256 of files outside startup programs, flagged files, recent temp and Downloads files and new extensions${tooBig ? ` (and ${tooBig} file(s) over 500 MB)` : ""}`,
+      what: `sha256 of files outside startup programs, flagged files, recent temp and Downloads files and new extensions${tooBig ? ` (and ${tooBig} file(s) over 500 MB)` : ""}${beyond ? ` (and ${beyond} recent file(s) past the first ${MAX_HASHED} targets)` : ""}`,
       why: "hashing every file on the disk takes hours",
     });
   }
