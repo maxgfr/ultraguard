@@ -147,4 +147,16 @@ describe("fixes", () => {
     expect(renderFixes(plans, r)).toContain(`a git worktree of \`${join(home, "app")}\`: fix the main checkout`);
     expect(renderFixes([], r)).toContain("No project of yours locks a vulnerable package version.");
   });
+
+  it("--project on test fixtures says they are vulnerable on purpose, not to update a tool", () => {
+    const home = tmp("ug-fx5-");
+    put(home, "scanner/.git/HEAD");
+    const lock = put(home, "scanner/test-fixtures/npm/package-lock.json", "{}");
+    const r = rankVulnerabilities([v(lock, "qs", "6.1.0", "6.14.1")], { home, kev: new Map() });
+    const plans = planFixes(r, { project: join(home, "scanner/test-fixtures") });
+    expect(plans.map((p) => p.kind)).toEqual(["fixture"]);
+    const text = renderFixes(plans, r);
+    expect(text).toContain("These are test fixtures, vulnerable on purpose: nothing to fix.");
+    expect(text).not.toContain("update the tool that owns it");
+  });
 });

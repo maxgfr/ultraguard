@@ -255,6 +255,14 @@ describe("fix", () => {
       /belongs to a tool, a cache or a plugin/,
     );
 
+    // Test fixtures, even at the root of their own git repository (a vulnerabilities.json of an older run): refused as fixtures.
+    const fx = repo();
+    for (const pr of fx.ranked.projects) pr.kind = "fixture";
+    await expect(fixProject(fx.ranked, opts(fx.root), fx.run, { runner: fakes(), state: fx.state, now: NOW, checker })).rejects.toThrow(
+      `fix refused: ${fx.root} holds test fixtures (vulnerable on purpose): ultraguard does not fix them`,
+    );
+    expect(git(fx.root, "worktree", "list").split("\n")).toHaveLength(1);
+
     const p = repo();
     await expect(fixProject(p.ranked, opts(p.root, ["P0"]), p.run, { runner: fakes(), state: p.state, now: NOW, checker })).rejects.toThrow(
       /the plan of .* is empty at P0/,

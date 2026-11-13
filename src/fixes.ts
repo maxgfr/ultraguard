@@ -249,7 +249,9 @@ export function renderFixes(plans: ProjectPlan[], r: RankedVulns): string {
     out.push(`## ${p.name}: \`${p.root}\``, "");
     if (p.kind !== "own")
       out.push(
-        `This is ${p.kind === "worktree" ? `a git worktree${p.mainRepo ? ` of \`${p.mainRepo}\`` : ""}: fix the main checkout` : `a ${p.kind} folder: update the tool that owns it`} rather than this copy.`,
+        p.kind === "fixture"
+          ? "These are test fixtures, vulnerable on purpose: nothing to fix."
+          : `This is ${p.kind === "worktree" ? `a git worktree${p.mainRepo ? ` of \`${p.mainRepo}\`` : ""}: fix the main checkout` : `a ${p.kind} folder: update the tool that owns it`} rather than this copy.`,
         "",
       );
     if (!steps && !p.lockfiles.some((l) => l.unfixed.length)) out.push("Nothing at P0-P2.", "");

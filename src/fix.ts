@@ -263,6 +263,7 @@ const KIND_REFUSAL: Record<string, (p: ProjectPlan) => string> = {
     `${p.root} is a git worktree${p.mainRepo ? ` of ${p.mainRepo}: fix the main checkout (--project ${p.mainRepo})` : ": fix the main checkout"}`,
   tool: (p) => `${p.root} belongs to a tool, a cache or a plugin: update the tool that owns it, ultraguard does not fix it`,
   vendored: (p) => `${p.root} is a vendored copy (node_modules, a virtualenv): update the package that ships it, ultraguard does not fix it`,
+  fixture: (p) => `${p.root} holds test fixtures (vulnerable on purpose): ultraguard does not fix them`,
 };
 
 /** Every check that needs no write: what fix would do, or a UsageError saying why it refuses. */
