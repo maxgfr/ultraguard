@@ -511,6 +511,8 @@ export async function fixProject(ranked: RankedVulns, opts: FixOptions, run: Run
   const checker = deps.checker ?? defaultChecker(runner, join(run.dir, "package-checker", `fix-${record.name}`), { dataDir: feedDir(deps.state) });
   const c = await checker(record.worktree);
   if (!c.ok) record.recheck = { ok: false, error: c.error ?? "package-checker failed", closed: [], remaining: [], introduced: [] };
+  // An incomplete re-check (a feed or a lockfile it could not read) confirms nothing closed.
+  else if (c.warnings?.length) record.recheck = { ok: false, error: `incomplete: ${c.warnings.join("; ")}`, closed: [], remaining: [], introduced: [] };
   else {
     const after = c.vulnerabilities
       .map((v) => ({ v, lockfile: relative(real(record.worktree), real(v.file)) }))

@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { main, setRunner } from "../src/cli.js";
-import { detectTest, editJson, editLine, editWorkspaceOverrides, fixProject, splitCommand } from "../src/fix.js";
+import { detectTest, editJson, editLine, editWorkspaceOverrides, fixProject, renderFix, splitCommand } from "../src/fix.js";
 import { Run } from "../src/run.js";
 import { defaultRunner, type Runner } from "../src/runner.js";
 import type { Checker, CheckerVuln } from "../src/scan/deps.js";
@@ -204,6 +204,20 @@ describe("fix", () => {
     expect(s.recheck?.remaining.map((x) => x.id)).toEqual(["CVE-2026-1001"]);
     expect(s.recheck?.closed.map((x) => x.id)).toEqual(["CVE-2026-1002"]);
     expect(s.exitCode).toBe(1);
+  });
+
+  it("an incomplete re-check confirms nothing closed and exits 1", async () => {
+    const p = repo();
+    const incomplete: Checker = async () => ({ ok: true, vulnerabilities: [], warnings: ["the osv feed for npm (osv.purl) could not be found"] });
+    const r = await fixProject(p.ranked, { project: p.root, apply: true, tiers: TIERS, test: false }, p.run, {
+      runner: fakes(),
+      state: p.state,
+      now: NOW,
+      checker: incomplete,
+    });
+    expect(r.recheck).toMatchObject({ ok: false, error: "incomplete: the osv feed for npm (osv.purl) could not be found", closed: [] });
+    expect(renderFix(r, p.run)).toContain("the advisories are not confirmed closed");
+    expect(r.exitCode).toBe(1);
   });
 
   it("a commit that cannot be signed leaves the changes uncommitted and says so", async () => {
