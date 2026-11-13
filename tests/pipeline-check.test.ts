@@ -46,6 +46,13 @@ describe("check-1 / e2e-6: clean claims in other words", () => {
     expect(says(sentence)).toContain("wrong-clean");
   });
 
+  it("the French preposition 'sur' is not 'sûr' (safe)", () => {
+    const repos = runWith({ "github:repos": "COMPROMISED" });
+    const text = `${ALL_LINES({ "github:repos": "COMPROMISED" }).replace("github:repos: COMPROMISED", "Dépôts GitHub : COMPROMISED — le code de l'attaquant a tourné en CI sur org/app [F1]")}\n\n## Coverage\nnone`;
+    expect(rules(repos, text)).not.toContain("wrong-clean");
+    expect(rules(repos, "Vos dépôts sont sûrs.")).toContain("wrong-clean");
+  });
+
   it("a heading lends its surface to the section ('## This machine' then 'Clean.')", () => {
     expect(says("## This machine\n\nClean.")).toContain("wrong-clean");
   });

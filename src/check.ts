@@ -38,7 +38,7 @@ const CLEAN_WORDS = W(
     "not (been )?(compromised|hit|affected|touched|infected|impacted)",
     "no (sign|evidence|indication|trace)s? of (a |any |the |this )?(compromise|infection|campaign|attack)",
     "shows? no (sign|indicator|trace)s?",
-    "propres?|saine?s?|intacte?s?|s[ûu]re?s?|ras|rien à signaler|aucun problème|aucune compromission",
+    "propres?|saine?s?|intacte?s?|sûre?s?|ras|rien à signaler|aucun problème|aucune compromission",
     "pas ([ée]t[ée] )?(touch[ée]e?s?|compromise?s?|affect[ée]e?s?|concern[ée]e?s?|infect[ée]e?s?)",
     "✅|✔️?|✓",
   ].join("|"),
@@ -46,7 +46,7 @@ const CLEAN_WORDS = W(
 const NOTHING_WORDS = W(
   "nothing (was |is )?(found|detected|matched)|no(\\s+\\S+){0,4}?\\s+(was |were |is |are )?(found|matched|detected)|rien (n'a été |de )?(trouvé|détecté)|aucune? (trace|ioc|indicateur|signe)",
 );
-const NEGATED_CLEAN = W("(not|isn't|aren't|n'est pas|ne sont pas|pas|never)\\s+([\\p{L}']+\\s+)?(clean|safe|propres?|saine?s?|s[ûu]re?s?)");
+const NEGATED_CLEAN = W("(not|isn't|aren't|n'est pas|ne sont pas|pas|never)\\s+([\\p{L}']+\\s+)?(clean|safe|propres?|saine?s?|sûre?s?)");
 const BAD_WORDS = W("compromised|exposed|infected|hit|review|unknown|compromise?s?|expos[ée]e?s?|touch[ée]e?s?|infect[ée]e?s?|à vérifier|inconnue?s?");
 const ALL_CLEAN = W(
   "(everything|all (surfaces )?(is |are )?|nothing (was )?(found|hit)|tout est|rien n'a été)[^.]{0,20}(clean|safe|found|fine|ok|propre|sain|trouvé|touché|en ordre)",

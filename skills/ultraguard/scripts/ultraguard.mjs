@@ -10117,7 +10117,7 @@ var CLEAN_WORDS = W(
     "not (been )?(compromised|hit|affected|touched|infected|impacted)",
     "no (sign|evidence|indication|trace)s? of (a |any |the |this )?(compromise|infection|campaign|attack)",
     "shows? no (sign|indicator|trace)s?",
-    "propres?|saine?s?|intacte?s?|s[\xFBu]re?s?|ras|rien \xE0 signaler|aucun probl\xE8me|aucune compromission",
+    "propres?|saine?s?|intacte?s?|s\xFBre?s?|ras|rien \xE0 signaler|aucun probl\xE8me|aucune compromission",
     "pas ([\xE9e]t[\xE9e] )?(touch[\xE9e]e?s?|compromise?s?|affect[\xE9e]e?s?|concern[\xE9e]e?s?|infect[\xE9e]e?s?)",
     "\u2705|\u2714\uFE0F?|\u2713"
   ].join("|")
@@ -10125,7 +10125,7 @@ var CLEAN_WORDS = W(
 var NOTHING_WORDS = W(
   "nothing (was |is )?(found|detected|matched)|no(\\s+\\S+){0,4}?\\s+(was |were |is |are )?(found|matched|detected)|rien (n'a \xE9t\xE9 |de )?(trouv\xE9|d\xE9tect\xE9)|aucune? (trace|ioc|indicateur|signe)"
 );
-var NEGATED_CLEAN = W("(not|isn't|aren't|n'est pas|ne sont pas|pas|never)\\s+([\\p{L}']+\\s+)?(clean|safe|propres?|saine?s?|s[\xFBu]re?s?)");
+var NEGATED_CLEAN = W("(not|isn't|aren't|n'est pas|ne sont pas|pas|never)\\s+([\\p{L}']+\\s+)?(clean|safe|propres?|saine?s?|s\xFBre?s?)");
 var BAD_WORDS = W("compromised|exposed|infected|hit|review|unknown|compromise?s?|expos[\xE9e]e?s?|touch[\xE9e]e?s?|infect[\xE9e]e?s?|\xE0 v\xE9rifier|inconnue?s?");
 var ALL_CLEAN = W(
   "(everything|all (surfaces )?(is |are )?|nothing (was )?(found|hit)|tout est|rien n'a \xE9t\xE9)[^.]{0,20}(clean|safe|found|fine|ok|propre|sain|trouv\xE9|touch\xE9|en ordre)"
