@@ -1,9 +1,13 @@
 // doctor: what this machine lets ultraguard see. Run it first: every "no" is a
 // surface that will come back UNKNOWN, and the fix is printed next to it.
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { Runner } from "./runner.js";
+import { EPSS_URL, feedCache, KEV_URL } from "./feeds.js";
 import { installedRules, rulesAgeDays } from "./rules.js";
 import { detectAv } from "./scan/antivirus.js";
 import { Gh } from "./scan/gh.js";
+import { detectXProtect, hardeningFindings, XPROTECT_STALE_DAYS } from "./scan/xprotect.js";
 
 export interface DoctorLine {
   check: string;
@@ -12,7 +16,10 @@ export interface DoctorLine {
   fix?: string;
 }
 
-export async function doctor(runner: Runner, opts: { probe?: boolean; state?: string } = {}): Promise<DoctorLine[]> {
+export async function doctor(
+  runner: Runner,
+  opts: { probe?: boolean; state?: string; platform?: NodeJS.Platform; xprotectBundle?: string; appDirs?: string[]; now?: Date } = {},
+): Promise<DoctorLine[]> {
   const out: DoctorLine[] = [];
   const major = Number(process.versions.node.split(".")[0]);
   out.push({ check: "node", ok: major >= 18, detail: process.versions.node, fix: major >= 18 ? undefined : "install Node 18 or newer" });
@@ -109,6 +116,71 @@ export async function doctor(runner: Runner, opts: { probe?: boolean; state?: st
         ? `YARA-Forge ${meta.set} ${meta.tag}, ${meta.rules} rules, ${age} days old${meta.compiled ? "" : ", not compiled"}`
         : "no community YARA rules",
       fix: !meta || age > 14 ? "ultraguard rules update" : undefined,
+    });
+  }
+
+  // scan deps ranks known CVEs with CISA KEV and FIRST EPSS, cached for 24 hours in the state folder.
+  const cache = opts.state ? feedCache(opts.state) : {};
+  const age = (h: number) => (h < 48 ? `${h} h old` : `${Math.floor(h / 24)} days old`);
+  const cached = [
+    cache.kev ? `CISA KEV ${cache.kev.catalogVersion ?? ""} cached, ${age(cache.kev.ageHours)}`.replace("  ", " ") : "CISA KEV not cached yet",
+    cache.epss ? `EPSS scores for ${cache.epss.entries} CVE(s) cached, ${age(cache.epss.ageHours)}` : "EPSS not cached yet",
+  ].join("; ");
+  let reach: { kev: boolean; epss: boolean } | undefined;
+  if (opts.probe) {
+    const probe = async (url: string, head: boolean) =>
+      (
+        await runner("curl", [...(head ? ["--head"] : []), "--silent", "--fail", "--connect-timeout", "10", "--max-time", "30", "--output", "/dev/null", url], {
+          timeoutMs: 40_000,
+        })
+      ).ok;
+    reach = { kev: await probe(KEV_URL, true), epss: await probe(`${EPSS_URL}?cve=CVE-2021-44228`, false) };
+  }
+  out.push({
+    check: "vulnerability feeds",
+    ok: !reach || (reach.kev && reach.epss),
+    detail: `${cached}${reach ? `; ${reach.kev ? "cisa.gov reachable" : "cisa.gov unreachable"}, ${reach.epss ? "api.first.org reachable" : "api.first.org unreachable"}` : ""} (ranking of known CVEs in scan deps)`,
+    fix: reach && !(reach.kev && reach.epss) ? "check the network; without the feeds, scan deps ranks CVEs by severity only and says so" : undefined,
+  });
+
+  // macOS's own antivirus and the hardening a stealer turns off.
+  if ((opts.platform ?? process.platform) === "darwin") {
+    const xp = await detectXProtect(runner, { bundle: opts.xprotectBundle, now: opts.now });
+    const stale = (xp.ageDays ?? 0) > XPROTECT_STALE_DAYS;
+    out.push({
+      check: "xprotect",
+      ok: !xp.missing && xp.rules.length > 0 && !stale,
+      detail: xp.missing
+        ? xp.missing
+        : `XProtect ${xp.version ?? "?"}${xp.installed ? `, installed ${xp.installed.slice(0, 10)}` : ""}${xp.ageDays !== undefined ? ` (${xp.ageDays} days old)` : ""}; ${xp.rules.length} rule file(s)${yara.ok ? "" : " (yara is needed to run them)"}`,
+      fix: stale ? "turn on Install Security Responses and system files in Software Update (or sudo softwareupdate --background-critical)" : undefined,
+    });
+    const { hardening: h } = await hardeningFindings(runner, { appDirs: opts.appDirs ?? ["/Applications", join(homedir(), "Applications")] });
+    const unknown = (v: string | undefined) => v ?? "unknown (could not be read)";
+    out.push({
+      check: "gatekeeper",
+      ok: h.gatekeeper === "enabled",
+      detail: unknown(h.gatekeeper),
+      fix: h.gatekeeper === "disabled" ? "sudo spctl --global-enable" : undefined,
+    });
+    out.push({
+      check: "sip",
+      ok: h.sip === "enabled",
+      detail: unknown(h.sip),
+      fix: h.sip && h.sip !== "enabled" ? "csrutil enable, from macOS Recovery" : undefined,
+    });
+    out.push({
+      check: "filevault",
+      ok: h.filevault === "on",
+      detail: unknown(h.filevault),
+      fix: h.filevault === "off" ? "System Settings > Privacy & Security > FileVault" : undefined,
+    });
+    const off = [h.criticalUpdateInstall, h.configDataInstall].some((v) => v === "false" || v === "0");
+    out.push({
+      check: "security updates",
+      ok: !off,
+      detail: `security responses ${h.criticalUpdateInstall === "default" ? "on (default)" : h.criticalUpdateInstall}, security data ${h.configDataInstall === "default" ? "on (default)" : h.configDataInstall}${h.realtimeTools.length ? `; real-time tools: ${h.realtimeTools.join(", ")}` : ""}`,
+      fix: off ? "System Settings > General > Software Update > Automatic Updates: Install Security Responses and system files" : undefined,
     });
   }
 

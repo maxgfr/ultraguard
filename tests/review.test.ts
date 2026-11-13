@@ -105,6 +105,8 @@ describe("review #8: host false negatives", () => {
       startupDirs: [join(home, "crond")],
       hitRepos: ["acme/next.js"],
       skipLive: true,
+      // Never the real temp folders: other tests drop archives there at the same time.
+      dropDirs: [],
       now: NOW,
     });
     const t = r.findings.map((f) => `${f.severity}: ${f.title}`);

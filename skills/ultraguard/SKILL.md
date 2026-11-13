@@ -1,6 +1,6 @@
 ---
 name: ultraguard
-description: AI antivirus and incident response. Checks whether a supply-chain attack, compromised-account campaign or malicious package reported on the web has reached the user. You search the threat-intel news and turn each article into indicators of compromise (IOCs) that cite it. ultraguard sweeps the user's GitHub account and every repository they can push to, this machine, their lockfiles and their cloud for them, read-only. You then judge the findings and write a cited verdict per surface with the remediation. Use only when the user explicitly asks for ultraguard or to check whether they were hacked, compromised or hit by an attack, e.g. "am I affected by this attack <url>", "check I wasn't hacked", "scan for the latest supply-chain attacks", "est-ce qu'on m'a hacké", "vérifie que je ne suis pas touché par cette attaque". Can also run as a routine (watch). Never changes the user's accounts, code or files.
+description: AI antivirus and incident response. Checks whether a supply-chain attack, compromised-account campaign, malicious package or machine malware (macOS and Linux stealers, backdoors) reported on the web has reached the user. You turn threat-intel articles into indicators of compromise (IOCs) that cite them. ultraguard sweeps the user's GitHub account and every repository they can push to, this machine, their lockfiles and their cloud, read-only. You then judge the findings and write a cited verdict per surface and its remediation. Use only when the user explicitly asks for ultraguard or to check whether they were hacked, compromised or hit by an attack, e.g. "am I affected by this attack <url>", "check I wasn't hacked", "is my Mac infected", "scan for the latest supply-chain attacks", "est-ce qu'on m'a hacké", "vérifie que je ne suis pas touché par cette attaque". Can also run as a routine (watch). Changes nothing on its own: fixes dependencies only on request, in a separate branch.
 license: MIT
 metadata:
   version: 1.6.0
@@ -17,11 +17,15 @@ proves that the verdict cites only real findings and hides none.
 
 ## Invariants
 
-- **I0 Read-only.** Never delete a branch, close a PR, revoke a key, rotate a
-  secret or kill a process yourself. `REMEDIATION.md` lists the commands; the
-  user runs them. Opening an issue (`--notify-issue`) happens only when the
-  user configured it. The one thing ultraguard does maintain itself is its
-  antivirus: ClamAV's signatures and the YARA-Forge rules (see Antivirus).
+- **I0 Nothing changes on its own.** ultraguard never changes anything by
+  itself: never delete a branch, close a PR, revoke a key, rotate a secret or
+  kill a process yourself. `REMEDIATION.md` lists the commands; the user runs
+  them. `fix --apply` is the single command that writes, and only when the
+  user asked to fix a named project: in a new worktree and branch, never in
+  their checkout, never pushing. Opening an issue (`--notify-issue`) happens
+  only when the user configured it. The one thing ultraguard does maintain
+  itself is its antivirus: ClamAV's signatures and the YARA-Forge rules (see
+  Antivirus).
 - **I1 No IOC from memory.** Every indicator cites an `[S#]` fetched in this
   run with `intel`; `ioc set` refuses one that does not. Copy indicators
   verbatim from the source, and re-arm defanged ones (`1.2.3[.]4` becomes
@@ -74,8 +78,8 @@ exit 20 when GitHub could not be scanned at all (UNKNOWN, never CLEAN).
 | The user says | Do | Read |
 |---|---|---|
 | "am I affected by <url>" | `intel <url>`, then the loop below | [ioc-extraction](references/ioc-extraction.md) |
-| "ultraguard", "check I wasn't hacked" (no article) | Search for attacks of the last 30 days (your search tool, or `ultraguard search`), shortlist the ones that can reach this user, `intel` them, then the loop | [threat-intel-sources](references/threat-intel-sources.md) |
-| "am I hit by <campaign name>" | Search for that name, keep the primary write-ups, then the loop | [threat-intel-sources](references/threat-intel-sources.md) |
+| "ultraguard", "check I wasn't hacked" (no article) | Search the news of the last 30 days for BOTH supply-chain attacks and machine malware for this OS (`doctor` names it): your search tool with the queries of threat-intel-sources, or `ultraguard search --news`. Shortlist what can reach this user, `intel` it, then the loop: the host scan checks the machine against every machine-malware campaign kept | [threat-intel-sources](references/threat-intel-sources.md) |
+| "am I hit by <campaign name>", "is my Mac infected by <stealer>" | Search for that name, keep the primary write-ups, then the loop (for machine malware, `sweep --surfaces host` is enough unless the source says it steals tokens: then GitHub and cloud too) | [threat-intel-sources](references/threat-intel-sources.md), [ioc-extraction](references/ioc-extraction.md) |
 | "check only GitHub" / "only this machine" | the loop with `sweep --surfaces github` (or host, deps, cloud) | [github-surface](references/github-surface.md), [host](references/host.md) |
 | "set it up as a routine", "watch every day" | `watch plan` / `watch commit` | [routine](references/routine.md) |
 | A finding needs judgment (REVIEW) | Look at it yourself, read-only, then say whose it is | [verdicts](references/verdicts.md) |
@@ -87,6 +91,7 @@ exit 20 when GitHub could not be scanned at all (UNKNOWN, never CLEAN).
 #    [{"url": "...", "title": "..."}]  (a list of URLs works too).
 #    With none (a headless routine, a cloud runner), search keyless:
 ultraguard search "<query>" --out <run> --limit 10           # → <run>/search-hits.json, one call per query
+ultraguard search --news --out <run>                       # or the whole "anything new?" set: supply chain + this OS's malware
 ultraguard intel --web-results <hits.json> --out <run>     # or: intel <url> <url> --out <run>
 # → sources [S1], [S2]... with their text in <run>/sources/S#.md, and <run>/iocs.todo.json
 
@@ -116,9 +121,10 @@ Everything collected is in `<run>/host-inventory.json`.
 lockfiles, unpinned `requirements*.txt` lines, `package.json` files with no
 lockfile, `node_modules` and virtualenvs, and the global npm, nvm, bun, uv and
 pipx installs. It runs the vendored `package-checker.sh` (OSV and GHSA feeds,
-Bash 4+) for malicious packages (compromised) and known CVEs (one info line,
-the list in `<run>/deps-vulnerabilities.json`: a patching backlog, not a
-compromise). A feed it could not load, or a stale local copy of it, is a gap.
+Bash 4+) for malicious packages (compromised) and known CVEs. Known CVEs are
+a patching backlog, not a compromise: they are ranked with CISA KEV and EPSS
+(see Vulnerabilities and fixes), always info. A feed it could not load, or a
+stale local copy of it, is a gap.
 It also lists the npm packages the user maintains (`npm whoami`, or
 `--npm-user`) and flags every version published inside a campaign window: a
 worm holding their npm token republishes them with an install script
@@ -128,9 +134,15 @@ version. `--no-registry` skips it.
 
 **Antivirus.** When ClamAV is installed, `scan host` also runs it, targeted:
 the programs startup items run, the files the other checks flagged, recent
-files in temporary and shared folders and Downloads, new extensions.
-`--av-full` scans every root instead (hours on a large home), `--no-av` skips
-it. Its PUA detections are suspicious, not compromised. You manage the
+files in temporary and shared folders and Downloads, new extensions. On
+macOS it also reads XProtect, Apple's own antivirus: Apple's YARA rules over
+the same targets, XProtect Remediator's silent reports from the unified log
+(a threat it found or removed is compromised), and Gatekeeper, SIP and
+automatic security updates (off is suspicious). `--av-full` scans every file
+under the roots instead, incrementally: the first run takes hours, the next
+ones minutes, since unchanged files scanned clean less than
+`--av-rescan-days` ago (default 7) are skipped. `--no-av` skips ClamAV. Its
+PUA detections are suspicious, not compromised. You manage the
 antivirus, not the user: `scan host` first runs `freshclam` when ClamAV's
 signatures are older than 7 days, and installs or refreshes the YARA-Forge
 community rules (5,000+ rules, released weekly, kept in ultraguard's state
@@ -194,6 +206,45 @@ Write `<run>/ANSWER.md` in the user's language:
 
 Then `ultraguard check <run>/ANSWER.md --out <run>` and fix what it reports.
 
+## Vulnerabilities and fixes
+
+`scan deps` (and `sweep`) also ranks the known CVEs of the user's lockfiles and
+of this Mac's software: **P0** in CISA KEV (exploited in the wild), **P1** EPSS
+>= 10% or critical with a fix, **P2** high with a fix, **P3** the rest. The
+user's own projects (git repositories) come first; worktrees, caches, plugins
+and vendored copies get one line each. On macOS it adds the pending updates
+(`softwareupdate --list`) and the KEV entries of the last 30 days for what is
+installed (macOS, Chrome, Firefox, Docker...). All of it is info, except a
+pending security or restart update (REVIEW): a CVE never makes a surface
+EXPOSED or COMPROMISED. Ranked list: `<run>/vulnerabilities.json`; section
+"Vulnerabilities to fix" in REPORT.md.
+
+1. After the verdict, show the P0 and P1 items: the machine updates first,
+   then each project with its top CVEs, KEV status and fixed version. Say
+   which are dev-only (lower risk) and which need a major upgrade.
+   `ultraguard fixes --out <run>` prints the smallest upgrades that close
+   P0-P2 per project, with the exact command for its package manager
+   (FIXES.md). It runs nothing.
+2. Ask the user which projects to fix. Never pick for them.
+3. Per project named: `ultraguard fix --out <run> --project <path>` is a
+   dry run (nothing written): show it (worktree, branch, commands, files).
+4. **Only after the user's go-ahead**: `ultraguard fix --out <run> --project
+   <path> --apply`. It makes a new worktree and branch, runs the plan with
+   install scripts off, re-checks the lockfiles, runs the tests and commits
+   there. It never pushes. Exit 0: done and tests pass; 1: read why; 2:
+   refused (a cache, plugin, vendored copy, worktree, no git, nothing to fix,
+   a missing package manager).
+5. Read the test result and the remaining advisories it prints (and
+   `<run>/fix-<project>.json`). If the tests fail, repair the code in that
+   worktree (read the changelog of the major upgrades), re-run the tests,
+   and commit the repair there. Push, open a PR or merge only when the user
+   asks; or drop the fix with the two commands it prints.
+
+Never fix a cache, plugin or vendored copy: update the tool that owns it.
+
+[vulnerabilities](references/vulnerabilities.md) has the tiers, the feeds
+and the fix workflow per package manager.
+
 ## Orchestration
 
 With subagents (Claude Code), you may fan out the reading: one agent per
@@ -208,10 +259,12 @@ finding before answering. Without subagents, do the same steps in order.
 - Guess an IOC the sources do not state, or call a surface clean because a
   scan could not reach it.
 - Read secrets' values: `gh secret list` names them, which is enough to rotate.
+- Fix a vulnerability without the user's go-ahead, or outside a branch.
 - Upload anything: the only network calls are `gh` (GitHub API), your search
-  queries, page fetches of your sources, and the download of the OSV and GHSA
-  advisory feeds from raw.githubusercontent.com (package names never leave
-  the machine).
+  queries, page fetches of your sources, the download of the OSV and GHSA
+  advisory feeds from raw.githubusercontent.com, the CISA KEV catalog, EPSS
+  scores (CVE ids only) from api.first.org, and Chrome's and Node.js's
+  release lists (package names never leave the machine).
 
 ## References
 
@@ -224,4 +277,5 @@ finding before answering. Without subagents, do the same steps in order.
 - [cloud-persistence](references/cloud-persistence.md): AWS, GCP, Azure
 - [verdicts](references/verdicts.md): severities, verdicts, judging REVIEW
 - [routine](references/routine.md): `watch` as a daily cloud or local routine
+- [vulnerabilities](references/vulnerabilities.md): known CVEs ranked (KEV, EPSS), the fix plan and workflow
 - [citation-format](references/citation-format.md): `[S#]`, `[F#]` and what `check` enforces

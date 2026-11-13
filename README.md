@@ -2,7 +2,7 @@
 
 An AI antivirus for an agent. A security firm publishes a campaign: compromised
 GitHub accounts pushing a CI secret stealer, a worm in npm, a malicious VS Code
-extension. Were you hit? The agent reads the write-ups, turns each one into
+extension, a new macOS stealer with a LaunchDaemon backdoor. Were you hit? The agent reads the write-ups, turns each one into
 indicators of compromise (IOCs) that cite it, and ultraguard sweeps for them:
 
 - your **GitHub account**: did your login open the probe PR, push the branch,
@@ -32,7 +32,10 @@ per surface. `ultraguard check` refuses an answer that cites a finding that
 does not exist, claims a compromise without evidence, leaves a surface's
 verdict out, or calls a surface clean when it is not. ultraguard is read-only on what it scans: it prints the
 remediation, the user runs it. The only thing it maintains itself is its
-antivirus (ClamAV signatures, YARA-Forge rules).
+antivirus (ClamAV signatures, YARA-Forge rules). The one exception is
+`fix --apply`, run only when you ask to fix a named project: it upgrades that
+project's vulnerable dependencies in a new git worktree and branch, runs its
+tests and commits there, and never pushes.
 
 ```bash
 npx skills add maxgfr/ultraguard
@@ -44,6 +47,7 @@ npx skills add maxgfr/ultraguard
 /ultraguard https://www.aikido.dev/blog/compromised-github-accounts-push-ci-secret-stealer-to-tens-of-thousands-of-repositories
 /ultraguard check I wasn't hacked by the latest supply-chain attacks
 /ultraguard am I affected by the Shai-Hulud npm worm?
+/ultraguard is my Mac infected by the latest macOS stealers?
 /ultraguard set it up as a daily routine
 ```
 
@@ -82,12 +86,15 @@ A run directory with:
 ultraguard doctor --probe                                  # what this machine lets it see
 ultraguard rules update                                    # ClamAV signatures (freshclam) and YARA-Forge rules, now
 ultraguard search "<query>" --out <run>                    # keyless web search, when the host has none
+ultraguard search --news --out <run>                       # the "anything new?" set: supply chain + this OS's malware
 ultraguard intel <url>... --out <run>                      # or --web-results <hits.json>
 ultraguard ioc set --file iocs.json --out <run>            # every indicator must cite a fetched [S#]
 ultraguard sweep --out <run>                               # github, host, deps, cloud
 ultraguard scan github|host|deps|cloud --out <run>         # one surface
 ultraguard report --out <run>
 ultraguard check ANSWER.md --out <run>
+ultraguard fixes --out <run>                               # upgrade plan for the ranked CVEs (FIXES.md), runs nothing
+ultraguard fix --out <run> --project <path> [--apply]      # dry run, or apply it in a new worktree and branch (never pushes)
 ultraguard watch plan|commit --out <run>                   # the routine mode
 ```
 

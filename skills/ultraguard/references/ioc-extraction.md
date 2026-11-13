@@ -67,12 +67,78 @@ The full worked example, with all 27 indicators of that article, is
 | `repo_name` | exact repository name (or regex), e.g. `s1ngularity-repository` | repositories you can see, repositories your login created or made public (event stream) |
 | `repo_description` | substring, e.g. `Sha1-Hulud: The Second Coming` | descriptions of the repositories you can see |
 | `runner_name` | exact self-hosted runner name (or regex), e.g. `SHA1HULUD` | self-hosted runners of repositories you administer (a `string` equal to the name also matches) |
+| `launchd_label` | exact `Label` (case-sensitive, or regex), e.g. `com.finder.helper` | a launchd item's `Label` and its plist name without `.plist` (macOS); systemd unit names (Linux) |
+| `team_id` | the 10-character Apple Developer Team ID, e.g. `A1B2C3D4E5` | the codesign `TeamIdentifier` of startup-item programs, apps in `/Applications` and `~/Applications`, running processes' executables |
+| `bundle_id` | exact `CFBundleIdentifier` (case-sensitive, or regex) | apps in `/Applications` and `~/Applications`, startup-item programs inside `.app` bundles |
 
 Ecosystems: `npm`, `pypi`, `crates.io`, `go`, `packagist`, `rubygems`, `vscode`
 (common spellings such as `node`, `rust`, `php`, `ruby`, `OpenVSX` are
 understood). A package in another ecosystem (`maven`, `nuget`, `homebrew`) is
 kept, but ultraguard has no reader for it: `ioc set` says so and `scan deps`
 reports it as a coverage gap. Check those by hand and say so in the answer.
+
+## Reading a macOS malware write-up
+
+Stealer and backdoor write-ups (Objective-See, Jamf, Moonlock, Kaspersky,
+Unit 42...) spread their indicators over the text, the screenshots' captions
+and an IOC table at the end. Map each one to its type:
+
+| The write-up says | Type | Note |
+|---|---|---|
+| a path it drops: `/Library/LaunchDaemons/x.plist`, `~/.agent`, `/tmp/starter`, a hidden folder under `/Library/Application Support/` | `file` | copy the path as written: ultraguard looks at that exact place, in this user's home for `~/` paths |
+| the plist's `Label` (`<key>Label</key><string>…`) | `launchd_label` | often an Apple look-alike (`com.apple.accountsd.helper`): Apple's own daemons live in `/System/Library/LaunchDaemons`, never in `/Library/LaunchDaemons` |
+| "signed with Team ID ...", "Developer ID Application: Name (XXXXXXXXXX)" | `team_id` | the 10 characters in brackets; a notarized sample's team is revoked later, but a copy on disk keeps it |
+| the app's bundle identifier (`CFBundleIdentifier`) | `bundle_id` | stealers impersonate real apps (`CrashReporter`): keep the exact id the source gives, never the real app's |
+| C2 servers, exfiltration endpoints, payload URLs | `domain`, `ip`, `url` | keep them defanged as written |
+| SHA-256 of the samples, the dropped scripts, the disk image | `sha256` | MD5 and SHA-1 alone match nothing: look for the SHA-256 in the vendor's IOC repo |
+| process names (`.mainhelper`, `osascript` loops with a given argument) | `process` | a substring of the command line: avoid bare `osascript` or `curl`, every Mac runs them |
+| the command the victim pasted (ClickFix), a script fragment, an AppleScript dialog text | `string` | a distinctive fragment (`dscl . -authonly`, `/tmp/osalogging.zip`), never a whole one-liner with a per-victim token |
+
+A malware campaign's `since` is the first sighting the source gives (or its
+publication date minus 7 days). Paths, labels and strings survive rebuilds
+better than hashes: a stealer sold as a service is rebuilt for every buyer.
+
+### Worked example: an AMOS-style backdoor
+
+Modeled on the AMOS backdoor write-ups (the hashes and addresses below are
+fake, from documentation ranges; take real ones from the source). The
+article describes a LaunchDaemon `/Library/LaunchDaemons/com.finder.helper.plist`
+whose label is `com.finder.helper`, running `/bin/bash ~/.agent`, a watchdog
+loop that reads the console user with `stat -f "%Su" /dev/console` and keeps
+the backdoor `~/.mainhelper` (also named `.helper`) running. The dropper
+installs the plist with `echo '<password>' | sudo -S cp /tmp/starter
+/Library/LaunchDaemons/...`, the installer was signed by team `ZZ00ZZ00ZZ`
+under the bundle id `com.example.finderhelper`, and the backdoor talks to
+`update-check[.]example` and `203.0.113[.]17`.
+
+```json
+{
+  "campaigns": [
+    {
+      "id": "amos-backdoor-2026-11",
+      "title": "AMOS stealer with a persistent LaunchDaemon backdoor",
+      "sources": ["S1"],
+      "since": "2026-10-28",
+      "indicators": [
+        { "type": "file", "value": "/Library/LaunchDaemons/com.finder.helper.plist", "source": "S1" },
+        { "type": "file", "value": "~/.agent", "source": "S1" },
+        { "type": "file", "value": "~/.mainhelper", "source": "S1" },
+        { "type": "file", "value": "~/.helper", "weak": true, "source": "S1", "note": "a common name: only a hash match settles it" },
+        { "type": "file", "value": "/tmp/starter", "source": "S1" },
+        { "type": "launchd_label", "value": "com.finder.helper", "source": "S1" },
+        { "type": "team_id", "value": "ZZ00ZZ00ZZ", "source": "S1" },
+        { "type": "bundle_id", "value": "com.example.finderhelper", "source": "S1" },
+        { "type": "process", "value": ".mainhelper", "source": "S1" },
+        { "type": "string", "value": "stat -f \"%Su\" /dev/console", "source": "S1" },
+        { "type": "string", "value": "sudo -S cp /tmp/starter", "source": "S1" },
+        { "type": "domain", "value": "update-check[.]example", "source": "S1" },
+        { "type": "ip", "value": "203.0.113[.]17", "source": "S1" },
+        { "type": "sha256", "value": "1111111111111111111111111111111111111111111111111111111111111111", "source": "S1" }
+      ]
+    }
+  ]
+}
+```
 
 ## Rules of thumb
 

@@ -1,10 +1,12 @@
 // report: REPORT.md (the facts, verdict per surface, every line cited) and
 // REMEDIATION.md (the commands to run, none of which ultraguard runs).
 // The agent writes its own answer on top; `check` holds that answer to these facts.
+import { homedir } from "node:os";
 import type { Run } from "./run.js";
 import type { HostInventory } from "./scan/hostintel.js";
 import { type Finding, type Gap, SURFACES, type Source, type Surface } from "./types.js";
 import { type SurfaceVerdict, verdicts, worst } from "./verdict.js";
+import { type RankedVulns, renderVulnSection } from "./vulns.js";
 
 const LABEL: Record<Surface, string> = {
   "github:account": "GitHub account",
@@ -111,6 +113,10 @@ export function renderReport(run: Run, now = new Date()): { report: string; reme
     out.push("");
   }
 
+  // Known CVEs, ranked: what to patch, after what was hit.
+  const ranked = run.read<RankedVulns | undefined>("vulnerabilities.json", undefined);
+  if (ranked) out.push(...renderVulnSection(ranked, homedir()));
+
   out.push("## Coverage", "", "Gaps are not absence: what was not looked at is not clean.", "");
   // A surface this run never scanned has no gap of its own: say so, or the section reads "nothing missing".
   const results = run.surfaces();
@@ -133,10 +139,18 @@ export function renderReport(run: Run, now = new Date()): { report: string; reme
   out.push("");
 
   const inventory = run.read<HostInventory | undefined>("host-inventory.json", undefined);
-  return { report: out.join("\n"), remediation: renderRemediation(findings, vs, sources, gaps, inventory), verdicts: vs };
+  return { report: out.join("\n"), remediation: renderRemediation(findings, vs, sources, gaps, inventory, ranked, run.dir), verdicts: vs };
 }
 
-export function renderRemediation(findings: Finding[], vs: SurfaceVerdict[], _sources: Source[], gaps: Gap[], inventory?: HostInventory): string {
+export function renderRemediation(
+  findings: Finding[],
+  vs: SurfaceVerdict[],
+  _sources: Source[],
+  gaps: Gap[],
+  inventory?: HostInventory,
+  ranked?: RankedVulns,
+  runDir = "<run>",
+): string {
   const out: string[] = ["# Remediation", "", "ultraguard runs none of these commands. Read each one, then run the ones that apply.", ""];
   const v = Object.fromEntries(vs.map((x) => [x.surface, x.verdict]));
   let step = 0;
@@ -241,6 +255,22 @@ export function renderRemediation(findings: Finding[], vs: SurfaceVerdict[], _so
       "",
       "- A role that trusts `*` lets anyone assume it: restore its trust policy (`aws iam update-assume-role-policy`).",
       "- Delete access keys you did not create (`aws iam delete-access-key`), GCP keys (`gcloud iam service-accounts keys delete`) and Azure federated credentials (`az ad app federated-credential delete`).",
+      "",
+    );
+  }
+
+  const urgent = ranked ? ranked.counts.P0 + ranked.counts.P1 + (ranked.machine ?? []).filter((m) => m.tier === "P0" || m.tier === "P1").length : 0;
+  if (urgent) {
+    h("Patch the vulnerabilities that matter (P0, P1)");
+    out.push(
+      `Known CVEs are not a compromise, but ${ranked?.counts.P0 ? "some are exploited in the wild (CISA KEV)" : "some are critical or likely to be exploited"}. Update the software listed under "This machine" in REPORT.md, then plan the dependency upgrades:`,
+      "",
+      "```sh",
+      `ultraguard fixes --out ${runDir}            # every project of yours: FIXES.md`,
+      `ultraguard fixes --out ${runDir} --project <path>`,
+      "```",
+      "",
+      "Apply each plan on a branch, run the project's tests, read the diff, then commit.",
       "",
     );
   }

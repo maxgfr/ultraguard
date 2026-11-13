@@ -1,0 +1,21 @@
+{
+  "campaigns": [
+    {
+      "id": "amos-backdoor-2026-11",
+      "title": "AMOS stealer with a LaunchDaemon backdoor (synthetic eval campaign)",
+      "sources": ["S1"],
+      "since": "2026-11-01T00:00:00Z",
+      "indicators": [
+        { "type": "file", "value": "com.finder.helper.plist", "source": "S1", "note": "the LaunchDaemon the dropper copies to /Library/LaunchDaemons" },
+        { "type": "file", "value": "~/.agent", "source": "S1", "note": "AppleScript watchdog the LaunchDaemon runs with /bin/bash" },
+        { "type": "file", "value": "~/.mainhelper", "source": "S1", "note": "the backdoor binary" },
+        { "type": "sha256", "value": "bfb3305a3e4de2ec716f279636c18a8b9a0f016f78e2ffade0dcd08b08af566b", "source": "S1" },
+        { "type": "string", "value": "stat -f \"%Su\" /dev/console", "source": "S1", "note": "the watchdog's console-user check" },
+        { "type": "launchd_label", "value": "com.finder.helper", "source": "S1" },
+        { "type": "team_id", "value": "ZZ00ZZ00ZZ", "source": "S1", "note": "the signing team of the fake installer" },
+        { "type": "domain", "value": "amos-c2[.]example", "source": "S1" },
+        { "type": "ip", "value": "203.0.113[.]45", "source": "S1" }
+      ]
+    }
+  ]
+}

@@ -2,7 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach } from "vitest";
-import { setRegistryGet } from "../src/cli.js";
+import { setFeedGet, setRegistryGet, setSoftwareScan } from "../src/cli.js";
 
 // The watch state lives in a throwaway directory: a test must never read or
 // overwrite a user's ~/.ultraguard.
@@ -12,4 +12,7 @@ beforeEach(() => {
   process.env.ULTRAGUARD_CACHE_DIR = join(scratch, "cache");
   // Never the real npm registry from a test: a test that wants it installs its own fake.
   setRegistryGet(async () => ({ ok: false, status: 0, error: "no network in tests" }));
+  // Never CISA, FIRST, Google or nodejs.org either, and never this machine's softwareupdate.
+  setFeedGet(async () => ({ ok: false, status: 0, error: "no network in tests" }));
+  setSoftwareScan(undefined);
 });

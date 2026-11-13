@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { checkAnswer } from "./check.js";
 import { doctor, formatDoctor } from "./doctor.js";
@@ -20,22 +20,30 @@ import {
   parseArgs,
   UsageError,
 } from "./engine.js";
+import { defaultFeedGet, type FeedGet } from "./feeds.js";
+import { fixProject, renderFix } from "./fix.js";
+import { planFixes, renderFixes } from "./fixes.js";
 import { intel, readWebResultsFile, type WebHit } from "./intel.js";
 import { normEco, SUPPORTED_ECOSYSTEMS, validateIocs } from "./ioc.js";
 import { renderReport } from "./report.js";
 import { formatDefenses, refreshDefenses } from "./defenses.js";
 import { defaultRulesDeps, installedRules, RULE_SETS, type RuleSet, type RulesDeps, rulesAgeDays } from "./rules.js";
-import { searchInto } from "./search.js";
+import { OS_NAMES, type Searcher, searchInto, searchNews } from "./search.js";
 import { Run } from "./run.js";
 import { defaultRunner, type Runner } from "./runner.js";
 import { scanCloud } from "./scan/cloud.js";
-import { scanDeps } from "./scan/deps.js";
+import { type CheckerVuln, scanDeps } from "./scan/deps.js";
 import { scanGithub } from "./scan/github.js";
+import { DEFAULT_RESCAN_DAYS } from "./scan/avcache.js";
 import { scanHost } from "./scan/host.js";
+import { scanSoftware } from "./scan/software.js";
+import { assessVulnerabilities, type SoftwareScan } from "./scan/vulns.js";
+import { detectXProtect, type XProtectInfo, xprotectSource } from "./scan/xprotect.js";
 import { defaultRegistryGet, type RegistryGet, scanNpmPublishes } from "./scan/registry.js";
 import { walk, type WalkResult } from "./scan/walk.js";
 import { type Campaign, type Gap, type IocFile, SURFACES, type Surface } from "./types.js";
 import { VERSION } from "./version.js";
+import type { RankedVulns, Tier } from "./vulns.js";
 import { EXIT_INCOMPLETE, stateDir, watchCommit, watchPlan } from "./watch.js";
 
 export const HELP = `ultraguard v${VERSION} (webindex ${ENGINE_VERSION})
@@ -44,13 +52,17 @@ each article into indicators of compromise (IOCs) that cite it, and ultraguard
 sweeps your GitHub account and the repositories you can push to, this machine,
 your lockfiles and your cloud for them. Read-only on what it scans: the only
 things it writes are its run folders, its state folder and the antivirus
-databases it keeps current (ClamAV signatures, YARA-Forge rules).
+databases it keeps current (ClamAV signatures, YARA-Forge rules). The one
+exception is fix --apply, run only when you ask to fix a named project: it
+upgrades that project's dependencies in a new git worktree and branch, and
+never pushes.
 
 USAGE
   ultraguard doctor [--probe] [--state <dir>] [--json]
   ultraguard rules update [--set core|extended|full] [--state <dir>]   freshclam + YARA-Forge
   ultraguard rules status [--state <dir>]
   ultraguard search <query> --out <run> [--limit <n>]
+  ultraguard search --news --out <run> [--limit <n>]   the standard query set, this month
   ultraguard intel [<url>...] [--web-results <file.json>] --out <run>
   ultraguard ioc set --file <iocs.json> --out <run>
   ultraguard ioc show --out <run> [--json]
@@ -58,17 +70,42 @@ USAGE
   ultraguard sweep --out <run> [--surfaces <list>] [scan flags] [--json]
   ultraguard report --out <run> [--json]
   ultraguard check <answer.md> --out <run> [--json]
+  ultraguard fixes --out <run> [--project <path>] [--json]   upgrade plan for the ranked CVEs
+  ultraguard fix --out <run> --project <path> [--apply] [--tiers P0,P1,P2] [--no-test] [--json]
   ultraguard watch plan [--web-results <file.json>] --out <run> [--state <dir>] [--resweep-days <n>]
   ultraguard watch commit --out <run> [--state <dir>] [--notify-issue <owner/repo>]
 
 THE LOOP
   1. You search the web for attacks: with your own search tool (save the hits
-     as JSON), or with search, keyless, into <run>/search-hits.json.
+     as JSON), or with search, keyless, into <run>/search-hits.json
+     (search --news: supply-chain attacks and this OS's malware, this month).
   2. intel        fetch each page once: sources [S1], [S2]... and iocs.todo.json
   3. ioc set      validate your IOC file: every indicator cites a fetched [S#]
   4. sweep        run every scan: findings [F1], [F2]... and coverage gaps
   5. report       REPORT.md (verdict per surface) and REMEDIATION.md
   6. check        your answer cites only real [S#]/[F#] and hides no verdict
+
+VULNERABILITIES (scan deps)
+  Known CVEs are ranked, not alerted: P0 in CISA KEV (exploited in the wild),
+  P1 EPSS >= 10% or critical with a fix, P2 high with a fix, P3 the rest,
+  grouped by project (your git repositories first; caches, plugins, worktrees
+  and vendored copies one line each). On macOS it also lists pending updates
+  and the last 30 days of KEV entries for the software installed here.
+  <run>/vulnerabilities.json holds the ranked list; fixes prints the smallest
+  upgrades with the command for each package manager (FIXES.md) and runs none.
+  The KEV and EPSS feeds are cached for 24 hours in <state>/feeds.
+
+FIX (one own project, on request)
+  fix --project <path> prints what it would do (a dry run: nothing written).
+  With --apply it makes a new worktree <state>/fixes/<repo>-<yyyymmdd-hhmm> on a
+  new branch ultraguard/fix-<yyyymmdd>-<sha> from the default branch, runs the
+  plan there (install scripts off), re-checks the lockfiles with
+  package-checker, runs the project's tests (15 min timeout) and commits with
+  your git config. It never pushes, opens a PR or merges: it prints how to,
+  and how to drop the fix. Record: <run>/fix-<project>.json. It refuses
+  caches, plugins, vendored copies, worktrees and folders outside git.
+  Exit codes: 0 applied and tests pass, 1 tests fail, a step failed or
+  advisories remain, 2 refused.
 
 SCAN FLAGS
   --repos <a/b,c/d>     github: only these repositories
@@ -78,7 +115,10 @@ SCAN FLAGS
   --depth <n>           host, deps: walk depth (default 6)
   --skip-live           host: skip crontab, open connections, processes, signatures, antivirus
   --no-av               host: skip the ClamAV pass (on by default when ClamAV is installed)
-  --av-full             host: ClamAV over every root instead of the targeted list (slow)
+  --av-full             host: ClamAV and YARA over every file under the roots instead of
+                        the targeted list; incremental: unchanged files scanned clean
+                        recently are skipped (the first run takes hours, the next minutes)
+  --av-rescan-days <n>  host: with --av-full, rescan unchanged files after n days (default 7)
   --yara <rules>        host: also run YARA rules (a .yar file or a folder of them)
   --yara-source <S#>    host: the source the YARA rules came from, cited by their findings
   --no-rules            host: skip the community YARA rules (YARA-Forge) installed by rules update
@@ -89,12 +129,21 @@ SCAN FLAGS
   --no-registry         deps: skip that check (it reads the public npm registry)
   --no-osv              deps: skip package-checker (OSV and GHSA feeds, malicious packages)
   --surfaces <list>     sweep: github,host,deps,cloud (default: all)
+  --project <path>      fixes: only this project (any kind, even a worktree or a cache); fix: the project to fix
+  --apply               fix: do it (without it, fix is a dry run)
+  --tiers <list>        fix: the tiers to fix (default P0,P1,P2)
+  --no-test             fix: do not run the project's tests
   scan and sweep exit 20 when GitHub was asked for and could not be scanned
   (logged out, every read refused): its verdict is UNKNOWN, never CLEAN.
-  --limit <n>           search: hits to aim for (default 10)
+  --limit <n>           search: hits to aim for per query (default 10; 5 with --news)
+  --news                search: run the standard "anything new?" queries instead of
+                        one: supply-chain attacks, then malware for this OS (macOS
+                        stealers and backdoors, ClickFix...; Linux), each with the
+                        current month and year. Exit 1 when no engine answered.
 
 ROUTINE (watch)
-  watch plan drops sources already handled in --state (default ~/.ultraguard,
+  watch plan --web-results <run>/search-hits.json takes the hits of search
+  (or search --news) as they are. It drops sources already handled in --state (default ~/.ultraguard,
   or ULTRAGUARD_HOME), fetches the new ones, and re-arms every known campaign
   each --resweep-days (default 7). Fill iocs.json, sweep, report, then
   watch commit: it alerts only on findings never alerted before.
@@ -110,7 +159,7 @@ VERDICTS (per surface)
   --help, --version
 `;
 
-export const COMMANDS = ["doctor", "rules", "search", "intel", "ioc", "scan", "sweep", "report", "check", "watch"];
+export const COMMANDS = ["doctor", "rules", "search", "intel", "ioc", "scan", "sweep", "report", "check", "fixes", "fix", "watch"];
 export const VALUE_FLAGS = [
   "out",
   "web-results",
@@ -123,14 +172,17 @@ export const VALUE_FLAGS = [
   "surfaces",
   "state",
   "resweep-days",
+  "av-rescan-days",
   "notify-issue",
   "limit",
   "yara",
   "yara-source",
   "set",
   "npm-user",
+  "project",
+  "tiers",
 ];
-export const BOOL_FLAGS = ["json", "probe", "skip-live", "no-osv", "no-av", "av-full", "no-rules", "no-update", "no-registry"];
+export const BOOL_FLAGS = ["json", "news", "probe", "skip-live", "no-osv", "no-av", "av-full", "no-rules", "no-update", "no-registry", "apply", "no-test"];
 
 const SCAN = [
   "out",
@@ -145,6 +197,7 @@ const SCAN = [
   "npm-user",
   "no-av",
   "av-full",
+  "av-rescan-days",
   "yara",
   "yara-source",
   "no-rules",
@@ -159,13 +212,15 @@ const SPEC: CliSpec = {
   commandFlags: {
     doctor: ["probe", "state", "json"],
     rules: ["set", "state", "json"],
-    search: ["out", "limit", "json"],
+    search: ["out", "limit", "news", "json"],
     intel: ["out", "web-results", "json"],
     ioc: ["out", "file", "json"],
     scan: SCAN,
     sweep: [...SCAN, "surfaces"],
     report: ["out", "json"],
     check: ["out", "json"],
+    fixes: ["out", "project", "state", "json"],
+    fix: ["out", "project", "tiers", "apply", "no-test", "state", "json"],
     watch: ["out", "web-results", "state", "resweep-days", "notify-issue", "json"],
   },
 };
@@ -184,6 +239,25 @@ let rulesDeps: RulesDeps = defaultRulesDeps;
 /** Test seam: replace the YARA-Forge download. */
 export function setRulesDeps(d: RulesDeps): void {
   rulesDeps = d;
+}
+
+let newsDeps: { searcher?: Searcher; platform?: NodeJS.Platform; now?: () => Date } = {};
+/** Test seam: replace the web search engine, the platform and the clock `search` uses. */
+export function setNewsDeps(d: { searcher?: Searcher; platform?: NodeJS.Platform; now?: () => Date }): void {
+  newsDeps = d;
+}
+
+let feedGet: FeedGet = defaultFeedGet;
+/** Test seam: replace the CISA KEV, EPSS, Chrome and Node.js feed reads. */
+export function setFeedGet(g: FeedGet): void {
+  feedGet = g;
+}
+const defaultSoftwareScan: SoftwareScan = (ctx) =>
+  scanSoftware({ ...ctx, platform: process.platform, appsDirs: ["/Applications", join(homedir(), "Applications")] });
+let softwareScan: SoftwareScan | undefined = defaultSoftwareScan;
+/** Test seam: replace (or, with undefined, skip) the machine-software check of scan deps (softwareupdate, installed apps). */
+export function setSoftwareScan(s: SoftwareScan | undefined): void {
+  softwareScan = s;
 }
 
 function out(text: string): void {
@@ -329,11 +403,19 @@ async function runScan(surface: "github" | "host" | "deps" | "cloud", a: Command
       yaraSource: argValue(a, "yara-source"),
       listDir: run.dir,
       stateDir: stateDir(argValue(a, "state")),
+      avRescanDays: argInt(a, "av-rescan-days", { min: 0, max: 365 }),
       ...communityRules(a, run),
+      xprotect: process.platform === "darwin" && !argBool(a, "skip-live") ? await xprotectRules(run) : undefined,
     });
     const f = run.recordSurface(r.result, r.findings, [...refreshGaps, ...r.gaps]);
     run.write("host-inventory.json", r.inventory);
-    return `${refreshed}host: ${r.result.stats.files ?? 0} files, ${r.result.stats.startupItems ?? 0} startup items, ${r.result.stats.credentialFiles ?? 0} credential files; ${f.length} finding(s)`;
+    const st = r.result.stats;
+    // --av-full is incremental: say how much of the disk this run read and how much the cache let it skip.
+    const full =
+      st.avScanned !== undefined
+        ? `\nantivirus (--av-full): ${st.avScanned} file(s) scanned, ${st.avSkipped ?? 0} unchanged and scanned clean in the last ${argInt(a, "av-rescan-days", { min: 0, max: 365 }) ?? DEFAULT_RESCAN_DAYS} days skipped`
+        : "";
+    return `${refreshed}host: ${st.files ?? 0} files, ${st.startupItems ?? 0} startup items, ${st.credentialFiles ?? 0} credential files; ${f.length} finding(s)${full}`;
   }
   if (surface === "deps") {
     const roots = rootsOf(a);
@@ -347,8 +429,20 @@ async function runScan(surface: "github" | "host" | "deps" | "cloud", a: Command
     // The packages the user publishes: a worm with their npm token republishes them.
     const pub = argBool(a, "no-registry") ? undefined : await scanNpmPublishes(iocs, { user: argValue(a, "npm-user"), runner, get: registryGet });
     if (pub) Object.assign(r.result.stats, pub.stats);
-    const f = run.recordSurface(r.result, [...r.findings, ...(pub?.findings ?? [])], [...r.gaps, ...(pub?.gaps ?? [])]);
-    return `deps: ${r.result.stats.lockfiles ?? 0} lockfiles${pub?.user ? `, ${pub.stats.npmPackages ?? 0} npm packages of ${pub.user}` : ""}, ${r.result.stats.packages ?? 0} packages, ${r.result.stats.malicious ?? 0} malicious, ${r.result.stats.vulnerable ?? 0} with known CVEs; ${f.length} finding(s)`;
+    // The CVE backlog, ranked (KEV, EPSS, own projects first), and the machine's own software: replaces the single backlog line.
+    const v = await assessVulnerabilities(r.vulnerable, run, {
+      get: feedGet,
+      state: stateDir(argValue(a, "state")),
+      runner,
+      home: homedir(),
+      software: softwareScan,
+    });
+    Object.assign(r.result.stats, v.stats);
+    const found = [...r.findings.filter((x) => x.key !== "deps|vulnerable-backlog"), ...v.findings, ...(pub?.findings ?? [])];
+    const f = run.recordSurface(r.result, found, [...r.gaps, ...v.gaps, ...(pub?.gaps ?? [])]);
+    const c = v.ranked.counts;
+    const ranked = v.ranked.packages ? ` (P0 ${c.P0}, P1 ${c.P1}, P2 ${c.P2}, P3 ${c.P3}: ultraguard fixes --out ${run.dir})` : "";
+    return `deps: ${r.result.stats.lockfiles ?? 0} lockfiles${pub?.user ? `, ${pub.stats.npmPackages ?? 0} npm packages of ${pub.user}` : ""}, ${r.result.stats.packages ?? 0} packages, ${r.result.stats.malicious ?? 0} malicious, ${r.result.stats.vulnerable ?? 0} with known CVEs${ranked}; ${f.length} finding(s)`;
   }
   const r = await scanCloud(iocs, runner);
   const f = run.recordSurface(r.result, r.findings, r.gaps);
@@ -370,6 +464,13 @@ function communityRules(
     origin: "rules",
   });
   return { community: { source: meta.source, compiled: meta.compiled, label: `YARA-Forge ${meta.set}`, sourceId: src.id, ageDays: rulesAgeDays(meta) } };
+}
+
+/** Apple's XProtect rules for scan host (macOS), registered as a source of the run so their matches cite it. */
+async function xprotectRules(run: Run): Promise<XProtectInfo> {
+  const info = await detectXProtect(runner);
+  if (!info.missing && info.rules.length) info.sourceId = run.addSource(xprotectSource(info)).id;
+  return info;
 }
 
 const SURFACE_OF: Record<string, Surface[]> = { github: ["github:account", "github:repos"], host: ["host"], deps: ["deps"], cloud: ["cloud"] };
@@ -406,17 +507,19 @@ async function dispatch(a: CommandArgs): Promise<number> {
       return lines.find((l) => l.check === "gh" && !l.ok) ? EXIT_FAILURE : EXIT_OK;
     }
     case "search": {
-      const run = needRun(a);
       const query = a.positional.join(" ").trim();
-      if (!query) throw new UsageError('search needs a query: ultraguard search "malicious npm packages november 2026" --out <run>');
-      const r = await searchInto(run, query, { limit: argInt(a, "limit", { min: 1, max: 50 }) });
+      if (argBool(a, "news")) {
+        if (query) throw new UsageError(`search takes a query or --news, not both: drop "${query}" or --news`);
+        return searchNewsCommand(a, needRun(a), json);
+      }
+      const run = needRun(a);
+      if (!query)
+        throw new UsageError('search needs a query, or --news for the standard set: ultraguard search "malicious npm packages november 2026" --out <run>');
+      const r = await searchInto(run, query, { limit: argInt(a, "limit", { min: 1, max: 50 }), searcher: newsDeps.searcher });
       if (json) out(jsonLine(r));
       else {
         for (const h of r.added) out(`- ${h.title ?? ""} <${h.url}>${h.snippet ? `\n    ${h.snippet}` : ""}`);
-        if (!r.searched)
-          out(
-            "search could not reach any engine (the keyless engines refused or throttled this address). Retry in a few minutes, use your own web search tool, or point ULTRAGUARD_SEARXNG at a SearXNG instance.",
-          );
+        if (!r.searched) out(NO_ENGINE);
         out(
           `\n${r.added.length} new hit(s), ${r.total} in ${run.path("search-hits.json")}. Keep the primary write-ups, then: ultraguard intel --web-results <that file, trimmed> --out ${run.dir}`,
         );
@@ -600,6 +703,42 @@ async function dispatch(a: CommandArgs): Promise<number> {
         );
       return problems.length ? EXIT_FAILURE : EXIT_OK;
     }
+    case "fixes": {
+      const run = needRun(a, { mustExist: true });
+      const ranked = await rankedOf(a, run, run);
+      const flag = argValue(a, "project");
+      const project = flag ? resolve(flag.replace(/^~(?=$|\/)/, homedir())) : undefined;
+      const plans = planFixes(ranked, { project });
+      if (project && !plans.length)
+        throw new UsageError(`--project: no vulnerable lockfile under ${project} in this run (see ${run.path("vulnerabilities.json")})`);
+      const md = renderFixes(plans, ranked);
+      run.writeText("FIXES.md", md);
+      out(json ? jsonLine({ counts: ranked.counts, plans, file: run.path("FIXES.md") }) : `${md}\n${run.path("FIXES.md")}`);
+      return EXIT_OK;
+    }
+    case "fix": {
+      const run = needRun(a, { mustExist: true });
+      const flag = argValue(a, "project");
+      if (!flag) throw new UsageError("fix needs --project <path>: the one project of yours to fix (see ultraguard fixes --out <run>)");
+      const tiers = argList(a, "tiers").map((t) => t.toUpperCase());
+      for (const t of tiers) if (!["P0", "P1", "P2"].includes(t)) throw new UsageError(`--tiers takes P0, P1 and P2 (P3 has no plan), not "${t}"`);
+      const apply = argBool(a, "apply");
+      // The dry run writes nothing: an older run is ranked in memory, not saved.
+      const ranked = await rankedOf(a, run, apply ? run : undefined);
+      const r = await fixProject(
+        ranked,
+        {
+          project: resolve(flag.replace(/^~(?=$|\/)/, homedir())),
+          apply,
+          tiers: (tiers.length ? tiers : ["P0", "P1", "P2"]) as Tier[],
+          test: !argBool(a, "no-test"),
+        },
+        run,
+        { runner, state: stateDir(argValue(a, "state")) },
+      );
+      out(json ? jsonLine(r) : renderFix(r, run));
+      return r.exitCode;
+    }
     case "watch": {
       const sub = a.positional[0];
       const run = needRun(a, { mustExist: sub === "commit" });
@@ -637,6 +776,46 @@ async function dispatch(a: CommandArgs): Promise<number> {
     }
   }
   throw new UsageError(`unknown command "${a.command}"`);
+}
+
+/** The ranked list of a run: vulnerabilities.json, or the package-checker list of an older run ranked now (saved in `save`, when given). */
+async function rankedOf(a: CommandArgs, run: Run, save: Run | undefined): Promise<RankedVulns> {
+  const ranked = run.read<RankedVulns | undefined>("vulnerabilities.json", undefined);
+  if (ranked) return ranked;
+  // A run scanned before the ranking existed: rank its package-checker list now.
+  const raw = run.read<{ vulnerabilities?: CheckerVuln[] } | undefined>("deps-vulnerabilities.json", undefined);
+  if (!raw) throw new UsageError(`no vulnerability list in ${run.dir}: run \`ultraguard scan deps --out ${run.dir}\` first`);
+  const backlog = (raw.vulnerabilities ?? []).filter((x) => !x.advisories.some((y) => (y.id ?? "").startsWith("MAL-")));
+  return (await assessVulnerabilities(backlog, save, { get: feedGet, state: stateDir(argValue(a, "state")), runner, home: homedir() })).ranked;
+}
+
+const NO_ENGINE =
+  "search could not reach any engine (the keyless engines refused or throttled this address). Retry in a few minutes, use your own web search tool, or point ULTRAGUARD_SEARXNG at a SearXNG instance.";
+
+async function searchNewsCommand(a: CommandArgs, run: Run, json: boolean): Promise<number> {
+  const r = await searchNews(run, {
+    limit: argInt(a, "limit", { min: 1, max: 50 }),
+    searcher: newsDeps.searcher,
+    platform: newsDeps.platform,
+    now: newsDeps.now?.(),
+  });
+  if (json) out(jsonLine(r));
+  else {
+    for (const q of r.queries) {
+      out(`## ${q.query}: ${q.searched ? `${q.added.length} new hit(s)` : "NOT SEARCHED (no engine answered)"}`);
+      for (const h of q.added) out(`- ${h.title ?? ""} <${h.url}>${h.snippet ? `\n    ${h.snippet}` : ""}`);
+    }
+    for (const n of r.notes) out(`note: ${n}`);
+    if (!r.searched) out(NO_ENGINE);
+    else if (r.unsearched.length)
+      out(
+        `\n${r.unsearched.length} of ${r.queries.length} queries got no answer: their news is unknown, not absent. Retry them one by one with search "<query>" in a few minutes, or with your own search tool.`,
+      );
+    out(
+      `\n${r.queries.length} queries (supply chain, then ${OS_NAMES[r.platform] ?? r.platform} malware, ${r.month}), ${r.total} hit(s) in ${run.path("search-hits.json")}. Keep the primary write-ups that can reach this user, then: ultraguard intel --web-results <that file, trimmed> --out ${run.dir}`,
+    );
+  }
+  return r.searched ? EXIT_OK : EXIT_FAILURE;
 }
 
 function writeReport(run: Run) {
