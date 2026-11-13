@@ -16,7 +16,7 @@ ultraguard watch plan --web-results <hits.json> --out <run>
 #    also writes <run>/iocs.carried.json so known campaigns are swept again.
 # 2. Fill <run>/iocs.json for the new sources (skip it if there are none):
 ultraguard ioc set --file <run>/iocs.json --out <run>      # carried campaigns are merged in
-# 3.
+# 3. (on a cloud runner: sweep --surfaces github,cloud --out <run>)
 ultraguard sweep --out <run>
 # 4.
 ultraguard watch commit --out <run>
@@ -27,12 +27,19 @@ ultraguard watch commit --out <run>
 compromise already reported does not alert again every day. New suspicious
 items (a fresh startup item that fetches and runs code, a new MCP server with
 a risky command) alert as REVIEW, once each. A run that could not scan every
-surface leaves its new sources pending for the next run. Each sweep keeps the
+surface leaves its new sources pending for the next run (exit 20): gh logged
+out, a cloud CLI installed but logged out or refused every listing. A surface
+with nothing to scan (no aws, gcloud or az installed at all) and a surface the
+sweep was told to leave out with `--surfaces` do not count: they stay UNKNOWN
+in the report, but the routine settles. A page that cannot be fetched is
+listed apart, not counted as new, and given up after 3 runs. Each sweep keeps the
 antivirus current by itself: ClamAV signatures and YARA-Forge rules older
 than 7 days are refreshed before the host scan.
 
 Opt-in notification: `watch commit --notify-issue owner/private-repo` opens a
-GitHub issue with the report when there is an alert. It writes to GitHub, so
+GitHub issue with the alert lines and the verdicts (the full report stays on
+the machine) when there is an alert. If the issue cannot be opened, the
+findings alert again on the next run. It writes to GitHub, so
 use it only when the user asked for it and named the repository. Prefer a
 private repository: the report names repositories and accounts.
 
@@ -40,7 +47,7 @@ private repository: the report names repositories and accounts.
 
 | Routine | Sees | Setup |
 |---|---|---|
-| Claude Code cloud routine (`/schedule`, daily) | web, GitHub, cloud if credentials are present | the prompt below; the host and deps surfaces are UNKNOWN, since a cloud runner is not the user's machine |
+| Claude Code cloud routine (`/schedule`, daily) | web, GitHub, cloud if credentials are present | the prompt below with `sweep --surfaces github,cloud`: the runner's own disk is not the user's machine, so host and deps are left out (UNKNOWN in the report, not blocking) |
 | Local: launchd or cron running Claude Code headless | everything, this machine included | a LaunchAgent that runs `claude -p "<the prompt below>"` once a day |
 | `/loop` in an open session | everything, while the session lives | `/loop 24h <the prompt below>` |
 

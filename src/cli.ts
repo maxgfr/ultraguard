@@ -294,7 +294,7 @@ async function runScan(surface: "github" | "host" | "deps" | "cloud", a: Command
   }
   const r = await scanCloud(iocs, runner);
   const f = run.recordSurface(r.result, r.findings, r.gaps);
-  return `cloud: ${r.result.scanned ? "scanned" : "no logged-in CLI"}; ${f.length} finding(s)`;
+  return `cloud: ${r.result.scanned ? "scanned" : (r.result.notApplicable ?? "not fully read, see the gaps")}; ${f.length} finding(s)`;
 }
 
 /** The installed YARA-Forge rules for scan host, registered as a source of the run so their findings cite it. */
@@ -367,6 +367,7 @@ async function dispatch(a: CommandArgs): Promise<number> {
     }
     case "intel": {
       const run = needRun(a);
+      for (const url of a.positional) if (!/^https?:\/\//i.test(url)) throw new UsageError(`intel: "${url}" is not a URL: add https://`);
       const hits: WebHit[] = a.positional.map((url) => ({ url }));
       const file = argValue(a, "web-results");
       if (file) hits.push(...readWebResultsFile(file));
@@ -376,9 +377,11 @@ async function dispatch(a: CommandArgs): Promise<number> {
       else {
         for (const s of sources)
           out(`[${s.id}] ${s.error ? `FAILED (${s.error})` : "ok"}  ${s.title ?? ""} <${s.url}>${s.file ? `\n     text: ${run.path(s.file)}` : ""}`);
-        out(
-          `\nNext: read each source, then write ${run.path("iocs.json")} (start from ${run.path("iocs.todo.json")}: one campaign per ATTACK, so merge the sources that describe the same one), then \`ultraguard ioc set --file ${run.path("iocs.json")} --out ${run.dir}\`.`,
-        );
+        if (!sources.some((s) => !s.error)) out("\nNo source could be fetched: nothing to extract IOCs from. Try other pages for the same attack.");
+        else
+          out(
+            `\nNext: read each source, then write ${run.path("iocs.json")} (start from ${run.path("iocs.todo.json")}: one campaign per ATTACK, so merge the sources that describe the same one), then \`ultraguard ioc set --file ${run.path("iocs.json")} --out ${run.dir}\`.`,
+          );
       }
       return sources.some((s) => !s.error) ? EXIT_OK : EXIT_FAILURE;
     }
@@ -454,6 +457,8 @@ async function dispatch(a: CommandArgs): Promise<number> {
       // Always github first, whatever order was asked: the host scan looks for clones of the repos it found hit.
       const ORDER = ["github", "host", "deps", "cloud"] as const;
       const list = ORDER.filter((s) => !wanted.length || wanted.includes(s));
+      // The routine tells "left out on purpose" from "could not scan" with this.
+      run.setMeta({ requested: list.flatMap((s) => SURFACE_OF[s] ?? []) });
       let tree: WalkResult | undefined;
       const shared = () => (tree ??= walkFor(a));
       // GitHub first: the host scan looks for local clones of the repositories it found hit.
@@ -494,11 +499,24 @@ async function dispatch(a: CommandArgs): Promise<number> {
         const file = argValue(a, "web-results");
         const hits = file ? readWebResultsFile(file) : [];
         const r = await watchPlan(dir, run, hits, { resweepDays: argInt(a, "resweep-days", { min: 1, max: 365 }) });
-        if (json) out(jsonLine(r));
-        else if (r.nothingNew) out(`NOTHING NEW: ${r.skipped} source(s) already handled${r.since ? ` (last sweep ${r.since})` : ""}; no re-sweep due`);
+        const failures = r.failed.map(
+          (f) => `could not fetch ${f.url} (${f.error ?? "?"})${f.givenUp ? `: given up after ${f.attempts} attempts` : `, attempt ${f.attempts}`}`,
+        );
+        if (json) out(jsonLine({ ...r, hits: hits.length }));
+        else if (r.nothingNew)
+          out(
+            [
+              `NOTHING NEW: ${hits.length} hit(s) read, ${r.skipped} source(s) already handled${r.since ? ` (last sweep ${r.since})` : ""}; no re-sweep due`,
+              ...failures,
+            ].join("\n"),
+          );
         else
           out(
-            `${r.newSources} new source(s), ${r.skipped} already handled${r.resweep ? "; re-sweep of every known campaign is due (iocs.carried.json)" : ""}.\nNext: fill the IOCs, ioc set, sweep, report, then watch commit.`,
+            [
+              `${hits.length} hit(s) read: ${r.newSources} new source(s), ${r.skipped} already handled${r.resweep ? "; re-sweep of every known campaign is due (iocs.carried.json)" : ""}.`,
+              ...failures,
+              "Next: fill the IOCs, ioc set, sweep, report, then watch commit.",
+            ].join("\n"),
           );
         return EXIT_OK;
       }

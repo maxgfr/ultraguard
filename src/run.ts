@@ -105,6 +105,8 @@ export interface RunMeta {
   /** Repositories the GitHub scan found hit, for the host scan's clone check. */
   hitRepos?: string[];
   createdAt?: string;
+  /** The surfaces the last sweep was asked for (--surfaces): the others were left out on purpose. */
+  requested?: Surface[];
 }
 
 export function surfaceList(raw: string[] | undefined, all: readonly Surface[]): Surface[] {
