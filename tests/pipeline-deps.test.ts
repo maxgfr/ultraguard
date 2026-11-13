@@ -275,6 +275,16 @@ describe("package indicators beyond pinned lockfiles", () => {
     expect(s.gaps.some((g) => g.what.startsWith("1 manifest(s) with no lockfile"))).toBe(true);
   });
 
+  it("a package.json next to bun.lockb is still matched by name, and the advisory-only lockfile is a gap", async () => {
+    const root = tmp("ug-bunm-");
+    put(root, "web/app/bun.lockb", "\u0000binary");
+    const manifest = put(root, "web/app/package.json", JSON.stringify({ dependencies: { "evil-typo": "^1.0.0", lodash: "4.17.20" } }));
+    const s = await scanDeps(typo, walk([root]), undefined, { checker: false, globalDirs: { node: [], python: [] } });
+    expect(s.findings.map((f) => f.title)).toEqual([`${manifest} depends on evil-typo (its lockfile is read for advisories only), named by the campaign`]);
+    expect(s.gaps.find((g) => g.what.startsWith("1 lockfile(s) checked against the advisory feeds only"))?.what).toContain(join(root, "web/app/bun.lockb"));
+    expect(s.gaps.some((g) => g.what.includes("manifest(s) with no lockfile"))).toBe(false);
+  });
+
   it("deps-8: aliased packages are recorded under the real package", () => {
     const v1 = JSON.stringify({ lockfileVersion: 1, dependencies: { "my-alias": { version: "npm:evil-pkg@1.2.3" } } });
     expect(parseLockfile("package-lock.json", v1)).toEqual([{ ecosystem: "npm", name: "evil-pkg", version: "1.2.3" }]);

@@ -282,27 +282,33 @@ export async function scanDeps(
   result.stats.lockfiles = lockfiles;
   if (advisoryOnly.size) result.stats.advisoryOnlyLockfiles = advisoryOnly.size;
 
-  // A project with a manifest and no lockfile (in its folder or above it) was installed from the manifest.
+  // A project with a manifest and no lockfile ultraguard reads (in its folder or above it): its manifest is matched instead.
+  // A lockfile read for advisories only (bun.lockb, deno.lock...) names no package here, so its project stays an orphan.
   const lockDirs = new Set([...lockfilePaths, ...advisoryOnly].map((p) => dirname(p)));
-  const locked = (d: string): boolean => {
+  const under = (dirs: Set<string>, d: string): boolean => {
     for (let x = d; ; x = dirname(x)) {
-      if (lockDirs.has(x)) return true;
+      if (dirs.has(x)) return true;
       if (dirname(x) === x) return false;
     }
   };
-  const orphans = manifests.filter((m) => !locked(dirname(m)));
+  const parsedDirs = new Set([...lockfilePaths].map((p) => dirname(p)));
+  const advisoryDirs = new Set([...advisoryOnly].map((p) => dirname(p)));
+  const orphans = manifests.filter((m) => !under(parsedDirs, dirname(m)));
   if (pkgs.length && orphans.length) {
     let unread = 0;
     for (const m of orphans) {
+      const advisoryLocked = under(advisoryDirs, dirname(m));
       if (basename(m) !== "package.json") {
-        unread++;
+        // The gap on advisory-only lockfiles below covers a manifest next to one.
+        if (!advisoryLocked) unread++;
         continue;
       }
       // package.json names its dependencies: an every-version indicator (a typosquat) matches the name alone.
+      const why = advisoryLocked ? "its lockfile is read for advisories only" : "no lockfile";
       try {
         const j = JSON.parse(readFileSync(m, "utf8"));
         for (const field of ["dependencies", "devDependencies", "optionalDependencies"])
-          for (const name of Object.keys(j?.[field] ?? {})) hit(m, { ecosystem: "npm", name, version: "*" }, `${m} depends on ${name} (no lockfile)`);
+          for (const name of Object.keys(j?.[field] ?? {})) hit(m, { ecosystem: "npm", name, version: "*" }, `${m} depends on ${name} (${why})`);
       } catch {
         unread++;
       }
@@ -315,6 +321,13 @@ export async function scanDeps(
         fix: "check those projects' dependencies by hand, or lock them",
       });
   }
+  if (pkgs.length && advisoryOnly.size)
+    gaps.push({
+      surface: "deps",
+      what: `${advisoryOnly.size} lockfile(s) checked against the advisory feeds only, not the campaign's packages: ${[...advisoryOnly].slice(0, 5).join(", ")}${advisoryOnly.size > 5 ? ", ..." : ""}`,
+      why: "ultraguard has no reader for these lockfiles; a package.json next to one is matched by package name only",
+      fix: "check those projects' locked versions by hand (`bun bun.lockb` prints a bun.lockb as a yarn.lock)",
+    });
 
   // What a project or a global install put on disk: a `pip install` or an `npm -g` CLI has no lockfile.
   if (pkgs.length) {
