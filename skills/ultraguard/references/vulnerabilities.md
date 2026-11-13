@@ -5,6 +5,17 @@ developer's machine package-checker finds a thousand of them, most in caches,
 plugins and vendored copies nobody patches. `scan deps` ranks them, so you can
 show the few that matter and offer to fix them.
 
+The OSV and GHSA feeds come from ultraguard's copy in
+`<state>/package-checker/data`: `rules update` refreshes it, and `scan deps`
+does when it is older than 1 day. A failed refresh keeps the older copy and
+is a gap with its age; with no copy at all, `scan deps` downloads the feeds
+once for the scan into its run folder and the refresh line says so. The run's `meta.json`
+(`advisoryFeeds`) and `deps-vulnerabilities.json` (`sources`) list each feed's
+origin, entries and age. package-checker's exit code says whether its scan was
+complete (3: incomplete, each reason a gap; a missing OSV feed means the
+malicious-package advisories were not loaded); `doctor` shows its version and
+the feeds' age.
+
 ## Tiers
 
 | Tier | When | What to say |
@@ -130,7 +141,8 @@ that writes, for one project the user named, after they said yes:
   install that refreshes the lockfile. npm, pnpm, yarn and bun run with
   `--ignore-scripts` (yarn berry: `--mode=skip-build`): a fix never runs the
   install scripts of a tree that may be hostile. `pip install` is not run.
-- **Re-check**: package-checker on the worktree's copies of the lockfiles.
+- **Re-check**: package-checker on the worktree's copies of the lockfiles,
+  with the same feed copy.
 - **Tests**: `scripts.test` of package.json (with the project's manager),
   `cargo test`, `go test ./...`, or pytest when it is configured; 15 minutes
   at most. A failure keeps the worktree as it is.

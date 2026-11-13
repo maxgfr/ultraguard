@@ -21,7 +21,8 @@ indicators of compromise (IOCs) that cite it, and ultraguard sweeps for them:
   rules a write-up publishes can be run over the same files;
 - your **dependencies**: the campaign's packages in lockfiles, manifests,
   `node_modules`, virtualenvs and global installs, and the OSV and GHSA feeds
-  through [package-checker.sh](https://github.com/maxgfr/package-checker.sh):
+  through [package-checker.sh](https://github.com/maxgfr/package-checker.sh)
+  (a copy ultraguard keeps in its state folder, refreshed daily):
   malicious packages are compromises, known CVEs a backlog; and the npm
   packages you publish, for a version a worm pushed during the campaign;
 - your **cloud**: roles that trust everyone, new roles and users, open GitHub
@@ -84,7 +85,7 @@ A run directory with:
 
 ```bash
 ultraguard doctor --probe                                  # what this machine lets it see
-ultraguard rules update                                    # ClamAV signatures (freshclam) and YARA-Forge rules, now
+ultraguard rules update                                    # ClamAV signatures (freshclam), YARA-Forge rules and the advisory feeds, now
 ultraguard search "<query>" --out <run>                    # keyless web search, when the host has none
 ultraguard search --news --out <run>                       # the "anything new?" set: supply chain + this OS's malware
 ultraguard intel <url>... --out <run>                      # or --web-results <hits.json>
@@ -103,7 +104,9 @@ runs on Node 18+ with no install. It needs the GitHub CLI logged in, plus the
 `aws`, `gcloud` or `az` CLIs for the cloud surface. Optional: ClamAV for the
 antivirus pass, and YARA for the community rules and `--yara`. ultraguard keeps
 both current itself: `scan host` runs `freshclam` and refreshes the YARA-Forge
-rules when they are older than 7 days (`--no-update` skips that).
+rules when they are older than 7 days, and `scan deps` refreshes the OSV and
+GHSA advisory feeds when they are older than 1 day (`--no-update` skips that).
+`scan deps` runs package-checker with Bash 4+ (`brew install bash` on macOS).
 
 ## Routine mode
 

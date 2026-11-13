@@ -30,6 +30,7 @@ export const LOCKFILES: Record<string, string> = {
  * handed to its advisory pass, never matched against campaign packages here.
  */
 export const ADVISORY_ONLY = new Set([
+  "bun.lockb",
   "deno.lock",
   "go.mod",
   "pdm.lock",
@@ -40,6 +41,9 @@ export const ADVISORY_ONLY = new Set([
   "mix.lock",
   "Package.resolved",
 ]);
+
+/** Manifests that name a project's dependencies. */
+export const MANIFESTS = new Set(["package.json", "pyproject.toml", "Pipfile", "Gemfile", "setup.py", "setup.cfg"]);
 
 export function advisoryOnlyKind(path: string): boolean {
   return ADVISORY_ONLY.has(basename(path));

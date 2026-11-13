@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { main, setRunner } from "../src/cli.js";
-import { detectTest, editJson, editLine, editWorkspaceOverrides, fixProject, splitCommand } from "../src/fix.js";
+import { detectTest, editJson, editLine, editWorkspaceOverrides, fixProject, renderFix, splitCommand } from "../src/fix.js";
 import { Run } from "../src/run.js";
 import { defaultRunner, type Runner } from "../src/runner.js";
 import type { Checker, CheckerVuln } from "../src/scan/deps.js";
@@ -206,6 +206,20 @@ describe("fix", () => {
     expect(s.exitCode).toBe(1);
   });
 
+  it("an incomplete re-check confirms nothing closed and exits 1", async () => {
+    const p = repo();
+    const incomplete: Checker = async () => ({ ok: true, vulnerabilities: [], warnings: ["the osv feed for npm (osv.purl) could not be found"] });
+    const r = await fixProject(p.ranked, { project: p.root, apply: true, tiers: TIERS, test: false }, p.run, {
+      runner: fakes(),
+      state: p.state,
+      now: NOW,
+      checker: incomplete,
+    });
+    expect(r.recheck).toMatchObject({ ok: false, error: "incomplete: the osv feed for npm (osv.purl) could not be found", closed: [] });
+    expect(renderFix(r, p.run)).toContain("the advisories are not confirmed closed");
+    expect(r.exitCode).toBe(1);
+  });
+
   it("a commit that cannot be signed leaves the changes uncommitted and says so", async () => {
     const p = repo();
     git(p.root, "config", "commit.gpgsign", "true");
@@ -240,6 +254,14 @@ describe("fix", () => {
     await expect(fixProject(cache, opts(join(home, ".cache/tool")), new Run(tmp()), { runner: fakes(), state: tmp(), now: NOW })).rejects.toThrow(
       /belongs to a tool, a cache or a plugin/,
     );
+
+    // Test fixtures, even at the root of their own git repository (a vulnerabilities.json of an older run): refused as fixtures.
+    const fx = repo();
+    for (const pr of fx.ranked.projects) pr.kind = "fixture";
+    await expect(fixProject(fx.ranked, opts(fx.root), fx.run, { runner: fakes(), state: fx.state, now: NOW, checker })).rejects.toThrow(
+      `fix refused: ${fx.root} holds test fixtures (vulnerable on purpose): ultraguard does not fix them`,
+    );
+    expect(git(fx.root, "worktree", "list").split("\n")).toHaveLength(1);
 
     const p = repo();
     await expect(fixProject(p.ranked, opts(p.root, ["P0"]), p.run, { runner: fakes(), state: p.state, now: NOW, checker })).rejects.toThrow(

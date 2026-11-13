@@ -22,6 +22,8 @@ export interface VulnDeps {
   state: string;
   runner: Runner;
   home?: string;
+  /** The scan roots: where a folder outside any git repository starts. */
+  roots?: string[];
   software?: SoftwareScan;
   now?: Date;
 }
@@ -62,6 +64,7 @@ export async function assessVulnerabilities(
     kev: kevMap,
     epss: epss?.data,
     home: deps.home,
+    roots: deps.roots,
     now,
     feeds: {
       kev: kev?.data ? { fetchedAt: kev.fetchedAt, catalogVersion: kev.data.catalogVersion, stale: kev.stale } : undefined,

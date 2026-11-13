@@ -3,6 +3,7 @@
 // hold millions of files, and a scan that never returns protects nobody.
 import { lstatSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { advisoryOnlyKind, lockfileKind, MANIFESTS } from "./lockfiles.js";
 
 export const PRUNE = new Set([
   "node_modules",
@@ -43,21 +44,52 @@ export interface WalkResult {
   unreadable: number;
   /** Directories skipped by name (node_modules, Library...), and how many: a coverage gap, never silence. */
   pruned: Record<string, number>;
+  /** Folders of more than maxDirEntries entries: only their sub-folders, lockfiles and manifests were read. */
+  huge?: string[];
 }
 
-export function walk(roots: string[], opts: { maxDepth?: number; maxEntries?: number } = {}): WalkResult {
+/**
+ * A folder holding more entries than this is a data set (audio, images, a dump), not code: its plain files are
+ * skipped, and said, but its sub-folders, lockfiles and manifests are kept (a project inside a big Downloads).
+ */
+export const MAX_DIR_ENTRIES = 20_000;
+export const HUGE_DIRS = "(folders of more than 20,000 entries: data sets)";
+
+/** Up to five paths, and how many more. */
+export const listed = (paths: string[]): string => `${paths.slice(0, 5).join(", ")}${paths.length > 5 ? ` and ${paths.length - 5} more` : ""}`;
+
+/** The file names a folder over the entry limit still yields: lockfiles and manifests. */
+const keptName = (name: string): boolean => !!lockfileKind(name) || advisoryOnlyKind(name) || MANIFESTS.has(name);
+
+export function walk(roots: string[], opts: { maxDepth?: number; maxEntries?: number; maxDirEntries?: number } = {}): WalkResult {
   const maxDepth = opts.maxDepth ?? 6;
   const maxEntries = opts.maxEntries ?? 400_000;
-  const out: WalkResult = { files: [], gitDirs: [], vscodeDirs: [], entries: 0, capped: false, unreadable: 0, pruned: {} };
-  const stack: { dir: string; depth: number }[] = roots.map((dir) => ({ dir, depth: 0 }));
-  while (stack.length) {
-    const { dir, depth } = stack.pop() as { dir: string; depth: number };
+  const maxDirEntries = opts.maxDirEntries ?? MAX_DIR_ENTRIES;
+  const out: WalkResult = { files: [], gitDirs: [], vscodeDirs: [], entries: 0, capped: false, unreadable: 0, pruned: {}, huge: [] };
+  // Level by level: when the entry cap is reached, it cuts the deepest levels of every
+  // project, never whole projects that happen to sort after a large one.
+  const queue: { dir: string; depth: number }[] = roots.map((dir) => ({ dir, depth: 0 }));
+  for (let head = 0; head < queue.length; head++) {
+    const { dir, depth } = queue[head] as { dir: string; depth: number };
     let names: string[];
     try {
       names = readdirSync(dir);
     } catch {
       out.unreadable++;
       continue;
+    }
+    if (depth > 0 && names.length > maxDirEntries) {
+      out.pruned[HUGE_DIRS] = (out.pruned[HUGE_DIRS] ?? 0) + 1;
+      out.huge?.push(dir);
+      // The entry types come with the names (no lstat per file): keep what is not a data file.
+      try {
+        names = readdirSync(dir, { withFileTypes: true })
+          .filter((e) => e.isDirectory() || e.name === ".git" || e.name === ".vscode" || (e.isFile() && keptName(e.name)))
+          .map((e) => e.name);
+      } catch {
+        out.unreadable++;
+        continue;
+      }
     }
     for (const name of names) {
       if (++out.entries > maxEntries) {
@@ -87,7 +119,7 @@ export function walk(roots: string[], opts: { maxDepth?: number; maxEntries?: nu
           out.pruned["(deeper than --depth)"] = (out.pruned["(deeper than --depth)"] ?? 0) + 1;
           continue;
         }
-        stack.push({ dir: p, depth: depth + 1 });
+        queue.push({ dir: p, depth: depth + 1 });
       } else if (st.isFile()) out.files.push(p);
     }
   }

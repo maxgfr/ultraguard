@@ -225,3 +225,54 @@ describe("scan deps", () => {
     expect(r.findings.some((f) => f.severity === "compromised" && f.title.includes("flatmap-stream@0.1.1, a malicious package (MAL-"))).toBe(true);
   }, 120_000);
 });
+
+describe("walk fairness", () => {
+  it("one project with a huge data folder does not starve the others: the folder is skipped and said", () => {
+    const root = tmp("ug-walk-");
+    for (const p of ["z-big", "b-app", "c-app"]) mkdirSync(join(root, p), { recursive: true });
+    writeFileSync(join(root, "b-app", "package-lock.json"), "{}");
+    writeFileSync(join(root, "c-app", "package-lock.json"), "{}");
+    const data = join(root, "z-big", "data", "audio");
+    mkdirSync(data, { recursive: true });
+    for (let i = 0; i < 60; i++) writeFileSync(join(data, `${i}.wav`), "");
+    const r = walk([root], { maxDirEntries: 1000, maxEntries: 40 });
+    // Level by level: both projects' lockfiles come before the cap, whatever sorts first.
+    expect(r.files.filter((f) => f.endsWith("package-lock.json")).length).toBe(2);
+    const r2 = walk([root], { maxDirEntries: 50 });
+    expect(r2.pruned["(folders of more than 20,000 entries: data sets)"]).toBe(1);
+    expect(r2.files.some((f) => f.endsWith(".wav"))).toBe(false);
+  });
+
+  it("a folder over the entry limit keeps its lockfiles, manifests and sub-folders, and is named in the deps and host gaps", async () => {
+    const home = tmp("ug-huge-");
+    const dl = join(home, "Documents", "scans");
+    mkdirSync(dl, { recursive: true });
+    for (let i = 0; i < 60; i++) writeFileSync(join(dl, `${i}.bin`), "");
+    const top = put(home, "Documents/scans/package-lock.json", "{}");
+    const manifest = put(home, "Documents/scans/package.json", "{}");
+    const nested = put(home, "Documents/scans/old-project/package-lock.json", "{}");
+    put(home, "Documents/scans/wfx-payload.bin", "payload");
+    put(home, "code/app/package-lock.json", "{}");
+    const tree = walk([home], { maxDirEntries: 50 });
+    expect(tree.huge).toEqual([dl]);
+    expect(tree.files).toEqual(expect.arrayContaining([top, manifest, nested]));
+    expect(tree.files.some((f) => f.endsWith(".bin"))).toBe(false);
+    // A walk root is never cut: --roots <that folder> reads all of it.
+    expect(walk([dl], { maxDirEntries: 50 }).files.filter((f) => f.endsWith(".bin")).length).toBe(61);
+
+    const deps = await scanDeps({ campaigns: [] }, tree, undefined, { checker: false, roots: [home] });
+    const dgap = deps.gaps.find((g) => g.what.includes("folder(s) of more than"));
+    expect(dgap?.what).toContain(dl);
+    expect(dgap?.fix).toContain("--roots");
+    expect(deps.result.stats.lockfiles).toBe(3);
+
+    const iocs: IocFile = {
+      campaigns: [{ ...(AIKIDO_IOCS.campaigns[0] as IocFile["campaigns"][0]), indicators: [{ type: "file", value: "wfx-payload.bin", source: "S1" }] }],
+    };
+    const host = await scanHost(iocs, tree, noLive, { home, startupDirs: [], dropDirs: [], skipLive: true });
+    expect(host.findings.some((f) => f.subject === join(dl, "wfx-payload.bin"))).toBe(true);
+    const hgap = host.gaps.find((g) => g.what.includes("folder(s) of more than"));
+    expect(hgap?.what).toContain(dl);
+    expect(hgap?.fix).toContain("--roots");
+  });
+});

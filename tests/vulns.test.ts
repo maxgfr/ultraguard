@@ -83,6 +83,37 @@ describe("projects", () => {
     expect(projectOf(loose, home)).toEqual({ root: join(home, "code/nogit"), kind: "own" });
   });
 
+  it("lockfiles in test fixtures are vulnerable on purpose: their own kind, never one of your projects", () => {
+    const home = tmp("ug-fx-");
+    mkdirSync(join(home, "code/scanner/.git"), { recursive: true });
+    const lock = join(home, "code/scanner/test-fixtures/log4j/pom.xml");
+    mkdirSync(join(lock, ".."), { recursive: true });
+    writeFileSync(lock, "<project/>");
+    expect(projectOf(lock, home)).toEqual({ root: join(home, "code/scanner/test-fixtures"), kind: "fixture" });
+    const own = join(home, "code/scanner/package-lock.json");
+    writeFileSync(own, "{}");
+    expect(projectOf(own, home).kind).toBe("own");
+  });
+
+  it("a fixture folder is looked up below the project's git root or the scan root, never in the folders above it", () => {
+    const home = tmp("ug-fx1-");
+    // A repository named fixtures, and one under a test-data folder: the user's own projects.
+    mkdirSync(join(home, "code/fixtures/.git"), { recursive: true });
+    mkdirSync(join(home, "work/test-data/masenko/.git"), { recursive: true });
+    const named = put(home, "code/fixtures/bun.lock");
+    const under = put(home, "work/test-data/masenko/web/bun.lock");
+    expect(projectOf(named, home)).toEqual({ root: join(home, "code/fixtures"), kind: "own" });
+    expect(projectOf(under, home)).toEqual({ root: join(home, "work/test-data/masenko"), kind: "own" });
+    // A home or a scan root under a testdata folder: no project below it is a fixture.
+    const vol = join(tmp("ug-fx1v-"), "testdata");
+    const loose = put(vol, "me/code/app/package-lock.json");
+    expect(projectOf(loose, join(vol, "me")).kind).toBe("own");
+    expect(projectOf(loose, undefined, new Map(), [join(vol, "me/code")]).kind).toBe("own");
+    // A test-fixtures folder inside a repository stays a fixture, rooted at that folder.
+    const inner = put(home, "code/fixtures/test-fixtures/npm/package-lock.json");
+    expect(projectOf(inner, home)).toEqual({ root: join(home, "code/fixtures/test-fixtures"), kind: "fixture" });
+  });
+
   it("reads which packages a project declares, and which are dev-only", () => {
     const d = tmp("ug-decl-");
     put(d, "js/package.json", JSON.stringify({ dependencies: { next: "^16" }, devDependencies: { vitest: "^4", next: "^16" } }));
@@ -173,7 +204,7 @@ describe("ranking", () => {
     expect(f[0]?.title).toBe("a: 1 P1 vulnerable package(s) to upgrade, none in CISA KEV: handlebars 4.7.9 -> 4.7.10 (CVE-2026-106445, critical)");
     expect(f[0]?.evidence.ref).toBe(`ultraguard fixes --out /runs/x --project ${join(home, "code/a")}`);
     expect(f[1]?.title).toMatch(
-      /^3 locked package versions have known vulnerabilities \(2 P1, 1 P3\) in 2 of your projects and 1 worktree, cache, plugin or vendored folder\(s\) \(1 of them\): a patching/,
+      /^3 locked package versions have known vulnerabilities \(2 P1, 1 P3\) in 2 of your projects and 1 worktree, cache, plugin, vendored or test-fixture folder\(s\) \(1 of them\): a patching/,
     );
   });
 

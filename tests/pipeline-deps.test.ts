@@ -1,13 +1,26 @@
 // Regressions for the dependency-scan findings of the pipeline audit.
-import { existsSync, mkdirSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { doctor } from "../src/doctor.js";
 import { Run } from "../src/run.js";
 import type { Runner } from "../src/runner.js";
-import { type CheckerVuln, defaultChecker, scanDeps } from "../src/scan/deps.js";
+import { renderReport } from "../src/report.js";
+import {
+  CHECKER_IGNORED,
+  type CheckerSource,
+  type CheckerVuln,
+  defaultChecker,
+  FEED_FILES,
+  feedDir,
+  feedSummary,
+  localFeeds,
+  scanDeps,
+  updateCheckerFeeds,
+} from "../src/scan/deps.js";
 import { parseLockfile } from "../src/scan/lockfiles.js";
 import { walk } from "../src/scan/walk.js";
+import { PACKAGE_CHECKER_REF, PACKAGE_CHECKER_VERSION } from "../src/vendor/package-checker-script.js";
 import type { Indicator, IocFile } from "../src/types.js";
 import { tmp } from "./helpers.js";
 
@@ -29,59 +42,240 @@ const npmLock = (pkgs: Record<string, string>) =>
     packages: { "": {}, ...Object.fromEntries(Object.entries(pkgs).map(([n, v]) => [`node_modules/${n}`, { version: v }])) },
   });
 
-/** A fake bash running package-checker: prints `stdout`, writes `report` to the --export-json path when given. */
-function fakeChecker(stdout: string, status: number, report?: { vulnerabilities: Partial<CheckerVuln>[] }): Runner & { calls: string[][] } {
+type Report = { vulnerabilities: Partial<CheckerVuln>[]; incomplete?: boolean; incomplete_reasons?: string[]; sources?: Partial<CheckerSource>[] };
+
+/** A fake bash running package-checker: exits `status`, prints `stderr`, writes `report` to the --export-json path when given. */
+function fakeChecker(status: number, report?: Report, stderr = ""): Runner & { calls: string[][] } {
   const calls: string[][] = [];
   const r = (async (cmd: string, args: string[]) => {
     calls.push([cmd, ...args]);
     if (report) writeFileSync(args[args.indexOf("--export-json") + 1] as string, JSON.stringify(report));
-    return { ok: status === 0, status, stdout, stderr: "" };
+    return { ok: status === 0, status, stdout: "", stderr };
   }) as Runner & { calls: string[][] };
   r.calls = calls;
   return r;
 }
 
+const OSV_MISSING = "the osv feed for npm (osv.purl) could not be found";
+
 describe("package-checker runs", () => {
-  it("deps-1: a run that could not load the OSV feed is a failure, not 0 malicious", async () => {
+  it("deps-1: exit 3 without the OSV feed is a gap that says the malicious-package advisories were not loaded", async () => {
     const work = tmp("ug-pc1-");
-    const runner = fakeChecker("\u001b[0;33m⚠️  Warning: Unable to find osv feed for npm (osv.purl)\u001b[0m\n✓ Using GHSA source: https://x/ghsa.purl\n", 1, {
+    const report: Report = {
       vulnerabilities: [],
-    });
+      incomplete: true,
+      incomplete_reasons: [OSV_MISSING],
+      sources: [{ kind: "osv", ecosystem: "npm", file: "osv.purl", status: "missing", origin: null }],
+    };
+    const runner = fakeChecker(3, report);
     const r = await defaultChecker(runner, work)(work);
-    expect(r.ok).toBe(false);
-    expect(r.error).toMatch(/OSV feed unreachable for npm/);
+    expect(r.ok).toBe(true);
+    expect(r.warnings).toEqual([`${OSV_MISSING}: malicious-package (MAL-) advisories were not loaded`]);
 
     const root = tmp("ug-pc1r-");
     put(root, "app/package-lock.json", npmLock({ a: "1.0.0" }));
     const s = await scanDeps(NO_PKG, walk([root]), new Run(tmp()), { runner, roots: [root] });
-    expect(s.gaps.some((g) => g.why.includes("OSV feed unreachable"))).toBe(true);
+    expect(s.gaps.find((g) => g.why === `package-checker: ${OSV_MISSING}: malicious-package (MAL-) advisories were not loaded`)?.fix).toBe(
+      "ultraguard rules update, then re-run scan deps",
+    );
+    expect(s.gaps.some((g) => g.why.startsWith("package-checker failed"))).toBe(false);
   });
 
-  it("deps-3: git-ignored lockfiles are scanned too", async () => {
+  it("deps-1: exit 0 or 1 is a complete scan; exit 3 with no reason is still a gap", async () => {
+    const work = tmp("ug-pc1c-");
+    expect((await defaultChecker(fakeChecker(1, { vulnerabilities: [] }), work)(work)).warnings).toEqual([]);
+    expect((await defaultChecker(fakeChecker(3, { vulnerabilities: [] }), work)(work)).warnings).toEqual(["the scan was incomplete (exit 3)"]);
+  });
+
+  it("deps-3: reads the feed copy in the state folder; no copy, no --data-dir; git-ignored lockfiles need no flag", async () => {
     const work = tmp("ug-pc3-");
-    const runner = fakeChecker("", 0);
-    await defaultChecker(runner, work)(work);
-    expect(runner.calls[0]).toContain("--include-gitignored");
+    const data = tmp("ug-pc3d-");
+    const runner = fakeChecker(0);
+    await defaultChecker(runner, work, { dataDir: data })(work);
+    expect(runner.calls[0]).not.toContain("--data-dir");
+    // A partial copy: package-checker's own age limit stays, so a missing feed is never an old Homebrew file.
+    put(data, "ghsa.purl", "pkg:npm/x@1\n");
+    await defaultChecker(runner, work, { dataDir: data })(work);
+    expect(runner.calls[1]).toContain("--data-dir");
+    expect(runner.calls[1]).not.toContain("--max-feed-age");
+    for (const f of FEED_FILES) put(data, f, "pkg:npm/x@1\n");
+    await defaultChecker(runner, work, { dataDir: data })(work);
+    const args = runner.calls[2] as string[];
+    expect(args.slice(args.indexOf("--data-dir"), args.indexOf("--data-dir") + 4)).toEqual(["--data-dir", data, "--max-feed-age", "0"]);
+    expect(args).not.toContain("--include-gitignored");
+  });
+
+  it("with no feed copy, the feeds are downloaded once for the scan, not once per run", async () => {
+    const root = tmp("ug-pc8-");
+    for (const g of ["a/x", "b/y", "c/z"]) put(root, `${g}/package-lock.json`, npmLock({ a: "1.0.0" }));
+    const calls: string[][] = [];
+    const runner: Runner = async (_cmd, args) => {
+      calls.push(args);
+      const dir = args[args.indexOf("--data-dir") + 1] as string;
+      if (args.includes("--update-feeds")) for (const f of FEED_FILES) put(dir, f, "pkg:npm/x@1\n");
+      else writeFileSync(args[args.indexOf("--export-json") + 1] as string, JSON.stringify({ vulnerabilities: [] }));
+      return { ok: true, status: 0, stdout: "", stderr: "" };
+    };
+    const run = new Run(tmp());
+    const once = join(run.dir, "package-checker", "data");
+    await scanDeps(NO_PKG, walk([root]), run, { runner, roots: [root], feedDir: tmp("ug-pc8s-") });
+    expect(calls.filter((c) => c.includes("--update-feeds"))).toHaveLength(1);
+    const scans = calls.filter((c) => !c.includes("--update-feeds"));
+    expect(scans).toHaveLength(3);
+    for (const c of scans) expect(c[c.indexOf("--data-dir") + 1]).toBe(once);
+    expect(existsSync(once)).toBe(false);
+  });
+
+  it("the feeds of the one-shot copy are reported as downloaded during the scan, never by the deleted folder", async () => {
+    const root = tmp("ug-c1-");
+    for (const g of ["a/x", "b/y"]) put(root, `${g}/package-lock.json`, npmLock({ a: "1.0.0" }));
+    const runner: Runner = async (_cmd, args) => {
+      const dir = args[args.indexOf("--data-dir") + 1] as string;
+      if (args.includes("--update-feeds")) for (const f of FEED_FILES) put(dir, f, "pkg:npm/x@1\n");
+      else
+        writeFileSync(
+          args[args.indexOf("--export-json") + 1] as string,
+          JSON.stringify({
+            vulnerabilities: [],
+            sources: ["ghsa", "osv"].map((k) => ({
+              kind: k,
+              ecosystem: "npm",
+              status: "loaded",
+              origin: join(dir, `${k}.purl`),
+              origin_type: "local",
+              entries: 3,
+              age_days: 0,
+            })),
+          }),
+        );
+      return { ok: true, status: 0, stdout: "", stderr: "" };
+    };
+    const run = new Run(tmp());
+    const s = await scanDeps(NO_PKG, walk([root]), run, { runner, roots: [root], feedDir: tmp("ug-c1s-") });
+    const feeds = run.meta().advisoryFeeds ?? [];
+    expect(feeds).toHaveLength(2);
+    for (const f of feeds) expect(f.origin?.startsWith(run.dir)).toBe(false);
+    expect(feedSummary(feeds)).toBe("2 loaded, 6 entries; 2 downloaded during the scan");
+    expect(JSON.stringify(run.read("deps-vulnerabilities.json", {}))).not.toContain(join(run.dir, "package-checker", "data"));
+    expect(s.gaps.some((g) => g.what.startsWith("advisories newer than"))).toBe(false);
   });
 
   it("deps-9: a report left by an earlier scan is never read as this run's", async () => {
     const work = tmp("ug-pc9-");
     writeFileSync(join(work, "package-checker-1.json"), JSON.stringify({ vulnerabilities: [] }));
-    const r = await defaultChecker(fakeChecker("", 1), work)(work);
+    const r = await defaultChecker(fakeChecker(1), work)(work);
     expect(r).toMatchObject({ ok: false, error: "no JSON report written" });
   });
 
-  it("deps-2: a stale local feed copy is a gap with its age", async () => {
+  it("deps-2: the feeds' origins and ages are recorded; a copy older than 1 day is a gap with its age", async () => {
     const feeds = tmp("ug-feed-");
-    const osv = put(feeds, "osv.purl", "pkg:npm/x@1\n");
-    const old = new Date(Date.now() - 10 * 86_400_000);
-    utimesSync(osv, old, old);
-    const runner = fakeChecker(`\u001b[0;32m✓ Using OSV source: ${osv}\u001b[0m\n`, 0, { vulnerabilities: [] });
+    const osv = join(feeds, "osv.purl");
+    const report: Report = {
+      vulnerabilities: [],
+      sources: [
+        {
+          kind: "osv",
+          ecosystem: "npm",
+          file: "osv.purl",
+          status: "loaded",
+          origin: osv,
+          origin_type: "local",
+          entries: 7,
+          date: "2026-11-03T00:00:00Z",
+          age_days: 10,
+        },
+        { kind: "ghsa", ecosystem: "npm", file: "ghsa.purl", status: "loaded", origin: "https://x/ghsa.purl", origin_type: "remote", entries: 5, age_days: 0 },
+      ],
+    };
     const root = tmp("ug-pc2r-");
     put(root, "app/package-lock.json", npmLock({ a: "1.0.0" }));
-    const s = await scanDeps(NO_PKG, walk([root]), new Run(tmp()), { runner, roots: [root] });
+    const run = new Run(tmp());
+    const s = await scanDeps(NO_PKG, walk([root]), run, { runner: fakeChecker(0, report), roots: [root], feedRefreshError: "curl: offline" });
     expect(s.result.stats.feedAgeDays).toBe(10);
-    expect(s.gaps.some((g) => g.what.includes("newer than 10 days") && g.fix?.includes("brew upgrade package-checker"))).toBe(true);
+    expect(s.result.stats.feedEntries).toBe(12);
+    const gap = s.gaps.find((g) => g.what.includes("newer than 10 days"));
+    expect(gap?.what).toContain(feeds);
+    expect(gap?.why).toContain("curl: offline");
+    expect(gap?.fix).toMatch(/^ultraguard rules update/);
+    expect(run.meta().advisoryFeeds?.map((f) => f.origin)).toEqual([osv, "https://x/ghsa.purl"]);
+    expect(run.read<{ sources: unknown[] }>("deps-vulnerabilities.json", { sources: [] }).sources).toHaveLength(2);
+    expect(feedSummary(run.meta().advisoryFeeds ?? [])).toBe(
+      `2 loaded, 12 entries; 1 from ${feeds} (oldest 10 days, 2026-11-03); 1 downloaded during the scan`,
+    );
+    expect(renderReport(run).report).toContain("advisory feeds (package-checker): 2 loaded");
+    // A fresh copy: no gap. A copy 30 hours old (age_days 1, floored) is past the 1-day limit.
+    const NOW = new Date("2026-11-13T12:00:00Z");
+    const aged = (hours: number) =>
+      scanDeps(NO_PKG, walk([root]), new Run(tmp()), {
+        runner: fakeChecker(0, {
+          vulnerabilities: [],
+          sources: [{ ...report.sources?.[0], age_days: Math.floor(hours / 24), date: new Date(NOW.getTime() - hours * 3_600_000).toISOString() }],
+        }),
+        roots: [root],
+        now: NOW,
+      });
+    expect((await aged(20)).gaps.some((g) => g.what.startsWith("advisories newer than"))).toBe(false);
+    expect((await aged(30)).gaps.find((g) => g.what.startsWith("advisories newer than"))?.what).toContain("newer than 1 days");
+  });
+
+  it("one clock for the feed age: the fetch date, not the date upstream built the feeds", async () => {
+    const NOW = new Date("2026-11-13T12:00:00Z");
+    const iso = (hours: number) => new Date(NOW.getTime() - hours * 3_600_000).toISOString();
+    // Fetched now, built upstream 30 hours ago: current for the scan, the refresh and doctor alike.
+    const feeds = tmp("ug-g1-");
+    for (const f of FEED_FILES) put(feeds, f, `# generated: ${iso(30)}\n# fetched: ${iso(0)}\npkg:npm/x@1\n`);
+    expect(localFeeds(feeds, NOW)?.stale).toBe(false);
+    const root = tmp("ug-g1r-");
+    put(root, "app/package-lock.json", npmLock({ a: "1.0.0" }));
+    const source = {
+      kind: "osv",
+      ecosystem: "npm",
+      file: "osv.purl",
+      status: "loaded",
+      origin: join(feeds, "osv.purl"),
+      origin_type: "local",
+      entries: 1,
+    } as const;
+    const s = await scanDeps(NO_PKG, walk([root]), new Run(tmp()), {
+      runner: fakeChecker(0, { vulnerabilities: [], sources: [{ ...source, date: iso(30), age_days: 1 }] }),
+      roots: [root],
+      now: NOW,
+    });
+    expect(s.gaps.some((g) => g.what.startsWith("advisories newer than"))).toBe(false);
+    // Fetched 30 hours ago, whatever its mtime: stale for all three.
+    const old = tmp("ug-g1o-");
+    for (const f of FEED_FILES) put(old, f, `# fetched: ${iso(30)}\npkg:npm/x@1\n`);
+    expect(localFeeds(old, NOW)?.stale).toBe(true);
+    const t = await scanDeps(NO_PKG, walk([root]), new Run(tmp()), {
+      runner: fakeChecker(0, { vulnerabilities: [], sources: [{ ...source, origin: join(old, "osv.purl"), date: iso(30), age_days: 1 }] }),
+      roots: [root],
+      now: NOW,
+    });
+    expect(t.gaps.find((g) => g.what.startsWith("advisories newer than"))?.fix).toMatch(/^ultraguard rules update/);
+  });
+
+  it("deps-7: exit 2 is a failure with package-checker's reason (Bash 3: install Bash)", async () => {
+    const work = tmp("ug-pc7w-");
+    const bash3 = "Error: package-checker requires Bash 4 or newer (this shell: 3.2.57(1)-release).\n  macOS (/bin/bash is 3.2): brew install bash\n";
+    const r = await defaultChecker(fakeChecker(2, undefined, bash3), work)(work);
+    expect(r).toMatchObject({ ok: false, error: "Error: package-checker requires Bash 4 or newer (this shell: 3.2.57(1)-release)." });
+  });
+
+  it("a run killed on timeout says so, and the update leaves no temp file in the feed folder", async () => {
+    const work = tmp("ug-pcto-");
+    const killed: Runner = async (_cmd, args) => {
+      const i = args.indexOf("--data-dir");
+      if (args.includes("--update-feeds")) writeFileSync(join(args[i + 1] as string, ".ghsa.purl.tmp.51mzbE"), "partial");
+      return { ok: false, status: 124, stdout: "Updating feeds...\nFormat: purl\n", stderr: "" };
+    };
+    expect(await defaultChecker(killed, work)(work)).toMatchObject({ ok: false, error: "timed out after 15 min" });
+    const data = tmp("ug-pctod-");
+    expect(await updateCheckerFeeds(killed, data)).toEqual({ ok: false, detail: "timed out after 20 min" });
+    expect(readdirSync(data)).toEqual([]);
+    const root = tmp("ug-pcto-r-");
+    put(root, "app/package-lock.json", npmLock({ a: "1.0.0" }));
+    const s = await scanDeps(NO_PKG, walk([root]), undefined, { runner: killed, roots: [root] });
+    expect(s.gaps.find((g) => g.why === "package-checker failed: timed out after 15 min")?.fix).toBe("re-run with --roots narrowed to your code folders");
   });
 
   it("deps-7: a Bash 3 failure says to install Bash, not to go online", async () => {
@@ -108,6 +302,7 @@ describe("package-checker runs", () => {
           existsSync(f) && dir.includes("root-lockfiles")
             ? [{ name: "evil", version: "1.0.0", file: f, ecosystem: "npm", severity: "critical", advisories: [{ id: "MAL-2026-9" }] }]
             : [],
+        warnings: dir.includes("root-lockfiles") ? [`${f} could not be read`] : [],
       };
     };
     const run = new Run(tmp());
@@ -116,6 +311,8 @@ describe("package-checker runs", () => {
     expect(dirs).toContain(join(root, "code/app"));
     expect(dirs.some((d) => d.startsWith(join(run.dir, "package-checker", "root-lockfiles")))).toBe(true);
     expect(s.findings.find((f) => f.severity === "compromised")?.subject).toBe(stray);
+    // A reason about the staged copy names the lockfile it stands for.
+    expect(s.gaps.find((g) => g.what === `advisories for ${stray}`)?.why).toBe(`package-checker: ${stray} could not be read`);
   });
 });
 
@@ -135,6 +332,84 @@ describe("what the deps walk could not see", () => {
     expect(s.gaps.some((g) => g.what.startsWith("lockfiles deeper than --depth"))).toBe(true);
     expect(dirs).toEqual([join(root, "dart/app")]);
     expect(s.result.stats.advisoryOnlyLockfiles).toBe(1);
+  });
+
+  it("lockfiles under folders package-checker prunes are each staged on their own; its default prune stays on", async () => {
+    const root = tmp("ug-prune-");
+    const lock = npmLock({ "flatmap-stream": "0.1.1" });
+    const pruned = ["proj/vendor/lib", "ios/Pods/x", "web/.nuxt/y", "py/site-packages/z", "mac/DerivedData/w", "a/b/Pods/c"].map((rel) =>
+      put(root, `${rel}/package-lock.json`, lock),
+    );
+    put(root, "app/web/package-lock.json", lock);
+    expect(CHECKER_IGNORED).toEqual(expect.arrayContaining(["vendor", "Pods", ".nuxt", "site-packages", "DerivedData"]));
+    const runner = fakeChecker(0, { vulnerabilities: [] });
+    const run = new Run(tmp());
+    await scanDeps(NO_PKG, walk([root]), run, { runner, roots: [root] });
+    const dirs = runner.calls.map((c) => c[2] as string);
+    // Virtualenvs' site-packages stay out of a project's run: package-checker's default prune is not turned off.
+    expect(runner.calls.some((c) => c.includes("--no-default-prune"))).toBe(false);
+    expect(dirs.filter((d) => !d.startsWith(run.dir))).toEqual([join(root, "app/web")]);
+    // Every lockfile under a pruned or ignored folder gets a run of its own.
+    const staged = dirs.filter((d) => d.startsWith(join(run.dir, "package-checker", "root-lockfiles")));
+    expect(staged).toHaveLength(pruned.length);
+    for (const d of staged) expect(readFileSync(join(d, "package-lock.json"), "utf8")).toBe(lock);
+  });
+
+  it("CVEs package-checker reports in folders the walk skips (dist, .venv) are not the project's backlog; a malicious one is still a finding", async () => {
+    const root = tmp("ug-outside-");
+    const app = put(root, "code/app/package-lock.json", npmLock({ qs: "6.1.0" }));
+    const dist = put(root, "code/app/dist/server/package-lock.json", npmLock({ minimist: "0.0.8" }));
+    const venv = put(root, "code/app/.venv/lib/python3.13/site-packages/jupyterlab/staging/yarn.lock", "");
+    const bad = put(root, "code/app/build/package-lock.json", npmLock({ "flatmap-stream": "0.1.1" }));
+    const vuln = (file: string, name: string, version: string, id?: string): Partial<CheckerVuln> => ({
+      name,
+      version,
+      file,
+      ecosystem: "npm",
+      severity: "high",
+      advisories: [id ? { id } : { cve: `CVE-2026-${name.length}` }],
+    });
+    const runner = fakeChecker(1, {
+      vulnerabilities: [
+        vuln(app, "qs", "6.1.0"),
+        vuln(dist, "minimist", "0.0.8"),
+        vuln(venv, "lodash", "4.17.4"),
+        vuln(bad, "flatmap-stream", "0.1.1", "MAL-2025-20690"),
+      ],
+    });
+    const run = new Run(tmp());
+    const s = await scanDeps(NO_PKG, walk([root]), run, { runner, roots: [root] });
+    expect(s.result.stats.lockfiles).toBe(1);
+    expect(s.vulnerable.map((v) => v.file)).toEqual([app]);
+    expect(s.result.stats.vulnerable).toBe(1);
+    expect(s.result.stats.vulnerableOutsideWalk).toBe(2);
+    expect(s.findings.some((f) => f.severity === "compromised" && f.subject === bad)).toBe(true);
+    const gap = s.gaps.find((g) => g.what.includes("under folders the walk skips"));
+    expect(gap?.what).toContain(dist);
+    expect(gap?.what).toContain(venv);
+    const saved = run.read<{ vulnerabilities: CheckerVuln[]; outsideWalk: CheckerVuln[] }>("deps-vulnerabilities.json", {
+      vulnerabilities: [],
+      outsideWalk: [],
+    });
+    expect(saved.vulnerabilities.map((v) => v.file).sort()).toEqual([app, bad].sort());
+    expect(saved.outsideWalk.map((v) => v.file).sort()).toEqual([dist, venv].sort());
+  });
+
+  it("bun.lockb is handed to package-checker, and its not-scanned reason is a gap", async () => {
+    const root = tmp("ug-bun-");
+    const lockb = put(root, "web/app/bun.lockb", "\u0000binary");
+    const reason = `${lockb} was not scanned: bun.lockb is binary and bun is not installed to read it`;
+    const dirs: string[] = [];
+    const s = await scanDeps(NO_PKG, walk([root]), undefined, {
+      checker: async (d) => {
+        dirs.push(d);
+        return { ok: true, vulnerabilities: [], warnings: [reason] };
+      },
+      roots: [root],
+    });
+    expect(dirs).toEqual([join(root, "web/app")]);
+    expect(s.result.stats.advisoryOnlyLockfiles).toBe(1);
+    expect(s.gaps.find((g) => g.why === `package-checker: ${reason}`)?.fix).toMatch(/^install bun/);
   });
 
   it("e2e-5: no lockfile at all under the roots is said, with the roots", async () => {
@@ -194,6 +469,16 @@ describe("package indicators beyond pinned lockfiles", () => {
     expect(s.gaps.some((g) => g.what.startsWith("1 manifest(s) with no lockfile"))).toBe(true);
   });
 
+  it("a package.json next to bun.lockb is still matched by name, and the advisory-only lockfile is a gap", async () => {
+    const root = tmp("ug-bunm-");
+    put(root, "web/app/bun.lockb", "\u0000binary");
+    const manifest = put(root, "web/app/package.json", JSON.stringify({ dependencies: { "evil-typo": "^1.0.0", lodash: "4.17.20" } }));
+    const s = await scanDeps(typo, walk([root]), undefined, { checker: false, globalDirs: { node: [], python: [] } });
+    expect(s.findings.map((f) => f.title)).toEqual([`${manifest} depends on evil-typo (its lockfile is read for advisories only), named by the campaign`]);
+    expect(s.gaps.find((g) => g.what.startsWith("1 lockfile(s) checked against the advisory feeds only"))?.what).toContain(join(root, "web/app/bun.lockb"));
+    expect(s.gaps.some((g) => g.what.includes("manifest(s) with no lockfile"))).toBe(false);
+  });
+
   it("deps-8: aliased packages are recorded under the real package", () => {
     const v1 = JSON.stringify({ lockfileVersion: 1, dependencies: { "my-alias": { version: "npm:evil-pkg@1.2.3" } } });
     expect(parseLockfile("package-lock.json", v1)).toEqual([{ ecosystem: "npm", name: "evil-pkg", version: "1.2.3" }]);
@@ -238,6 +523,29 @@ describe("package indicators beyond pinned lockfiles", () => {
 });
 
 describe("doctor", () => {
+  it("names the vendored package-checker and the age of the feed copy in the state folder", async () => {
+    const runner: Runner = async () => ({ ok: false, status: 1, stdout: "", stderr: "", missing: true });
+    const state = tmp("ug-doc-");
+    const line = async (now?: Date) => (await doctor(runner, { state, now, platform: "linux" })).find((l) => l.check === "package-checker");
+    expect(await line()).toMatchObject({ ok: false, fix: "ultraguard rules update" });
+    expect((await line())?.detail).toContain(
+      `${PACKAGE_CHECKER_VERSION} (${PACKAGE_CHECKER_REF}, vendored); no advisory feeds in ${feedDir(state)} (the next scan deps downloads them`,
+    );
+    // A partial copy is not ok.
+    put(feedDir(state), "osv.purl", "pkg:npm/x@1\n");
+    expect(await line()).toMatchObject({ ok: false, fix: "ultraguard rules update" });
+    expect((await line())?.detail).toContain(
+      `1 feed(s) in ${feedDir(state)}, 0 days old (incomplete: ${FEED_FILES.length - 1} of ${FEED_FILES.length} feeds missing, ghsa.purl,`,
+    );
+    for (const f of FEED_FILES) put(feedDir(state), f, "pkg:npm/x@1\n");
+    expect(await line()).toMatchObject({ ok: true, fix: undefined });
+    expect((await line())?.detail).toContain(`${FEED_FILES.length} feed(s) in ${feedDir(state)}, 0 days old`);
+    const later = await line(new Date(Date.now() + 2.5 * 86_400_000));
+    expect(later).toMatchObject({ ok: false, fix: "ultraguard rules update" });
+    expect(later?.detail).toContain("2 days old (stale: refreshed after 1 day)");
+    expect(await line(new Date(Date.now() + 30 * 3_600_000))).toMatchObject({ ok: false, fix: "ultraguard rules update" });
+  });
+
   it("deps-7: names Bash 3 and probes the feed host scan deps downloads from", async () => {
     const seen: string[] = [];
     const runner: Runner = async (cmd, args) => {

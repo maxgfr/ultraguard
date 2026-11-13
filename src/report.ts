@@ -3,6 +3,7 @@
 // The agent writes its own answer on top; `check` holds that answer to these facts.
 import { homedir } from "node:os";
 import type { Run } from "./run.js";
+import { feedSummary } from "./scan/deps.js";
 import type { HostInventory } from "./scan/hostintel.js";
 import { type Finding, type Gap, SURFACES, type Source, type Surface } from "./types.js";
 import { type SurfaceVerdict, verdicts, worst } from "./verdict.js";
@@ -127,6 +128,7 @@ export function renderReport(run: Run, now = new Date()): { report: string; reme
       `- \`${x}\`: not scanned in this run${r?.notApplicable ? ` (${r.notApplicable})` : r ? "" : ": run `ultraguard scan` for it, or say it was left out"}`,
     );
   }
+  if (meta.advisoryFeeds?.length) out.push(`- \`deps\`: advisory feeds (package-checker): ${feedSummary(meta.advisoryFeeds)}`);
   for (const g of gaps) out.push(`- \`${g.surface}\`: ${g.what}: ${g.why}${g.fix ? ` (to close: ${g.fix})` : ""}`);
   if (!gaps.length && !unscanned.length) out.push("- no gap recorded");
   out.push("");

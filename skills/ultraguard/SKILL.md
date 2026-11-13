@@ -123,8 +123,11 @@ lockfile, `node_modules` and virtualenvs, and the global npm, nvm, bun, uv and
 pipx installs. It runs the vendored `package-checker.sh` (OSV and GHSA feeds,
 Bash 4+) for malicious packages (compromised) and known CVEs. Known CVEs are
 a patching backlog, not a compromise: they are ranked with CISA KEV and EPSS
-(see Vulnerabilities and fixes), always info. A feed it could not load, or a
-stale local copy of it, is a gap.
+(see Vulnerabilities and fixes), always info. The feeds are ultraguard's own
+copy in its state folder, refreshed when older than 1 day (`--no-update` keeps
+it); a feed it could not load, a lockfile it could not read (`bun.lockb`
+without bun), or a copy older than 1 day is a gap, and REPORT.md gives the
+feeds' age.
 It also lists the npm packages the user maintains (`npm whoami`, or
 `--npm-user`) and flags every version published inside a campaign window: a
 worm holding their npm token republishes them with an install script
@@ -146,7 +149,8 @@ PUA detections are suspicious, not compromised. You manage the
 antivirus, not the user: `scan host` first runs `freshclam` when ClamAV's
 signatures are older than 7 days, and installs or refreshes the YARA-Forge
 community rules (5,000+ rules, released weekly, kept in ultraguard's state
-folder) the same way; `ultraguard rules update` refreshes both now. Never
+folder) the same way; `ultraguard rules update` refreshes both now, and
+package-checker's advisory feeds too. Never
 tell the user to run `freshclam`: run `rules update` yourself, and only if it
 fails, report its error as the gap. Each YARA-Forge rule's own score sets the
 severity (`--no-rules` skips them, `--no-update` keeps the databases as

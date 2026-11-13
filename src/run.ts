@@ -4,6 +4,7 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { writeFileAtomic } from "./engine.js";
+import type { CheckerSource } from "./scan/deps.js";
 import type { Finding, Gap, IocFile, Source, Surface, SurfaceResult } from "./types.js";
 
 export class Run {
@@ -118,6 +119,8 @@ export interface RunMeta {
   lastFindingId?: number;
   /** The surfaces the last sweep was asked for (--surfaces): the others were left out on purpose. */
   requested?: Surface[];
+  /** The advisory feeds scan deps loaded through package-checker: origin, entries, age. */
+  advisoryFeeds?: CheckerSource[];
 }
 
 export function surfaceList(raw: string[] | undefined, all: readonly Surface[]): Surface[] {

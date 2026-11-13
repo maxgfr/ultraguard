@@ -1,9 +1,11 @@
 // ultraguard keeps its own detection databases current: ClamAV's signatures
-// (through freshclam) and the YARA-Forge community rules. A scan on stale
+// (through freshclam), the YARA-Forge community rules and package-checker's
+// OSV and GHSA advisory feeds (scan deps). A scan on stale
 // signatures misses this month's malware families, and leaving that to the
 // user means it does not happen. These are the only writes ultraguard makes
 // outside a run folder: ClamAV's own database and ultraguard's state folder.
 import { detectAv } from "./scan/antivirus.js";
+import { FEED_FILES, feedDir, localFeeds, updateCheckerFeeds } from "./scan/deps.js";
 import { defaultRulesDeps, installedRules, type RuleSet, type RulesDeps, rulesAgeDays, updateRules } from "./rules.js";
 import type { Runner } from "./runner.js";
 
@@ -11,10 +13,12 @@ import type { Runner } from "./runner.js";
 export const STALE_DAYS = 7;
 
 export interface DefenseUpdate {
-  engine: "clamav" | "yara-forge";
+  engine: "clamav" | "yara-forge" | "package-checker";
   /** updated: refreshed now; current: fresh enough, left alone; skipped: engine absent; failed: the refresh did not work. */
   status: "updated" | "current" | "skipped" | "failed";
   detail: string;
+  /** Why a refresh failed, without the copy it kept: what the stale-feed gap of scan deps quotes. */
+  error?: string;
 }
 
 /** freshclam's summary lines ("daily.cvd updated (version: 28181, ...)"), without the noise. */
@@ -82,18 +86,43 @@ export async function updateYaraForge(
   }
 }
 
-/** Both databases: forced by `rules update`, only when stale before a host scan. */
+/**
+ * package-checker's advisory feeds in the state folder (scan deps reads them with --data-dir).
+ * A failed refresh keeps the previous copy; with no copy at all, each scan deps downloads them again.
+ */
+export async function updateAdvisoryFeeds(state: string, runner: Runner, opts: { force?: boolean; now?: Date } = {}): Promise<DefenseUpdate> {
+  const dir = feedDir(state);
+  const have = localFeeds(dir, opts.now);
+  // A partial copy (a feed missing) is refreshed: package-checker would look for the missing feed elsewhere.
+  if (!opts.force && have && !have.missing.length && !have.stale)
+    return { engine: "package-checker", status: "current", detail: `${have.files} feed(s) in ${dir} (${have.ageDays} days old)` };
+  const r = await updateCheckerFeeds(runner, dir);
+  if (r.ok) return { engine: "package-checker", status: "updated", detail: `${r.detail} (OSV and GHSA advisories for scan deps)` };
+  // No Bash 4: package-checker cannot run at all, like an engine that is not installed.
+  if (/bash 4|bash is not installed/i.test(r.detail))
+    return { engine: "package-checker", status: "skipped", detail: `${r.detail} Install Bash 4 or newer (macOS: brew install bash) for scan deps.` };
+  const kept = localFeeds(dir, opts.now);
+  return {
+    engine: "package-checker",
+    status: "failed",
+    error: r.detail,
+    detail: `feed refresh failed: ${r.detail}; ${kept ? `kept the copy in ${dir} (${kept.ageDays} days old${kept.missing.length ? `, ${kept.missing.length} of ${FEED_FILES.length} feeds missing` : ""})` : "no local copy: each scan deps downloads the feeds again"}`,
+  };
+}
+
+/** The databases: forced by `rules update`, only when stale before a scan. The advisory feeds only when asked (rules update, scan deps). */
 export async function refreshDefenses(
   state: string,
   runner: Runner,
-  opts: { force?: boolean; set?: RuleSet; clamav?: boolean; yaraForge?: boolean; deps?: RulesDeps; now?: Date } = {},
+  opts: { force?: boolean; set?: RuleSet; clamav?: boolean; yaraForge?: boolean; advisoryFeeds?: boolean; deps?: RulesDeps; now?: Date } = {},
 ): Promise<DefenseUpdate[]> {
   const out: DefenseUpdate[] = [];
   if (opts.clamav !== false) out.push(await updateClamav(runner, opts));
   if (opts.yaraForge !== false) out.push(await updateYaraForge(state, runner, opts));
+  if (opts.advisoryFeeds) out.push(await updateAdvisoryFeeds(state, runner, opts));
   return out;
 }
 
 export function formatDefenses(updates: DefenseUpdate[]): string {
-  return updates.map((u) => `${u.engine.padEnd(10)} ${u.status.padEnd(7)} ${u.detail}`).join("\n");
+  return updates.map((u) => `${u.engine.padEnd(15)} ${u.status.padEnd(7)} ${u.detail}`).join("\n");
 }

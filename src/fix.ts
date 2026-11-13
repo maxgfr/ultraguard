@@ -12,7 +12,7 @@ import { UsageError } from "./engine.js";
 import { type FixStep, type LockfilePlan, type Manager, type ProjectPlan, planFixes } from "./fixes.js";
 import type { Run } from "./run.js";
 import type { Runner } from "./runner.js";
-import { type Checker, defaultChecker } from "./scan/deps.js";
+import { type Checker, defaultChecker, feedDir } from "./scan/deps.js";
 import type { RankedVulns, Tier } from "./vulns.js";
 
 export const FIX_TEST_TIMEOUT_MS = 15 * 60_000;
@@ -263,6 +263,7 @@ const KIND_REFUSAL: Record<string, (p: ProjectPlan) => string> = {
     `${p.root} is a git worktree${p.mainRepo ? ` of ${p.mainRepo}: fix the main checkout (--project ${p.mainRepo})` : ": fix the main checkout"}`,
   tool: (p) => `${p.root} belongs to a tool, a cache or a plugin: update the tool that owns it, ultraguard does not fix it`,
   vendored: (p) => `${p.root} is a vendored copy (node_modules, a virtualenv): update the package that ships it, ultraguard does not fix it`,
+  fixture: (p) => `${p.root} holds test fixtures (vulnerable on purpose): ultraguard does not fix them`,
 };
 
 /** Every check that needs no write: what fix would do, or a UsageError saying why it refuses. */
@@ -508,9 +509,11 @@ export async function fixProject(ranked: RankedVulns, opts: FixOptions, run: Run
   const before = new Set(
     (project?.items ?? []).flatMap((i) => adv(rel(i.file), i.name, i.version, [...i.cves, ...i.ghsas])).map((x) => `${x.lockfile}|${x.name}|${x.id}`),
   );
-  const checker = deps.checker ?? defaultChecker(runner, join(run.dir, "package-checker", `fix-${record.name}`));
+  const checker = deps.checker ?? defaultChecker(runner, join(run.dir, "package-checker", `fix-${record.name}`), { dataDir: feedDir(deps.state) });
   const c = await checker(record.worktree);
   if (!c.ok) record.recheck = { ok: false, error: c.error ?? "package-checker failed", closed: [], remaining: [], introduced: [] };
+  // An incomplete re-check (a feed or a lockfile it could not read) confirms nothing closed.
+  else if (c.warnings?.length) record.recheck = { ok: false, error: `incomplete: ${c.warnings.join("; ")}`, closed: [], remaining: [], introduced: [] };
   else {
     const after = c.vulnerabilities
       .map((v) => ({ v, lockfile: relative(real(record.worktree), real(v.file)) }))
