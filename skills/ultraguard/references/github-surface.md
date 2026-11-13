@@ -9,8 +9,14 @@ credential, no write.
   PR of a campaign usually lands in repositories the victim does not own.
 - Commits your login authored and committed since the window, via commit
   search (default branches GitHub indexes; capped at 1,000).
-- Branches your login created or pushed, from your public event stream
-  (last 300 events).
+- Branches your login created or pushed, and repositories it created or made
+  public, from your public event stream (last 300 events): it still shows an
+  exfiltration repository already deleted. A repository made public in the
+  last 30 days is suspicious on its own.
+- Every repository you can see, by name (`repo_name`) and description
+  (`repo_description`): the exfiltration repositories of Shai-Hulud and
+  s1ngularity. Repositories created on your account in the last 30 days are
+  listed as one info line.
 - SSH and GPG keys added since the window start, 180 days back at most
   (suspicious: judge them). They
   need the `read:public_key` and `read:gpg_key` scopes; without them the gap
@@ -32,7 +38,9 @@ For each:
 - **PRs** created in the window, by anyone: title and head branch. Checked on
   every repository, because a PR from a fork does not move `pushed_at`.
 - **Webhooks and deploy keys** added since the window start, 180 days back
-  at most (admin rights only), on every repository: adding one needs no push.
+  at most, and **self-hosted runners** (admin rights only), on every
+  repository: adding one needs no push. A runner named by a `runner_name`
+  (or `string`) indicator is compromised; others are listed as info.
 - When the campaign has string, IP, domain, URL or workflow-file indicators
   and a workflow ran in the window, the **workflow files** of a repository
   not pushed since: a moved action tag (tj-actions, trivy-action) changes
@@ -64,7 +72,14 @@ For each:
     and their contents when the campaign has string, IP, domain or URL
     indicators (first 25 per repository);
   - **install hooks** (`preinstall`, `install`, `postinstall`, `prepare`) of
-    every package.json in the tree (first 20, outside node_modules).
+    every package.json in the tree (first 20, outside node_modules);
+  - **force pushes** to the default branch in the last 30 days (suspicious:
+    history was rewritten), with the lines they added searched for string,
+    IP, domain and URL indicators.
+- After the repositories: **GitHub code search** for each string, IP, domain
+  and URL indicator in your account and the owners of your repositories
+  (10 queries a run). It only adds findings: it covers indexed default
+  branches, not new repositories or files over 384 KB, so a gap always says so.
 
 Each finding carries the actor and `scope`: `own` (your login) or `other`.
 Run and commit findings also say what the commit changed: "the commit only

@@ -63,7 +63,10 @@ The full worked example, with all 27 indicators of that article, is
 | `cron_tag` | substring | crontab, startup items |
 | `process` | substring | running processes |
 | `azure_fedcred_prefix` | prefix | Azure AD federated credentials |
-| `actor` | a GitHub login the source names | annotates findings by that login |
+| `actor` | a GitHub login the source names | annotates findings by that login; its PRs, runs and default-branch pushes in your repositories are suspicious on their own (5 per repository) |
+| `repo_name` | exact repository name (or regex), e.g. `s1ngularity-repository` | repositories you can see, repositories your login created or made public (event stream) |
+| `repo_description` | substring, e.g. `Sha1-Hulud: The Second Coming` | descriptions of the repositories you can see |
+| `runner_name` | exact self-hosted runner name (or regex), e.g. `SHA1HULUD` | self-hosted runners of repositories you administer (a `string` equal to the name also matches) |
 
 Ecosystems: `npm`, `pypi`, `crates.io`, `go`, `packagist`, `rubygems`, `vscode`.
 

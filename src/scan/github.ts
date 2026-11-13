@@ -34,6 +34,10 @@ export interface GithubScanResult {
 
 interface Repo {
   full_name: string;
+  name?: string;
+  description?: string | null;
+  created_at?: string;
+  owner?: { login?: string };
   archived: boolean;
   pushed_at: string | null;
   default_branch: string;
@@ -92,6 +96,8 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
   const now = opts.now ?? new Date();
   const since = windowStart(iocs);
   const sinceDay = since.slice(0, 10);
+  // Changes that match no indicator are reviewed over 30 days at most.
+  const reviewSince = reviewStart(iocs, now);
   const accountRes: SurfaceResult = { surface: "github:account", scanned: false, stats: {}, startedAt: now.toISOString() };
   const reposRes: SurfaceResult = { surface: "github:repos", scanned: false, stats: {}, startedAt: now.toISOString() };
   const accF: NewFinding[] = [];
@@ -109,6 +115,9 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
     cache: matchers(iocs, "cache_key_prefix"),
     artifact: matchers(iocs, "artifact_prefix"),
     actor: matchers(iocs, "actor"),
+    repoName: matchers(iocs, "repo_name"),
+    repoDesc: matchers(iocs, "repo_description"),
+    runner: matchers(iocs, "runner_name"),
   };
 
   // Literal branch names can be asked for directly (activity log, runs): one exact, complete call each.
@@ -250,14 +259,46 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
     }
   }
 
-  // Branches your login created or pushed, from the public event stream (90 days, 300 events).
-  if (M.branch.length) {
+  // Branches your login created or pushed, and repositories it created or made public, from the
+  // public event stream (90 days, 300 events): it still shows an exfiltration repository already deleted.
+  {
     const events = await gh.paged<any>(`users/${login}/events`, { maxPages: 3 });
     accountReads.push(events.ok);
     accountRes.stats.events = events.data?.length ?? 0;
-    listGap(accG, "github:account", "your public events (branches you created or pushed)", events, `users/${login}/events`);
+    listGap(accG, "github:account", "your public events (branches and repositories you created, repositories made public)", events, `users/${login}/events`);
     for (const e of events.data ?? []) {
       if (e.created_at < since) continue;
+      const repoName = String(e.repo?.name ?? "?");
+      if ((e.type === "CreateEvent" && e.payload?.ref_type === "repository") || e.type === "PublicEvent") {
+        const verb = e.type === "PublicEvent" ? "made public" : "created";
+        const m = firstMatch(M.repoName, repoName.split("/").pop(), e.created_at);
+        if (m)
+          accF.push(
+            hit(m, {
+              surface: "github:account",
+              subject: repoName,
+              title: `Your account ${verb} repository ${repoName}`,
+              actor: login,
+              scope: "own",
+              at: e.created_at,
+              evidence: { kind: "api", ref: `users/${login}/events`, excerpt: `${e.type} ${repoName}` },
+            }),
+          );
+        // A private repository turned public is rare, and how stolen secrets get published.
+        else if (e.type === "PublicEvent" && e.created_at >= reviewSince)
+          accF.push({
+            surface: "github:account",
+            severity: "suspicious",
+            subject: repoName,
+            title: `Your account made repository ${repoName} public at ${e.created_at}: is it yours, and meant to be public?`,
+            actor: login,
+            scope: "own",
+            at: e.created_at,
+            evidence: { kind: "api", ref: `users/${login}/events`, excerpt: `PublicEvent ${repoName}` },
+            key: `github:account|public|${repoName}|${e.id ?? e.created_at}`,
+          });
+        continue;
+      }
       const ref = String(e.payload?.ref ?? "").replace(/^refs\/heads\//, "");
       if (!ref || (e.type !== "CreateEvent" && e.type !== "PushEvent")) continue;
       const m = firstMatch(M.branch, ref, e.created_at);
@@ -338,6 +379,7 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
 
   // ---- Repositories you can push to -------------------------------------------
   let repos: Repo[];
+  let allListed: Repo[] | undefined;
   let listed = true;
   if (opts.repos?.length) {
     const got = await mapPool(opts.repos, 8, (r) => gh.api<Repo>(`repos/${r}`));
@@ -352,11 +394,49 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
     const list = await gh.paged<Repo>("user/repos?affiliation=owner,collaborator,organization_member", { maxPages: 50 });
     listGap(repG, "github:repos", "the list of your repositories", list, "user/repos");
     listed = list.ok;
-    repos = (list.data ?? []).filter((r) => r.permissions?.push && !r.archived);
+    allListed = list.data ?? [];
+    repos = allListed.filter((r) => r.permissions?.push && !r.archived);
     // The most recently pushed first: a cap or a rate limit then spends the budget where an attack can be.
     repos.sort((a, b) => String(b.pushed_at ?? "").localeCompare(String(a.pushed_at ?? "")));
   }
   const isActive = (r: Repo) => !!r.pushed_at && r.pushed_at >= since;
+  // Exfiltration repositories (Shai-Hulud, s1ngularity): by name or description, on every listed
+  // repository, not only those you can push to.
+  const seenRepos = opts.repos?.length ? repos : (allListed ?? []);
+  for (const x of seenRepos) {
+    const name = x.name ?? x.full_name.split("/").pop() ?? "";
+    const m = firstMatch(M.repoName, name, x.created_at) ?? firstMatch(M.repoDesc, x.description, x.created_at);
+    if (!m) continue;
+    const mine = (x.owner?.login ?? x.full_name.split("/")[0])?.toLowerCase() === login.toLowerCase();
+    (mine ? accF : repF).push(
+      hit(m, {
+        surface: mine ? "github:account" : "github:repos",
+        subject: x.full_name,
+        title: `Repository ${x.full_name}${x.description ? ` ("${firstLine(x.description).slice(0, 120)}")` : ""}, created ${x.created_at ?? "?"}`,
+        at: x.created_at,
+        evidence: { kind: "url", ref: `https://github.com/${x.full_name}` },
+      }),
+    );
+  }
+  // New repositories on your account: one line of context, never one REVIEW item each.
+  const created = seenRepos.filter(
+    (x) => (x.owner?.login ?? x.full_name.split("/")[0])?.toLowerCase() === login.toLowerCase() && x.created_at && x.created_at >= reviewSince,
+  );
+  if (created.length)
+    accF.push({
+      surface: "github:account",
+      severity: "info",
+      subject: login,
+      title: `${created.length} repositories created on your account since ${reviewSince.slice(0, 10)}: ${created
+        .slice(0, 8)
+        .map((x) => x.full_name)
+        .join(", ")}${created.length > 8 ? ", ..." : ""}`,
+      evidence: { kind: "api", ref: "user/repos?sort=created" },
+      key: `github:account|new-repos|${created
+        .map((x) => x.full_name)
+        .sort()
+        .join(",")}`,
+    });
   if (opts.maxRepos && repos.length > opts.maxRepos) {
     const skipped = repos.slice(opts.maxRepos);
     repG.push({
@@ -384,12 +464,12 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
   const perInactive = COST_INACTIVE + (M.content.length || M.workflow.length ? 1 : 0);
   // Webhooks and deploy keys are read on every repository you administer.
   const admins = repos.filter((x) => x.permissions?.admin).length;
-  const cost = activeCount * perActive + (repos.length - activeCount) * perInactive + admins * 2;
+  const cost = activeCount * perActive + (repos.length - activeCount) * perInactive + admins * 3;
   if (remaining !== undefined && remaining < cost)
     repG.push({
       surface: "github:repos",
       what: "part of the repositories may hit the API rate limit",
-      why: `${remaining} REST calls left this hour; ${repos.length} repositories need up to ${cost} (about ${perActive} per repository pushed since ${sinceDay}, ${perInactive} per other, 2 more per one you administer)`,
+      why: `${remaining} REST calls left this hour; ${repos.length} repositories need up to ${cost} (about ${perActive} per repository pushed since ${sinceDay}, ${perInactive} per other, 3 more per one you administer)`,
       fix: `wait for the reset${resetAt ? ` at ${resetAt}` : ""}, or narrow with --repos`,
     });
   const truncated: string[] = [];
@@ -404,6 +484,25 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
     }
     const add = (f: NewFinding) => repF.push(f);
     const active = isActive(repo);
+    // A login a source names as compromised, active here under names the source did not list.
+    let actorOnlyCount = 0;
+    const actorOnly = (what: string, actor: string | undefined, at: string | undefined, ref: string) => {
+      const m = firstMatch(M.actor, actor, at);
+      if (!m || actorOnlyCount >= 5 || (at && at < since)) return;
+      actorOnlyCount++;
+      add(
+        hit(m, {
+          severity: "suspicious",
+          surface: "github:repos",
+          subject: r,
+          title: `${what} by ${actor} (named compromised by ${m.indicator.source})`,
+          actor,
+          scope: scopeOf(actor),
+          at,
+          evidence: { kind: "url", ref },
+        }),
+      );
+    };
 
     // The default branch's whole tree in one call. GitHub cuts trees past about 100,000 entries:
     // then the workflow folder and the root are listed as well.
@@ -515,10 +614,38 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
           });
         }
       }
+      // Self-hosted runners: Shai-Hulud 2.0 registers the infected machine as one (SHA1HULUD).
+      const runners = await gh.paged<any>(`repos/${r}/actions/runners`, { pick: (b) => b.runners ?? [], maxPages: 3 });
+      const plain: string[] = [];
+      for (const rn of runners.data ?? []) {
+        const name = String(rn.name ?? "");
+        const m =
+          firstMatch(M.runner, name) ??
+          M.content.find((x) => x.indicator.type === "string" && x.indicator.value.trim().toLowerCase() === name.trim().toLowerCase());
+        if (m)
+          add(
+            hit(m, {
+              surface: "github:repos",
+              subject: r,
+              title: `Self-hosted runner "${name}" is registered (${rn.os ?? "?"}, ${rn.status ?? "?"})`,
+              evidence: { kind: "api", ref: `repos/${r}/actions/runners/${rn.id}` },
+            }),
+          );
+        else plain.push(`${name} (${rn.os ?? "?"}, ${rn.status ?? "?"})`);
+      }
+      if (plain.length)
+        add({
+          surface: "github:repos",
+          severity: "info",
+          subject: r,
+          title: `Self-hosted runner(s) registered: ${plain.slice(0, 5).join(", ")}${plain.length > 5 ? ", ..." : ""}`,
+          evidence: { kind: "api", ref: `repos/${r}/actions/runners` },
+          key: `github:repos|${r}|runners|${(runners.data ?? []).map((x: any) => x.id).join(",")}`,
+        });
     } else noAdmin++;
 
     // Pull requests: a fork PR does not move pushed_at, so check them on every repo.
-    if (M.pr.length || M.branch.length) {
+    if (M.pr.length || M.branch.length || M.actor.length) {
       const prs = await gh.paged<any>(`repos/${r}/pulls?state=all&sort=created&direction=desc`, {
         maxPages: 3,
         stop: (page) => page.some((p) => p.created_at < since),
@@ -526,8 +653,11 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
       for (const pr of prs.data ?? []) {
         if (pr.created_at < since) continue;
         const m = firstMatch(M.pr, pr.title, pr.created_at) ?? firstMatch(M.branch, pr.head?.ref, pr.created_at);
-        if (!m) continue;
         const actor = pr.user?.login;
+        if (!m) {
+          actorOnly(`PR #${pr.number} "${pr.title}" (branch ${pr.head?.ref})`, actor, pr.created_at, pr.html_url);
+          continue;
+        }
         add(
           hit(m, {
             surface: "github:repos",
@@ -730,6 +860,57 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
       }
     }
 
+    // Force pushes to the default branch rewrite history under the same messages and authors
+    // (ForceMemo, GlassWorm): each one in the review window is for a human to judge, and its
+    // diff is searched for content indicators.
+    for (const e of (await defaultActivity()) ?? []) {
+      if (e.activity_type !== "force_push" || !e.timestamp || e.timestamp < reviewSince) continue;
+      const actor: string | undefined = e.actor?.login;
+      const range = `${String(e.before ?? "").slice(0, 8)}..${String(e.after ?? "").slice(0, 8)}`;
+      if (M.content.length && e.before && e.after) {
+        const cmp = await gh.api<any>(`repos/${r}/compare/${e.before}...${e.after}`);
+        for (const f of (cmp.data?.files ?? []) as { filename: string; patch?: string }[]) {
+          const added = (f.patch ?? "").split("\n").filter((l) => l.startsWith("+") && !l.startsWith("+++"));
+          for (const m of M.content) {
+            const line = added.find((l) => m.test(l));
+            if (!line || !inWindow(m, e.timestamp)) continue;
+            add(
+              hit(m, {
+                surface: "github:repos",
+                subject: r,
+                title: `Force push to ${repo.default_branch} by ${actor ?? "?"} added "${m.indicator.value}" to ${f.filename}`,
+                actor,
+                scope: scopeOf(actor),
+                at: e.timestamp,
+                ciRun: "attacker",
+                evidence: { kind: "url", ref: `https://github.com/${r}/blob/${e.after}/${f.filename}`, excerpt: line.slice(1).trim().slice(0, 200) },
+              }),
+            );
+          }
+        }
+      }
+      add({
+        surface: "github:repos",
+        severity: "suspicious",
+        subject: r,
+        title: `Force push to ${repo.default_branch} by ${actor ?? "?"} at ${e.timestamp} (${range}): history was rewritten`,
+        actor,
+        scope: scopeOf(actor),
+        at: e.timestamp,
+        evidence: { kind: "api", ref: `repos/${r}/activity?ref=refs/heads/${repo.default_branch}`, excerpt: `force_push ${e.before}..${e.after}` },
+        key: `github:repos|${r}|force-push|${e.id ?? e.after}`,
+      });
+    }
+    // Pushes to the default branch by a login a source names.
+    for (const e of (await defaultActivity()) ?? [])
+      if (e.activity_type === "push" || e.activity_type === "force_push")
+        actorOnly(
+          `Push to ${repo.default_branch} (${String(e.after ?? "").slice(0, 8)})`,
+          e.actor?.login,
+          e.timestamp,
+          `https://github.com/${r}/commit/${e.after}`,
+        );
+
     if (M.commit.length) {
       const commits = await gh.paged<any>(`repos/${r}/commits?since=${since}`, { maxPages: 3 });
       if (commits.truncated && !commits.partial) truncated.push(`${r} commits`);
@@ -789,8 +970,11 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
         firstMatch(M.branch, run.head_branch, run.created_at) ??
         firstMatch(M.commit, firstLine(run.display_title), run.created_at) ??
         firstMatch(M.pr, run.display_title, run.created_at);
-      if (!m) continue;
       const actor = run.triggering_actor?.login ?? run.actor?.login;
+      if (!m) {
+        actorOnly(`Workflow "${run.name}" ran on ${run.head_branch} ("${firstLine(run.display_title)}")`, actor, run.created_at, run.html_url);
+        continue;
+      }
       const carried = await describeRun(run.head_sha, actor, run.created_at);
       add(
         hit(m, {
@@ -872,6 +1056,48 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
     } else if (runGaps.length) quietGaps++;
   });
 
+  // Content indicators in any file: GitHub code search, best effort. It covers indexed default
+  // branches only, so a zero result never closes the gap; it can only add findings.
+  const searchable = [...new Map(M.content.map((m) => [m.indicator.value.replace(/"/g, "").trim().toLowerCase(), m])).values()].filter(
+    (m) => m.indicator.value.replace(/"/g, "").trim().length >= 4,
+  );
+  if (searchable.length && repos.length) {
+    const scanned = new Set(repos.map((x) => x.full_name.toLowerCase()));
+    const owners = [...new Set([login, ...repos.map((x) => x.full_name.split("/")[0] as string)].map((o) => o.toLowerCase()))];
+    const queries = searchable.flatMap((m) => owners.map((owner) => ({ m, owner })));
+    // Code search allows 10 calls a minute.
+    const CODE_SEARCH_CAP = 10;
+    let refused = 0;
+    for (const { m, owner } of queries.slice(0, CODE_SEARCH_CAP)) {
+      const q = encodeURIComponent(`"${m.indicator.value.replace(/"/g, "")}" user:${owner}`);
+      const res = await gh.api<any>(`search/code?q=${q}&per_page=100`);
+      reported.add("search/code");
+      if (!res.ok) {
+        refused++;
+        continue;
+      }
+      for (const it of (res.data?.items ?? []) as { path: string; html_url: string; repository?: { full_name?: string } }[]) {
+        const repoName = it.repository?.full_name ?? "";
+        if (!scanned.has(repoName.toLowerCase())) continue;
+        if (repF.some((f) => f.subject === repoName && f.indicator?.value === m.indicator.value && f.title.startsWith(`${it.path} contains`))) continue;
+        repF.push(
+          hit(m, {
+            ...(DOCS_ONLY.test(it.path) ? { severity: "suspicious" as const } : {}),
+            surface: "github:repos",
+            subject: repoName,
+            title: `${it.path} contains "${m.indicator.value}" (code search)`,
+            evidence: { kind: "url", ref: it.html_url },
+          }),
+        );
+      }
+    }
+    repG.push({
+      surface: "github:repos",
+      what: "string, IP, domain and URL indicators in files other than workflows and install hooks",
+      why: `searched with GitHub code search (${Math.min(queries.length, CODE_SEARCH_CAP) - refused} of ${queries.length} queries answered${queries.length > CODE_SEARCH_CAP ? `, capped at ${CODE_SEARCH_CAP} a run` : ""}): it covers indexed default branches only, so new repositories, other branches and files over 384 KB are not searched`,
+    });
+  }
+
   // Actor IOCs: a login an article names as compromised, seen anywhere in your repos.
   for (const f of repF) {
     const m = f.actor ? firstMatch(M.actor, f.actor) : undefined;
@@ -936,7 +1162,11 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
       why: "their contents were not read for string, IP, domain or URL indicators",
     });
   if (noAdmin)
-    repG.push({ surface: "github:repos", what: `webhooks and deploy keys of ${noAdmin} repositories`, why: "they need admin rights on the repository" });
+    repG.push({
+      surface: "github:repos",
+      what: `webhooks, deploy keys and self-hosted runners of ${noAdmin} repositories`,
+      why: "they need admin rights on the repository",
+    });
   if (truncated.length) repG.push({ surface: "github:repos", what: truncated.join("; "), why: "more than 300 items in the window: the oldest were not read" });
   // Every other refused or failed call, and every list the page cap cut: not looked at, so never clean.
   const failed = gh.failures.filter((f) => !reported.has(basePath(f.path)) && !/rate limit/i.test(f.error ?? ""));

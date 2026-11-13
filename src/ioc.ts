@@ -124,7 +124,14 @@ function compile(c: Campaign, ind: Indicator): Matcher {
       const depth = value.split("/").length;
       return re.test(parts.slice(-depth).join("/"));
     };
-  } else if (ind.type === "branch" || ind.type === "actor" || ind.type === "commit_message" || ind.type === "pr_title") {
+  } else if (
+    ind.type === "branch" ||
+    ind.type === "actor" ||
+    ind.type === "commit_message" ||
+    ind.type === "pr_title" ||
+    ind.type === "repo_name" ||
+    ind.type === "runner_name"
+  ) {
     // Exact, case-insensitive: "ci: cleanup" is also an ordinary commit message,
     // and a substring match would flag every "ci: cleanup workflows". Use a regex
     // indicator for the variants a source describes.
