@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here, generated automatically from the [Conventional Commits](https://www.conventionalcommits.org/) by [semantic-release](https://github.com/semantic-release/semantic-release).
 
+# [1.8.0](https://github.com/maxgfr/ultraguard/compare/v1.7.1...v1.8.0) (2026-11-13)
+
+
+### Features
+
+* **deps:** use package-checker 1.17.0 optimally, fair disk walk, test fixtures apart ([#14](https://github.com/maxgfr/ultraguard/issues/14)) ([09eb50d](https://github.com/maxgfr/ultraguard/commit/09eb50d0708cd18aa68a74a4e09c4bfc92bfe229))
+
 ## [1.7.1](https://github.com/maxgfr/ultraguard/compare/v1.7.0...v1.7.1) (2026-11-13)
 
 

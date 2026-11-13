@@ -19041,7 +19041,7 @@ async function scanNpmPublishes(iocs, opts) {
 }
 
 // src/version.ts
-var VERSION = "1.7.1";
+var VERSION = "1.8.0";
 
 // src/watch.ts
 import { mkdirSync as mkdirSync10 } from "fs";
