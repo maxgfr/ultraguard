@@ -49,7 +49,7 @@ import {
   signerOf,
   startupCommand,
 } from "./hostintel.js";
-import type { WalkResult } from "./walk.js";
+import { HUGE_DIRS, listed, MAX_DIR_ENTRIES, type WalkResult } from "./walk.js";
 import { hardeningFindings, remediatorFindings, type XProtectInfo, xprotectYara } from "./xprotect.js";
 
 type NewFinding = Omit<Finding, "id">;
@@ -348,6 +348,26 @@ export async function scanHost(
           } catch {}
         }
     }
+  // 1d. Folders the walk read only in part (more than 20,000 entries): their names are matched, no file is opened unless one matches.
+  if (M.file.length)
+    for (const dir of tree.huge ?? [])
+      for (const n of readdirOr(dir)) {
+        const p = join(dir, n);
+        const m = M.file.find((x) => x.test(p));
+        if (!m) continue;
+        try {
+          const st = lstatSync(p);
+          if (st.isFile()) reportFile(p, m);
+          else if (st.isDirectory()) reportFile(p, m, true);
+        } catch {}
+      }
+  if (tree.huge?.length)
+    gaps.push({
+      surface: "host",
+      what: `the files of ${tree.huge.length} folder(s) of more than ${MAX_DIR_ENTRIES.toLocaleString("en-US")} entries, beyond their names: ${listed(tree.huge)}`,
+      why: "a folder that large is a data set: its sub-folders, lockfiles and manifests were read, and its other files matched by name against the campaign's file indicators only (no hash, no content)",
+      fix: "scan such a folder with --roots <it> (a walk root has no entry limit)",
+    });
   if (tree.capped)
     gaps.push({
       surface: "host",
@@ -1153,7 +1173,10 @@ export async function scanHost(
     fix: "System Settings > General > Login Items; Safari > Settings > Extensions",
   });
 
-  const pruned = Object.entries(tree.pruned ?? {}).sort((a, b) => b[1] - a[1]);
+  // The folders over the entry limit have a gap of their own, with their paths.
+  const pruned = Object.entries(tree.pruned ?? {})
+    .filter(([n]) => n !== HUGE_DIRS)
+    .sort((a, b) => b[1] - a[1]);
   gaps.push({
     surface: "host",
     what: `files outside the scanned roots${

@@ -242,4 +242,37 @@ describe("walk fairness", () => {
     expect(r2.pruned["(folders of more than 20,000 entries: data sets)"]).toBe(1);
     expect(r2.files.some((f) => f.endsWith(".wav"))).toBe(false);
   });
+
+  it("a folder over the entry limit keeps its lockfiles, manifests and sub-folders, and is named in the deps and host gaps", async () => {
+    const home = tmp("ug-huge-");
+    const dl = join(home, "Documents", "scans");
+    mkdirSync(dl, { recursive: true });
+    for (let i = 0; i < 60; i++) writeFileSync(join(dl, `${i}.bin`), "");
+    const top = put(home, "Documents/scans/package-lock.json", "{}");
+    const manifest = put(home, "Documents/scans/package.json", "{}");
+    const nested = put(home, "Documents/scans/old-project/package-lock.json", "{}");
+    put(home, "Documents/scans/wfx-payload.bin", "payload");
+    put(home, "code/app/package-lock.json", "{}");
+    const tree = walk([home], { maxDirEntries: 50 });
+    expect(tree.huge).toEqual([dl]);
+    expect(tree.files).toEqual(expect.arrayContaining([top, manifest, nested]));
+    expect(tree.files.some((f) => f.endsWith(".bin"))).toBe(false);
+    // A walk root is never cut: --roots <that folder> reads all of it.
+    expect(walk([dl], { maxDirEntries: 50 }).files.filter((f) => f.endsWith(".bin")).length).toBe(61);
+
+    const deps = await scanDeps({ campaigns: [] }, tree, undefined, { checker: false, roots: [home] });
+    const dgap = deps.gaps.find((g) => g.what.includes("folder(s) of more than"));
+    expect(dgap?.what).toContain(dl);
+    expect(dgap?.fix).toContain("--roots");
+    expect(deps.result.stats.lockfiles).toBe(3);
+
+    const iocs: IocFile = {
+      campaigns: [{ ...(AIKIDO_IOCS.campaigns[0] as IocFile["campaigns"][0]), indicators: [{ type: "file", value: "wfx-payload.bin", source: "S1" }] }],
+    };
+    const host = await scanHost(iocs, tree, noLive, { home, startupDirs: [], dropDirs: [], skipLive: true });
+    expect(host.findings.some((f) => f.subject === join(dl, "wfx-payload.bin"))).toBe(true);
+    const hgap = host.gaps.find((g) => g.what.includes("folder(s) of more than"));
+    expect(hgap?.what).toContain(dl);
+    expect(hgap?.fix).toContain("--roots");
+  });
 });

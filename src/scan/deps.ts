@@ -19,8 +19,8 @@ import { parseJsonOutput, type Runner } from "../runner.js";
 import type { Finding, Gap, IocFile, SurfaceResult } from "../types.js";
 import { PACKAGE_CHECKER_REF, PACKAGE_CHECKER_SCRIPT, PACKAGE_CHECKER_SHA256, PACKAGE_CHECKER_VERSION } from "../vendor/package-checker-script.js";
 import { globalInstallDirs, installedPackages } from "./installed.js";
-import { advisoryOnlyKind, type Locked, lockfileKind, parseLockfile } from "./lockfiles.js";
-import type { WalkResult } from "./walk.js";
+import { advisoryOnlyKind, type Locked, lockfileKind, MANIFESTS, parseLockfile } from "./lockfiles.js";
+import { listed, MAX_DIR_ENTRIES, type WalkResult } from "./walk.js";
 
 type NewFinding = Omit<Finding, "id">;
 
@@ -286,8 +286,6 @@ export interface DepsScanOptions {
   feedRefreshError?: string;
 }
 
-const MANIFESTS = new Set(["package.json", "pyproject.toml", "Pipfile", "Gemfile", "setup.py", "setup.cfg"]);
-
 export async function scanDeps(
   iocs: IocFile,
   tree: WalkResult,
@@ -442,6 +440,13 @@ export async function scanDeps(
       what: `lockfiles deeper than --depth in ${deeper} folder(s)`,
       why: "the walk stops at --depth",
       fix: "re-run with a larger --depth, or --roots narrowed to your code folders",
+    });
+  if (tree.huge?.length)
+    gaps.push({
+      surface: "deps",
+      what: `${tree.huge.length} folder(s) of more than ${MAX_DIR_ENTRIES.toLocaleString("en-US")} entries, read for their sub-folders, lockfiles and manifests only: ${listed(tree.huge)}`,
+      why: "a folder that large is a data set: its other files are skipped",
+      fix: "scan such a folder with --roots <it> (a walk root has no entry limit)",
     });
   if (lockfiles + advisoryOnly.size === 0)
     gaps.push({

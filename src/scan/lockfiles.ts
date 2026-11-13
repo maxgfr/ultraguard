@@ -42,6 +42,9 @@ export const ADVISORY_ONLY = new Set([
   "Package.resolved",
 ]);
 
+/** Manifests that name a project's dependencies. */
+export const MANIFESTS = new Set(["package.json", "pyproject.toml", "Pipfile", "Gemfile", "setup.py", "setup.cfg"]);
+
 export function advisoryOnlyKind(path: string): boolean {
   return ADVISORY_ONLY.has(basename(path));
 }
