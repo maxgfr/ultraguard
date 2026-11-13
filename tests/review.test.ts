@@ -55,8 +55,10 @@ describe("review #2: GitHub failures are gaps, never clean", () => {
       return base(cmd, args);
     }) as typeof base;
     const r = await scanGithub(AIKIDO_IOCS, runner, { now: NOW });
-    expect(r.account.gaps.some((g) => g.what.includes("HTTP 500"))).toBe(true);
+    expect(r.account.gaps.some((g) => `${g.what} ${g.why}`.includes("HTTP 500"))).toBe(true);
     expect(r.repos.gaps.some((g) => g.what.includes("HTTP 403"))).toBe(true);
+    // Its only repository answered nothing: the surface was not scanned, whatever else was read.
+    expect(r.repos.result.scanned).toBe(false);
   });
 });
 
@@ -249,6 +251,6 @@ describe("gap analysis follow-ups", () => {
       "repos/o/r/actions/runs": { workflow_runs: [] },
     });
     const r = await scanGithub(AIKIDO_IOCS, gh, { now: NOW });
-    expect(r.repos.findings.map((f) => f.title)).toContain("Branch wfx-docs: branch creation by victim");
+    expect(r.repos.findings.map((f) => f.title)).toContain("Branch wfx-docs: created by victim at 2026-11-11T10:00:00Z");
   });
 });

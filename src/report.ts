@@ -34,6 +34,16 @@ export function payloadRan(findings: Finding[], repo: string): boolean {
   return findings.some((f) => f.subject === repo && f.severity === "compromised" && f.ciRun === "attacker");
 }
 
+/** A hit repository with a probe PR: otherwise the attacker only left a branch (or a file) behind. */
+function probePr(findings: Finding[], repo: string): boolean {
+  return findings.some((f) => f.subject === repo && f.severity === "compromised" && (f.indicator?.type === "pr_title" || /\/pull\/\d+/.test(f.evidence.ref)));
+}
+
+/** A probe PR, or a run that only carried a docs-only probe commit. */
+function probeSeen(findings: Finding[], repo: string): boolean {
+  return probePr(findings, repo) || findings.some((f) => f.subject === repo && f.severity === "compromised" && f.ciRun === "probe");
+}
+
 function idList(ids: string[], max = 8): string {
   if (!ids.length) return "none";
   const shown = ids
@@ -79,7 +89,10 @@ export function renderReport(run: Run, now = new Date()): { report: string; reme
         const own = fs.filter((f) => f.subject === r);
         const ran = payloadRan(fs, r);
         const hitRepo = own.some((f) => f.severity === "compromised");
-        out.push(`### ${r}${hitRepo ? (ran ? ": the attacker made CI run" : ": probe only, no attacker run seen") : ""}`, "");
+        out.push(
+          `### ${r}${hitRepo ? (ran ? ": the attacker made CI run" : probeSeen(fs, r) ? ": probe only, no attacker run seen" : ": attacker branch only, no run seen") : ""}`,
+          "",
+        );
         for (const sev of SEV_ORDER) for (const f of own.filter((x) => x.severity === sev)) out.push(findingLine(f));
         out.push("");
       }
@@ -156,7 +169,10 @@ export function renderRemediation(findings: Finding[], vs: SurfaceVerdict[], _so
     hitRepos.sort((a, b) => Number(payloadRan(findings, b)) - Number(payloadRan(findings, a)) || a.localeCompare(b));
     for (const r of hitRepos) {
       const ran = payloadRan(findings, r);
-      out.push(`### ${r}${ran ? ": the attacker made CI run, rotate unless the run's code is provably yours" : ": probe PR only"}`, "");
+      out.push(
+        `### ${r}${ran ? ": the attacker made CI run, rotate unless the run's code is provably yours" : probePr(findings, r) ? ": probe PR only" : probeSeen(findings, r) ? ": probe only" : ": attacker branch only, no run seen"}`,
+        "",
+      );
       if (!ran)
         out.push(
           "The probe proves the attacker could write here. No attacker run was seen, but runs can be deleted: check the run list below for gaps, and rotate if any attacker run executed.",

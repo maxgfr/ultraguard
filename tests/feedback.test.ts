@@ -194,11 +194,15 @@ describe("report and check wording", () => {
         },
       ]),
       "repos/org/cron/commits/legit": { author: { login: "teammate" }, files: [{ filename: "src/app.ts", status: "modified" }] },
-      "repos/org/cron/compare/legit...main": { status: "ahead" },
+      // Where main pointed when the run started, from the activity log: it already held the commit.
+      "repos/org/cron/activity": [
+        { ref: "refs/heads/main", activity_type: "push", after: "tip1", actor: { login: "teammate" }, timestamp: "2026-11-10T23:00:00Z" },
+      ],
+      "repos/org/cron/compare/legit...tip1": { status: "ahead" },
     };
     const r = await scanGithub(AIKIDO_IOCS, fakeGh(routes), { now: NOW });
     const t = r.repos.findings.map((f) => f.title);
-    expect(t[0]).toMatch(/it ran main's own code \(commit by teammate, no attacker change\)$/);
+    expect(t[0]).toMatch(/it ran main's own code \(commit by teammate, already on main when the run started\)$/);
     expect(
       payloadRan(
         r.repos.findings.map((f, i) => ({ ...f, id: `F${i}` })),

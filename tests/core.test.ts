@@ -148,12 +148,31 @@ describe("verdicts and report", () => {
     const run = aikidoRun();
     run.recordSurface(
       { surface: "github:repos", scanned: true, stats: {}, startedAt: "" },
-      [finding({}), finding({ subject: "org/docs", title: 'PR #3 "docs: dependency audit notes" (branch wfx-docs) by victim', ciRun: undefined })],
+      [
+        finding({}),
+        finding({
+          subject: "org/docs",
+          title: 'PR #3 "docs: dependency audit notes" (branch wfx-docs) by victim',
+          ciRun: undefined,
+          indicator: { type: "pr_title", value: "docs: dependency audit notes" },
+          evidence: { kind: "url", ref: "https://github.com/org/docs/pull/3" },
+        }),
+        // A branch the attacker created and deleted, with no PR and no run: not a "probe PR".
+        finding({
+          subject: "org/branch",
+          title: "Branch wfx-docs: created by victim",
+          ciRun: undefined,
+          evidence: { kind: "api", ref: "repos/org/branch/activity?ref=wfx-docs" },
+        }),
+      ],
       [],
     );
     const { report, remediation } = renderReport(run, new Date("2026-11-12T12:00:00Z"));
     expect(report).toContain("### org/site: the attacker made CI run");
     expect(report).toContain("### org/docs: probe only, no attacker run seen");
+    expect(remediation).toContain("### org/docs: probe PR only");
+    expect(report).toContain("### org/branch: attacker branch only, no run seen");
+    expect(remediation).toContain("### org/branch: attacker branch only, no run seen");
     expect(remediation).toContain("ultraguard runs none of these commands");
     expect(remediation).toContain("`victim`");
     expect(remediation.indexOf("org/site")).toBeLessThan(remediation.indexOf("org/docs"));

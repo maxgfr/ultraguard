@@ -32,6 +32,9 @@ export const INDICATOR_TYPES = [
   "process",
   "azure_fedcred_prefix",
   "actor",
+  "repo_name",
+  "repo_description",
+  "runner_name",
 ] as const;
 export type IndicatorType = (typeof INDICATOR_TYPES)[number];
 
