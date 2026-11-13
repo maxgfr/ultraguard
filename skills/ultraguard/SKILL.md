@@ -1,6 +1,6 @@
 ---
 name: ultraguard
-description: AI antivirus and incident response. Checks whether a supply-chain attack, compromised-account campaign, malicious package or machine malware (macOS and Linux stealers, backdoors) reported on the web has reached the user. You search the threat-intel news and turn each article into indicators of compromise (IOCs) that cite it. ultraguard sweeps the user's GitHub account and every repository they can push to, this machine, their lockfiles and their cloud for them, read-only. You then judge the findings and write a cited verdict per surface with the remediation. Use only when the user explicitly asks for ultraguard or to check whether they were hacked, compromised or hit by an attack, e.g. "am I affected by this attack <url>", "check I wasn't hacked", "is my Mac infected", "scan for the latest supply-chain attacks", "est-ce qu'on m'a hacké", "vérifie que je ne suis pas touché par cette attaque". Can also run as a routine (watch). Never changes the user's accounts, code or files.
+description: AI antivirus and incident response. Checks whether a supply-chain attack, compromised-account campaign, malicious package or machine malware (macOS and Linux stealers, backdoors) reported on the web has reached the user. You turn threat-intel articles into indicators of compromise (IOCs) that cite them. ultraguard sweeps the user's GitHub account and every repository they can push to, this machine, their lockfiles and their cloud, read-only. You then judge the findings and write a cited verdict per surface and its remediation. Use only when the user explicitly asks for ultraguard or to check whether they were hacked, compromised or hit by an attack, e.g. "am I affected by this attack <url>", "check I wasn't hacked", "is my Mac infected", "scan for the latest supply-chain attacks", "est-ce qu'on m'a hacké", "vérifie que je ne suis pas touché par cette attaque". Can also run as a routine (watch). Changes nothing on its own: fixes dependencies only on request, in a separate branch.
 license: MIT
 metadata:
   version: 1.6.0
@@ -17,11 +17,15 @@ proves that the verdict cites only real findings and hides none.
 
 ## Invariants
 
-- **I0 Read-only.** Never delete a branch, close a PR, revoke a key, rotate a
-  secret or kill a process yourself. `REMEDIATION.md` lists the commands; the
-  user runs them. Opening an issue (`--notify-issue`) happens only when the
-  user configured it. The one thing ultraguard does maintain itself is its
-  antivirus: ClamAV's signatures and the YARA-Forge rules (see Antivirus).
+- **I0 Nothing changes on its own.** ultraguard never changes anything by
+  itself: never delete a branch, close a PR, revoke a key, rotate a secret or
+  kill a process yourself. `REMEDIATION.md` lists the commands; the user runs
+  them. `fix --apply` is the single command that writes, and only when the
+  user asked to fix a named project: in a new worktree and branch, never in
+  their checkout, never pushing. Opening an issue (`--notify-issue`) happens
+  only when the user configured it. The one thing ultraguard does maintain
+  itself is its antivirus: ClamAV's signatures and the YARA-Forge rules (see
+  Antivirus).
 - **I1 No IOC from memory.** Every indicator cites an `[S#]` fetched in this
   run with `intel`; `ioc set` refuses one that does not. Copy indicators
   verbatim from the source, and re-arm defanged ones (`1.2.3[.]4` becomes
@@ -218,14 +222,25 @@ EXPOSED or COMPROMISED. Ranked list: `<run>/vulnerabilities.json`; section
 1. After the verdict, show the P0 and P1 items: the machine updates first,
    then each project with its top CVEs, KEV status and fixed version. Say
    which are dev-only (lower risk) and which need a major upgrade.
-2. Offer to fix them. `ultraguard fixes --out <run> [--project <path>]`
-   prints the smallest upgrades that close P0-P2, with the exact command for
-   the project's package manager, and writes FIXES.md. It runs nothing.
-3. **Only when the user says yes**, per project: create a worktree or branch,
-   apply the plan, run the project's install and tests, show the diff, and
-   commit or open a PR only as the user asks. I0 binds ultraguard, not this
-   step, and this step needs the user's go-ahead every time. Never touch a
-   cache, plugin or vendored copy: update the tool that owns it.
+   `ultraguard fixes --out <run>` prints the smallest upgrades that close
+   P0-P2 per project, with the exact command for its package manager
+   (FIXES.md). It runs nothing.
+2. Ask the user which projects to fix. Never pick for them.
+3. Per project named: `ultraguard fix --out <run> --project <path>` is a
+   dry run (nothing written): show it (worktree, branch, commands, files).
+4. **Only after the user's go-ahead**: `ultraguard fix --out <run> --project
+   <path> --apply`. It makes a new worktree and branch, runs the plan with
+   install scripts off, re-checks the lockfiles, runs the tests and commits
+   there. It never pushes. Exit 0: done and tests pass; 1: read why; 2:
+   refused (a cache, plugin, vendored copy, worktree, no git, nothing to fix,
+   a missing package manager).
+5. Read the test result and the remaining advisories it prints (and
+   `<run>/fix-<project>.json`). If the tests fail, repair the code in that
+   worktree (read the changelog of the major upgrades), re-run the tests,
+   and commit the repair there. Push, open a PR or merge only when the user
+   asks; or drop the fix with the two commands it prints.
+
+Never fix a cache, plugin or vendored copy: update the tool that owns it.
 
 [vulnerabilities](references/vulnerabilities.md) has the tiers, the feeds
 and the fix workflow per package manager.

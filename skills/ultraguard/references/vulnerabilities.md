@@ -93,20 +93,68 @@ replace the package.
 
 ## Fixing, when the user says yes
 
-ultraguard stays read-only (I0). Fixing is a separate step the user asks for,
-project by project:
+ultraguard changes nothing on its own (I0). `fix --apply` is the one command
+that writes, for one project the user named, after they said yes:
 
-1. Create a worktree or a branch (`fix/vulnerabilities-<date>`); never work on
-   the default branch.
-2. Apply the plan from `ultraguard fixes --project <path>`: the commands, then
-   the override edits, then the install.
-3. Run the project's own checks (its test, lint and build scripts). A major
-   upgrade that breaks them: read the changelog, adapt the code, or leave that
-   one out and say why.
-4. Re-run `ultraguard scan deps --roots <project> --out <run>` and confirm the
-   items are gone.
-5. Show the diff. Commit, push or open a PR only as the user asks, with the
-   CVEs the change closes in the message.
+1. Show the P0/P1 items and ask which projects to fix.
+2. `ultraguard fix --out <run> --project <path>`: the dry run. It writes
+   nothing, and prints the worktree, the branch, the base commit, every
+   command and edit in order, and the files expected to change. Show it.
+3. After the user's go-ahead: the same command with `--apply`
+   (`--tiers P0,P1` to leave the P2 out, `--no-test` to skip the tests).
+4. Read what it prints: the re-check (advisories closed, remaining, new), the
+   test result with the tail of its output, the commit, the diff stat.
+5. Tests failing: repair the code in the worktree (a major upgrade: read the
+   changelog), re-run the tests there, and commit the repair in the
+   worktree. Push, open a PR or merge only when the user asks.
+
+### What `--apply` does
+
+- **Refuses** (exit 2, nothing created): a cache, plugin, vendored copy or
+  worktree (fix the main checkout instead); a folder that is not the root of
+  a git repository; a plan with nothing at the chosen tiers; a branch of the
+  same name that already exists; a package manager the plan needs that is
+  not installed.
+- **Worktree**: `<state>/fixes/<repo>-<yyyymmdd-hhmm>` (state: `--state`,
+  `ULTRAGUARD_HOME`, default `~/.ultraguard`), on a new branch
+  `ultraguard/fix-<yyyymmdd>-<sha7>` from the default branch as it is
+  locally (`origin/HEAD`, else `main` or `master`; HEAD when there is none).
+  No fetch. The user's checkout, its branch and its files are not touched.
+- **The plan**, per lockfile in its folder of the worktree: the commands
+  (`pnpm up`, `npm install pkg@ver`, `yarn up`, `cargo update -p --precise`,
+  `go get`, `uv add`, `composer require`, `bundle update --conservative`...),
+  then the edits ultraguard makes itself (`pnpm.overrides`, `overrides`,
+  `resolutions` in package.json with its own indentation and line endings;
+  `overrides:` in pnpm-workspace.yaml when it already has that map; a pinned
+  line in `requirements*.txt`, `Cargo.toml` or the `Gemfile`), then the
+  install that refreshes the lockfile. npm, pnpm, yarn and bun run with
+  `--ignore-scripts` (yarn berry: `--mode=skip-build`): a fix never runs the
+  install scripts of a tree that may be hostile. `pip install` is not run.
+- **Re-check**: package-checker on the worktree's copies of the lockfiles.
+- **Tests**: `scripts.test` of package.json (with the project's manager),
+  `cargo test`, `go test ./...`, or pytest when it is configured; 15 minutes
+  at most. A failure keeps the worktree as it is.
+- **Commit**: only the manifests and lockfiles, as `fix(deps): close <n> known
+  vulnerabilities` with one line per package and its CVEs, with the user's
+  git config: it is signed when `commit.gpgsign` is on. If the commit fails
+  (signing), the changes stay uncommitted in the worktree and fix says so.
+- **Record**: `<run>/fix-<project>.json`: every command and edit with its exit
+  code and output, the closed and remaining advisories, the test result.
+- Exit 0: applied, advisories closed, tests pass (or `--no-test`, or no test
+  command found). Exit 1: a step failed, an advisory remains, the re-check
+  could not run, the tests fail or the commit failed.
+
+### Publishing or dropping a fix
+
+fix prints the commands; it runs none of them:
+
+```sh
+git -C <worktree> push -u origin <branch>
+cd <worktree> && gh pr create --base <default branch> --head <branch> --fill
+# or drop it:
+git -C <repo> worktree remove --force <worktree>
+git -C <repo> branch -D <branch>
+```
 
 Never edit a cache, a plugin or a vendored copy: update the tool, the plugin
 or the parent package instead.
