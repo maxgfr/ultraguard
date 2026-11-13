@@ -170,7 +170,7 @@ describe("check", () => {
 
   it("passes a grounded answer", () => {
     const text =
-      "Your GitHub account is clean [S1]. The repositories are COMPROMISED: victim ran the stealer in org/site CI [F1].\n\n## Coverage\nThe cloud was not scanned.";
+      "Your GitHub account: CLEAN [S1]. The repositories are COMPROMISED: victim ran the stealer in org/site CI [F1].\n\n## Coverage\nThe machine, the dependencies and the cloud were not scanned.";
     expect(checkAnswer(hitRun(), text)).toEqual([]);
   });
 

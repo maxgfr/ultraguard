@@ -173,7 +173,7 @@ describe("report and check wording", () => {
     );
     run.recordSurface({ surface: "github:account", scanned: true, stats: {}, startedAt: "" }, [], []);
     const text =
-      "- **Dépôts : COMPROMISED**, la CI a été exécutée par l'attaquant.\n  - `org/site` [F1]\n\n## Couverture\n\nSi la CI des dépôts touchés a un rôle cloud, il n'a pas été vérifié.\n";
+      "- **Dépôts : COMPROMISED**, la CI a été exécutée par l'attaquant.\n  - `org/site` [F1]\n\n## Couverture\n\nSi la CI des dépôts touchés a un rôle cloud, il n'a pas été vérifié.\nCompte GitHub : CLEAN. Machine, dépendances et cloud : UNKNOWN, non scannés.\n";
     expect(checkAnswer(run, text)).toEqual([]);
     expect(claimBlocks(text.split("\n")).map((b) => b.line)).toEqual([1, 2]);
   });

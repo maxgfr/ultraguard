@@ -124,6 +124,11 @@ export interface SurfaceResult {
   scanned: boolean;
   /** What the scan covered, in numbers: repos, files, lockfiles, packages. */
   stats: Record<string, number>;
+  /**
+   * Why the surface does not apply to this machine (no cloud CLI installed at
+   * all). The verdict stays UNKNOWN; the routine does not count it as a failed scan.
+   */
+  notApplicable?: string;
   startedAt: string;
   finishedAt?: string;
 }

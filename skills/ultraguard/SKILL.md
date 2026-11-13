@@ -164,7 +164,11 @@ Your job is what the engine cannot do:
 
 Write `<run>/ANSWER.md` in the user's language:
 
-- one line per surface with its verdict and the `[F#]` that support it;
+- one line per surface with its verdict and the `[F#]` that support it. Write
+  the verdict word as the report does, in English capitals, whatever the
+  language (`Machine : REVIEW [F6]`); an unscanned surface is UNKNOWN or "not
+  scanned", never left out. A false positive keeps its computed verdict, with
+  your explanation next to it;
 - what to do first, taken from REMEDIATION.md, most urgent first;
 - a **Coverage** section: what was not checked and how to close it;
 - the sources `[S#]` of the campaigns you checked.

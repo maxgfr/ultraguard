@@ -1,9 +1,11 @@
 // check: the answer the agent writes is held to the run's facts.
 //  1. Every [S#] / [F#] it cites exists in the run.
 //  2. Every sentence that calls something compromised, exposed or hit cites a finding.
-//  3. Every surface whose verdict is COMPROMISED or EXPOSED is named in the answer.
+//  3. Every surface whose verdict is not CLEAN is named in the answer, and every
+//     surface gets one line with its computed verdict.
 //  4. A surface the answer calls clean must have the CLEAN verdict.
 //  5. When the run has coverage gaps, the answer says so.
+//  An answer checked against a run that was never swept is refused outright.
 import { citationTokensIn, danglingTokens } from "./engine.js";
 import type { Run } from "./run.js";
 import { SURFACES, type Surface } from "./types.js";
@@ -17,29 +19,94 @@ export interface CheckProblem {
 
 const isCitation = (t: string) => /^[SF]\d+$/.test(t);
 
-const NAMES: Record<Surface, RegExp> = {
-  "github:account": /github:account|\b(your|the|my|mon|ton) (github )?(account|compte)\b|\bcompte github\b/i,
-  "github:repos": /github:repos|\brepositor(y|ies)\b|\brepos?\b|\bd[ée]p[ôo]ts?\b/i,
-  host: /\bhost\b|\bmachine\b|\bmac\b|\blaptop\b|\bcomputer\b|\bordinateur\b/i,
-  deps: /\bdeps\b|\bdependenc(y|ies)\b|\blockfiles?\b|\bd[ée]pendances?\b|\bpackages?\b|\bpaquets?\b/i,
-  cloud: /\bcloud\b|\baws\b|\bgcp\b|\bazure\b/i,
-};
+/** A whole word, Unicode-aware: `\b` never matches after "é", so "touché." slipped through. */
+const W = (body: string, flags = "iu") => new RegExp(`(?<![\\p{L}\\p{N}_])(?:${body})(?![\\p{L}\\p{N}_])`, flags);
 
-const CLEAN_WORDS = /\b(clean|safe|unaffected|not (been )?(compromised|hit|affected|touched)|propre|sain|intact|pas (été )?(touché|compromis))\b/i;
-const NOTHING_WORDS =
-  /\b(nothing (was |is )?(found|detected|matched)|no (sign|trace|indicator|ioc|finding|match)s?\b.{0,30}\b(found|matched|detected)|rien (n'a été |de )?(trouvé|détecté)|aucune? (trace|ioc|indicateur|signe))/i;
-const NEGATED_CLEAN = /\b(not|isn't|aren't|n'est pas|ne sont pas|pas)\s+(\w+\s+)?(clean|safe|propre|sain)\b/i;
-const BAD_WORDS = /\b(compromised|exposed|infected|hit|review|unknown|compromis|exposé|touché|à vérifier|inconnu)\b/i;
-const ALL_CLEAN =
-  /\b(everything|all (surfaces )?(is |are )?|nothing (was )?(found|hit)|tout est|rien n'a été)\b.{0,20}\b(clean|safe|found|propre|sain|trouvé|touché)\b/i;
+const NAMES: Record<Surface, RegExp> = {
+  "github:account": W("github:account|(your|the|my|mon|ton|votre|notre|son|their) (github )?(account|compte)|github account|compte github|github (login|user)"),
+  "github:repos": W("github:repos|repositor(y|ies)|repos?|d[ée]p[ôo]ts?"),
+  host: W("host|machine|mac|macbook|laptop|computer|ordinateur|poste"),
+  deps: W("deps|dependenc(y|ies)|lockfiles?|d[ée]pendances?|packages?|paquets?"),
+  cloud: W("cloud|aws|gcp|azure"),
+};
+/** "GitHub" alone speaks for both GitHub surfaces. */
+const GITHUB = W("github");
+
+const CLEAN_WORDS = W(
+  [
+    "clean|safe|unaffected|fine(?!-)|ok(?!-)|okay|healthy|all good|no issues?|no problems?",
+    "not (been )?(compromised|hit|affected|touched|infected|impacted)",
+    "no (sign|evidence|indication|trace)s? of (a |any |the |this )?(compromise|infection|campaign|attack)",
+    "shows? no (sign|indicator|trace)s?",
+    "propres?|saine?s?|intacte?s?|s[ûu]re?s?|ras|rien à signaler|aucun problème|aucune compromission",
+    "pas ([ée]t[ée] )?(touch[ée]e?s?|compromise?s?|affect[ée]e?s?|concern[ée]e?s?|infect[ée]e?s?)",
+    "✅|✔️?|✓",
+  ].join("|"),
+);
+const NOTHING_WORDS = W(
+  "nothing (was |is )?(found|detected|matched)|no(\\s+\\S+){0,4}?\\s+(was |were |is |are )?(found|matched|detected)|rien (n'a été |de )?(trouvé|détecté)|aucune? (trace|ioc|indicateur|signe)",
+);
+const NEGATED_CLEAN = W("(not|isn't|aren't|n'est pas|ne sont pas|pas|never)\\s+([\\p{L}']+\\s+)?(clean|safe|propres?|saine?s?|s[ûu]re?s?)");
+const BAD_WORDS = W("compromised|exposed|infected|hit|review|unknown|compromise?s?|expos[ée]e?s?|touch[ée]e?s?|infect[ée]e?s?|à vérifier|inconnue?s?");
+const ALL_CLEAN = W(
+  "(everything|all (surfaces )?(is |are )?|nothing (was )?(found|hit)|tout est|rien n'a été)[^.]{0,20}(clean|safe|found|fine|ok|propre|sain|trouvé|touché|en ordre)",
+);
+/** A clean claim with no surface at all: "you are not affected", "vous n'êtes pas concerné". */
+const YOU_CLEAN = W(
+  "(you|your account|tu|vous|on)[^.]{0,30}(not|never|pas|n['’])[^.]{0,20}(affected|compromised|hit|impacted|concern|touch|affect|compromis)\\p{L}*|no (sign|evidence|indicator|trace)s? of (the |this |any )?(campaign|compromise|attack)|rien [àa] signaler",
+);
+/** "I could not check whether your account is clean": a hedge, not a claim. */
+const HEDGE = W(
+  "(cannot|can't|could ?n[o']t|unable to|whether|if|to (get|confirm|know)|not (be )?(confirmed|sure|known)|impossible de|ne (peux|peut|pouvons) pas|si)[^.]{0,60}(clean|safe|propre|sain)",
+);
+/** "clean" describing another thing: "from another, clean machine", "pin a clean version", "safe to delete". */
+const ATTRIBUTIVE = new RegExp(
+  `${W("(another|other|different|separate|autre)").source}[^.]{0,12}(clean|safe|propre|sain)|${W("(clean|safe)\\s+(machine|computer|laptop|host|mac|version|release|install|copy|state|environment)").source}|${W("safe to|clean(-| )?up").source}`,
+  "giu",
+);
+/** A verdict written as the report writes it, in capitals; "not scanned" phrasings state UNKNOWN. */
+const VERDICT_TOKEN = /(?<![\p{L}])(COMPROMISED|EXPOSED|REVIEW|CLEAN|UNKNOWN)(?![\p{L}])/gu;
+const UNKNOWN_PHRASE = W(
+  "unknown|not (been )?(scanned|checked|verified|covered)|could ?n[o']t (be )?(scann?|check|verif)\\w*|inconnue?s?|non (scann|v[ée]rifi|analys)\\p{L}*|pas (pu [êe]tre |[ée]t[ée] )?(scann|v[ée]rifi|analys)\\p{L}*",
+);
+const SOURCES_SECTION = /\b(sources?|references?|références?)\b/i;
+
+/** Lines as claims are read: no code fences, no inline code, no Sources section. `heading` is the last heading's text. */
+function claimLines(lines: string[]): { text: string; line: number; heading: string }[] {
+  const out: { text: string; line: number; heading: string }[] = [];
+  let fence = false;
+  let heading = "";
+  for (const [i, l] of lines.entries()) {
+    if (/^\s*```/.test(l)) {
+      fence = !fence;
+      continue;
+    }
+    if (fence) continue;
+    const h = /^#{1,6}\s+(.*)$/.exec(l);
+    if (h) heading = h[1] ?? "";
+    else if (SOURCES_SECTION.test(heading)) continue;
+    out.push({ text: l.replace(/`[^`]*`/g, " "), line: i + 1, heading: h ? "" : heading });
+  }
+  return out;
+}
+
+const named = (c: string): Surface[] => {
+  const n = SURFACES.filter((x) => NAMES[x].test(c));
+  if (GITHUB.test(c) && !n.some((x) => x.startsWith("github:"))) n.push("github:account", "github:repos");
+  return n;
+};
 
 export function checkAnswer(run: Run, text: string): CheckProblem[] {
   const problems: CheckProblem[] = [];
+  // Before any rule: an answer checked against an empty run has nothing to contradict, so it would always pass.
+  if (run.surfaces().length === 0)
+    return [{ rule: "not-swept", message: "no surface was scanned in this run: run sweep (or scan) before check, with the same --out" }];
   const known = [...run.sources().map((s) => s.id), ...run.findings().map((f) => f.id)];
   const lines = text.split("\n");
   const lineOf = (needle: string) => lines.findIndex((l) => l.includes(needle)) + 1 || undefined;
+  const cited = new Set(citationTokensIn(text, isCitation));
 
-  for (const t of danglingTokens(citationTokensIn(text, isCitation), known))
+  for (const t of danglingTokens([...cited], known))
     problems.push({ rule: "dangling", message: `[${t}] is not a source or finding of this run`, line: lineOf(`[${t}]`) });
 
   // A claim is a sentence. Its citation may sit anywhere in the same paragraph,
@@ -56,23 +123,29 @@ export function checkAnswer(run: Run, text: string): CheckProblem[] {
   }
 
   const vs = verdicts(run.findings(), run.gaps(), run.surfaces());
+  const omitted = new Set<Surface>();
   for (const v of vs) {
-    if ((v.verdict === "COMPROMISED" || v.verdict === "EXPOSED") && !NAMES[v.surface].test(text) && !v.findings.some((id) => text.includes(`[${id}]`)))
-      problems.push({
-        rule: "omitted-surface",
-        message: `${v.surface} is ${v.verdict} (${v.findings.map((x) => `[${x}]`).join("")}) but the answer never mentions it`,
-      });
+    if (v.verdict === "CLEAN") continue;
+    // An account compromise derived from repository findings must still be said of the account itself.
+    const byCitation = v.surface === "github:account" && v.verdict === "COMPROMISED" ? false : v.findings.some((id) => cited.has(id));
+    if (NAMES[v.surface].test(text) || byCitation) continue;
+    omitted.add(v.surface);
+    problems.push({
+      rule: "omitted-surface",
+      message: `${v.surface} is ${v.verdict}${v.findings.length ? ` (${v.findings.map((x) => `[${x}]`).join("")})` : ""} but the answer never mentions it`,
+    });
   }
 
   // Naming the surface is not enough: every compromised or exposed SUBJECT (a repository, a file, a
   // cloud resource) must appear, by name or through one of its findings. Ten hit repositories cannot
-  // hide behind "the repositories are compromised [F1]".
+  // hide behind "the repositories are compromised [F1]", nor behind a shared "package-lock.json".
   const bySubject = new Map<string, string[]>();
   for (const f of run.findings())
     if (f.severity === "compromised" || f.severity === "exposed") bySubject.set(f.subject, [...(bySubject.get(f.subject) ?? []), f.id]);
   for (const [subject, ids] of bySubject) {
-    const short = subject.split("/").pop() ?? subject;
-    if (text.includes(subject) || (short.length >= 4 && text.includes(short)) || ids.some((id) => text.includes(`[${id}]`))) continue;
+    // A path is named by its folder and file ("a/package-lock.json"); an owner/name by both parts.
+    const short = subject.split("/").filter(Boolean).slice(-2).join("/");
+    if (text.includes(subject) || (short.includes("/") && text.includes(short)) || ids.some((id) => cited.has(id))) continue;
     problems.push({
       rule: "omitted-subject",
       message: `${subject} has ${ids.length} compromised or exposed finding(s) (${ids
@@ -84,9 +157,12 @@ export function checkAnswer(run: Run, text: string): CheckProblem[] {
 
   // Clean claims, clause by clause: "your machine is clean. The repos were hit" names two
   // surfaces; "your machine and your dependencies are clean" claims two; "clean, but
-  // keep an eye on it" still claims clean before the "but".
-  const sentences = lines.flatMap((l, i) => l.split(/(?<=[.!?;])\s+/).map((t) => ({ t, line: i + 1 })));
+  // keep an eye on it" still claims clean before the "but". A clause naming no surface
+  // speaks for the section it sits in ("## This machine" then "Clean.").
+  const claimed = claimLines(lines);
+  const sentences = claimed.flatMap((l) => l.text.split(/(?<=[.!?;])\s+/).map((t) => ({ t, line: l.line, heading: named(l.heading) })));
   const anyBad = vs.some((v) => v.verdict !== "CLEAN");
+  const hardBad = vs.some((v) => v.verdict === "COMPROMISED" || v.verdict === "EXPOSED" || v.verdict === "UNKNOWN");
   const bad = (surface: Surface, strength: "clean" | "nothing") => {
     const v = vs.find((x) => x.surface === surface);
     if (!v || v.verdict === "CLEAN") return undefined;
@@ -94,9 +170,15 @@ export function checkAnswer(run: Run, text: string): CheckProblem[] {
     if (strength === "nothing" && v.verdict === "REVIEW") return undefined;
     return v;
   };
-  for (const { t, line } of sentences) {
-    const head = t.split(/\b(?:but|however|except|although|though|mais|sauf|cependant|toutefois|bien que)\b/i)[0] ?? t;
-    if (anyBad && ALL_CLEAN.test(head) && !SURFACES.some((x) => NAMES[x].test(head))) {
+  const stated = new Map<Surface, Set<string>>();
+  const state = (surfaces: Iterable<Surface>, words: string[]) => {
+    for (const x of surfaces) for (const w of words) stated.set(x, new Set([...(stated.get(x) ?? []), w]));
+  };
+  for (const { t, line, heading } of sentences) {
+    const head = t.split(W("but|however|except|although|though|mais|sauf|cependant|toutefois|bien que"))[0] ?? t;
+    const surfaceless = !SURFACES.some((x) => NAMES[x].test(head)) && !GITHUB.test(head) && heading.length === 0;
+    const hedged = HEDGE.test(head);
+    if (!hedged && surfaceless && ((anyBad && ALL_CLEAN.test(head)) || (hardBad && YOU_CLEAN.test(head)))) {
       problems.push({
         rule: "wrong-clean",
         message: `"${head.trim().slice(0, 80)}" but the verdicts are ${vs.map((v) => `${v.surface}=${v.verdict}`).join(", ")}`,
@@ -104,22 +186,41 @@ export function checkAnswer(run: Run, text: string): CheckProblem[] {
       });
       continue;
     }
-    const clauses = head.split(/,|;|\b(?:and|et|while|whereas|alors que|tandis que)\b/i);
+    // Verdict lines: "Machine: REVIEW", "| Cloud | UNKNOWN |". A table row is one clause.
+    const clauses = /^\s*\|/.test(t) ? [t] : t.split(W(",|;|and|et|while|whereas|alors que|tandis que"));
     let pending: Surface[] = [];
+    let pendingVerdict: Surface[] = [];
     for (const c of clauses) {
-      const named = SURFACES.filter((x) => NAMES[x].test(c));
-      const strength = NEGATED_CLEAN.test(c) ? undefined : CLEAN_WORDS.test(c) ? "clean" : NOTHING_WORDS.test(c) ? "nothing" : undefined;
-      if (!strength) {
-        // A clause naming surfaces with no verdict of its own lends them to the next clause ("your machine and your deps are clean").
-        pending = BAD_WORDS.test(c) ? [] : [...pending, ...named];
+      if (c === undefined) continue;
+      const here = named(c);
+      const words = [...c.matchAll(VERDICT_TOKEN)].map((m) => m[1] as string);
+      if (UNKNOWN_PHRASE.test(c)) words.push("UNKNOWN");
+      const subjects = here.length || pendingVerdict.length ? [...pendingVerdict, ...here] : heading;
+      if (words.length) {
+        state(subjects, words);
+        pendingVerdict = [];
+      } else pendingVerdict = [...pendingVerdict, ...here];
+
+      if (HEDGE.test(c)) {
+        pending = [];
         continue;
       }
-      for (const surface of new Set([...pending, ...named])) {
+      const plain = c.replace(ATTRIBUTIVE, " ");
+      const negated = NEGATED_CLEAN.test(plain);
+      const word = negated ? undefined : (CLEAN_WORDS.exec(plain)?.[0] ?? NOTHING_WORDS.exec(plain)?.[0]);
+      const strength = word === undefined ? undefined : CLEAN_WORDS.test(plain) ? "clean" : "nothing";
+      if (!strength) {
+        // A clause naming surfaces with no verdict of its own lends them to the next clause ("your machine and your deps are clean").
+        pending = BAD_WORDS.test(c) ? [] : [...pending, ...here];
+        continue;
+      }
+      const targets = here.length || pending.length ? [...pending, ...here] : heading;
+      for (const surface of new Set(targets)) {
         const v = bad(surface, strength);
         if (v)
           problems.push({
             rule: "wrong-clean",
-            message: `calls ${surface} ${strength === "clean" ? "clean" : "free of findings"} but its verdict is ${v.verdict}`,
+            message: `calls ${surface} ${strength === "clean" ? "clean" : "free of findings"} ("${word}" in "${c.trim().slice(0, 60)}") but its verdict is ${v.verdict}`,
             line,
           });
       }
@@ -127,7 +228,27 @@ export function checkAnswer(run: Run, text: string): CheckProblem[] {
     }
   }
 
-  if (run.gaps().length && !/\b(coverage|gaps?|not (checked|scanned|covered)|couverture|non vérifié|pas vérifié|angles? morts?)\b/i.test(text))
+  // One line per surface with its verdict, in the report's words: a surface the answer leaves out
+  // (REVIEW, UNKNOWN as much as COMPROMISED) is a verdict the user never hears.
+  for (const v of vs) {
+    if (omitted.has(v.surface)) continue;
+    const said = stated.get(v.surface);
+    if (!said?.size)
+      problems.push({
+        rule: "missing-verdict",
+        message: `no line gives ${v.surface}'s verdict: write it as the report does ("${v.surface}: ${v.verdict}"${v.findings.length ? ` with ${v.findings.map((x) => `[${x}]`).join("")}` : ""})`,
+      });
+    else if (!said.has(v.verdict))
+      problems.push({
+        rule: "wrong-verdict",
+        message: `the answer gives ${v.surface} as ${[...said].join("/")} but its verdict is ${v.verdict}: keep the computed verdict and explain a false positive next to it`,
+      });
+  }
+
+  if (
+    run.gaps().length &&
+    !W("coverage|gaps?|not (checked|scanned|covered|read)|couverture|non vérifiée?s?|pas vérifiée?s?|non scann\\p{L}*|angles? morts?|limits|limites").test(text)
+  )
     problems.push({
       rule: "no-coverage",
       message: `the run has ${run.gaps().length} coverage gap(s) and the answer does not mention any: gaps are not absence`,

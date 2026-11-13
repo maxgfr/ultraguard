@@ -1,4 +1,4 @@
-import { readFileSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -176,9 +176,12 @@ function out(text: string): void {
   process.stdout.write(text.endsWith("\n") ? text : `${text}\n`);
 }
 
-function needRun(a: CommandArgs): Run {
+function needRun(a: CommandArgs, opts: { mustExist?: boolean } = {}): Run {
   const dir = argValue(a, "out");
   if (!dir) throw new UsageError(`${a.command} needs --out <run>: one directory per investigation, shared by every command`);
+  // Commands that read a run must not create an empty one from a mistyped path: it would pass every check.
+  if (opts.mustExist && !existsSync(resolve(dir)))
+    throw new UsageError(`no run at ${dir}: check the --out path (a run is created by search, intel or watch plan)`);
   return new Run(dir);
 }
 
@@ -458,7 +461,7 @@ async function dispatch(a: CommandArgs): Promise<number> {
       return EXIT_OK;
     }
     case "report": {
-      const run = needRun(a);
+      const run = needRun(a, { mustExist: true });
       const r = writeReport(run);
       out(
         json
@@ -470,7 +473,7 @@ async function dispatch(a: CommandArgs): Promise<number> {
     case "check": {
       const file = a.positional[0];
       if (!file) throw new UsageError("check needs the answer file: ultraguard check <answer.md> --out <run>");
-      const run = needRun(a);
+      const run = needRun(a, { mustExist: true });
       const problems = checkAnswer(run, readFileSync(file, "utf8"));
       if (json) out(jsonLine({ ok: problems.length === 0, problems }));
       else
@@ -483,7 +486,7 @@ async function dispatch(a: CommandArgs): Promise<number> {
     }
     case "watch": {
       const sub = a.positional[0];
-      const run = needRun(a);
+      const run = needRun(a, { mustExist: sub === "commit" });
       const dir = stateDir(argValue(a, "state"));
       if (sub === "plan") {
         const file = argValue(a, "web-results");

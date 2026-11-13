@@ -3,7 +3,7 @@
 // The agent writes its own answer on top; `check` holds that answer to these facts.
 import type { Run } from "./run.js";
 import type { HostInventory } from "./scan/hostintel.js";
-import type { Finding, Gap, Source, Surface } from "./types.js";
+import { type Finding, type Gap, SURFACES, type Source, type Surface } from "./types.js";
 import { type SurfaceVerdict, verdicts, worst } from "./verdict.js";
 
 const LABEL: Record<Surface, string> = {
@@ -99,8 +99,17 @@ export function renderReport(run: Run, now = new Date()): { report: string; reme
   }
 
   out.push("## Coverage", "", "Gaps are not absence: what was not looked at is not clean.", "");
+  // A surface this run never scanned has no gap of its own: say so, or the section reads "nothing missing".
+  const results = run.surfaces();
+  const unscanned = SURFACES.filter((x) => !results.find((r) => r.surface === x)?.scanned);
+  for (const x of unscanned) {
+    const r = results.find((y) => y.surface === x);
+    out.push(
+      `- \`${x}\`: not scanned in this run${r?.notApplicable ? ` (${r.notApplicable})` : r ? "" : ": run `ultraguard scan` for it, or say it was left out"}`,
+    );
+  }
   for (const g of gaps) out.push(`- \`${g.surface}\`: ${g.what}: ${g.why}${g.fix ? ` (to close: ${g.fix})` : ""}`);
-  if (!gaps.length) out.push("- no gap recorded");
+  if (!gaps.length && !unscanned.length) out.push("- no gap recorded");
   out.push("");
 
   out.push("## Sources", "");
@@ -176,7 +185,7 @@ export function renderRemediation(findings: Finding[], vs: SurfaceVerdict[], _so
   if (host.length) {
     h("This machine");
     if (host.some((f) => f.severity === "compromised")) {
-      out.push("An IOC is on this machine. Treat every credential it holds as stolen, and rotate them from ANOTHER, clean machine:", "");
+      out.push("An IOC is on this machine. Treat every credential it holds as stolen, and rotate them from another machine you trust:", "");
       const creds = inventory?.credentials ?? [];
       const envs = creds.filter((c) => c.kind.startsWith(".env"));
       for (const c of creds.filter((x) => !x.kind.startsWith(".env"))) out.push(`- ${c.kind}: \`${c.path}\``);
@@ -234,6 +243,13 @@ export function renderRemediation(findings: Finding[], vs: SurfaceVerdict[], _so
     for (const g of gaps.filter((x) => x.fix)) out.push(`- \`${g.surface}\` ${g.what}: ${g.fix}`);
     out.push("");
   }
-  if (step === 0) out.push("Nothing to do: no surface was hit.", "");
+  const unknown = vs.filter((x) => x.verdict === "UNKNOWN").map((x) => `\`${x.surface}\``);
+  if (step === 0)
+    out.push(
+      unknown.length
+        ? `Nothing to do on the surfaces that were scanned. Not scanned, so not known to be clean: ${unknown.join(", ")}.`
+        : "Nothing to do: no surface was hit.",
+      "",
+    );
   return out.join("\n");
 }
