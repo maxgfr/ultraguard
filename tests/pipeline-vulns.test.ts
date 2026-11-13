@@ -200,7 +200,10 @@ describe("scan deps: known CVEs ranked", () => {
         t.startsWith("suspicious: 1 software update(s) pending on this Mac: macOS Security Response 27.2 (a) (security, recommended, restart)"),
       ),
     ).toBe(true);
-    expect(titles.some((t) => t.startsWith("info: CVE-2024-27834 (Apple Multiple Products) is in CISA KEV since 2026-11-04"))).toBe(true);
+    // An old CVE KEV added late: listed, as most likely fixed already on this macOS.
+    expect(titles.some((t) => t.startsWith("info: CVE-2024-27834 (Apple Multiple Products) was added to CISA KEV on 2026-11-04, but it dates from 2024"))).toBe(
+      true,
+    );
     expect(readFileSync(run.path("REPORT.md"), "utf8")).toContain("### This machine");
   });
 });
