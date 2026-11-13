@@ -106,11 +106,14 @@ function collaboratorCase(extra: Record<string, unknown> = {}) {
     },
     "repos/org/site/actions/caches": { actions_caches: [{ key: "wfx-abc", created_at: "2026-11-11T11:21:00Z" }] },
     "repos/org/site/actions/artifacts": { artifacts: [] },
-    "repos/org/site/contents/.github/workflows": [
-      { path: ".github/workflows/deploy.yml", html_url: "https://github.com/org/site/blob/main/.github/workflows/deploy.yml" },
-    ],
+    "repos/org/site/git/trees/main": {
+      tree: [
+        { path: ".github", type: "tree" },
+        { path: ".github/workflows/deploy.yml", type: "blob" },
+        { path: "package.json", type: "blob" },
+      ],
+    },
     "repos/org/site/contents/.github/workflows/deploy.yml": { content: b64("on: push\njobs:\n  x:\n    env:\n      WF_CTOKEN: b42d70a7aab9140ca19e8249\n") },
-    "repos/org/site/contents/": [{ path: "package.json", name: "package.json", html_url: "p" }],
     "repos/org/site/contents/package.json": {
       content: b64(JSON.stringify({ scripts: { postinstall: "sh .ci-gvwxh6.sh" } })),
       html_url: "https://github.com/org/site/blob/main/package.json",

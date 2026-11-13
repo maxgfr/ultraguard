@@ -1,6 +1,5 @@
 // doctor: what this machine lets ultraguard see. Run it first: every "no" is a
 // surface that will come back UNKNOWN, and the fix is printed next to it.
-import { httpJson } from "./engine.js";
 import type { Runner } from "./runner.js";
 import { installedRules, rulesAgeDays } from "./rules.js";
 import { detectAv } from "./scan/antivirus.js";
@@ -61,6 +60,25 @@ export async function doctor(runner: Runner, opts: { probe?: boolean; state?: st
     });
   }
 
+  // scan deps runs package-checker: a Bash 4+ script that downloads its advisory feeds with curl.
+  const bash = await runner("bash", ["-c", "echo $BASH_VERSINFO"], { timeoutMs: 10_000 });
+  const bashMajor = Number(bash.stdout.trim()) || 0;
+  out.push({
+    check: "bash",
+    ok: !bash.missing && bashMajor >= 4,
+    detail: bash.missing
+      ? "not installed (scan deps cannot run package-checker)"
+      : `Bash ${bash.stdout.trim() || "?"}${bashMajor >= 4 ? "" : " (scan deps needs Bash 4 or newer for package-checker)"}`,
+    fix: !bash.missing && bashMajor >= 4 ? undefined : process.platform === "darwin" ? "brew install bash" : "install Bash 4 or newer",
+  });
+  const curl = await runner("curl", ["--version"], { timeoutMs: 10_000 });
+  out.push({
+    check: "curl",
+    ok: !curl.missing,
+    detail: curl.missing ? "not installed (scan deps cannot download the advisory feeds)" : "available",
+    fix: curl.missing ? "install curl" : undefined,
+  });
+
   const av = await detectAv(runner);
   out.push({
     check: "clamav",
@@ -95,22 +113,21 @@ export async function doctor(runner: Runner, opts: { probe?: boolean; state?: st
   }
 
   if (opts.probe) {
-    try {
-      const res = await httpJson(
-        "POST",
-        "https://api.osv.dev/v1/query",
-        { package: { ecosystem: "npm", name: "left-pad" }, version: "1.3.0" },
-        { timeoutMs: 20_000 },
-      );
-      out.push({
-        check: "osv.dev",
-        ok: res.ok,
-        detail: res.ok ? "reachable" : (res.error ?? `HTTP ${res.status}`),
-        fix: res.ok ? undefined : "check the network; scan deps --no-osv works offline",
-      });
-    } catch (e) {
-      out.push({ check: "osv.dev", ok: false, detail: (e as Error).message, fix: "check the network; scan deps --no-osv works offline" });
-    }
+    // Where scan deps downloads the OSV and GHSA feeds from, the way package-checker does it.
+    const url = "https://raw.githubusercontent.com/maxgfr/package-checker.sh/refs/heads/main/data/osv.purl";
+    const r = await runner("curl", ["--head", "--silent", "--fail", "--connect-timeout", "10", "--max-time", "30", "--output", "/dev/null", url], {
+      timeoutMs: 40_000,
+    });
+    out.push({
+      check: "advisory feeds",
+      ok: r.ok,
+      detail: r.ok
+        ? "raw.githubusercontent.com reachable (OSV and GHSA feeds for scan deps)"
+        : r.missing
+          ? "curl is not installed"
+          : `raw.githubusercontent.com unreachable (curl exit ${r.status})`,
+      fix: r.ok ? undefined : "check the network; scan deps --no-osv works offline",
+    });
   }
   return out;
 }

@@ -36,16 +36,21 @@ export function fakeGh(
   const calls: string[] = [];
   const runner = (async (cmd, args) => {
     if (cmd !== "gh") return other(cmd, args);
-    if (args[0] === "api" && args[1] === "-i")
-      return { ok: true, status: 0, stdout: "HTTP/2.0 200 OK\nX-Oauth-Scopes: repo, read:org, workflow\n\n{}", stderr: "" };
     const path = args[args.length - 1] as string;
+    const headers = args[0] === "api" && args[1] === "-i";
+    if (headers && path === "user") return { ok: true, status: 0, stdout: "HTTP/2.0 200 OK\nX-Oauth-Scopes: repo, read:org, workflow\n\n{}", stderr: "" };
     calls.push(path);
     const key = Object.keys(routes).find((k) => k === path || path.startsWith(`${k}?`) || path.startsWith(`${k}&`));
     if (!key) return { ok: false, status: 1, stdout: '{"message":"Not Found","status":"404"}', stderr: "gh: Not Found (HTTP 404)" };
     const value = routes[key];
     // Page 2+ of a list is empty unless the route says otherwise.
     if (/[?&]page=([2-9]|\d{2,})/.test(path) && Array.isArray(value)) return { ok: true, status: 0, stdout: "[]", stderr: "" };
-    return { ok: true, status: 0, stdout: JSON.stringify(typeof value === "function" ? (value as (p: string) => unknown)(path) : value), stderr: "" };
+    const body = typeof value === "function" ? (value as (p: string) => unknown)(path) : value;
+    // A route can answer with headers (`gh api -i`): { $link: "<url>; rel=\"next\"", $body: [...] }.
+    const link = body && typeof body === "object" && "$body" in body ? (body as { $link?: string }).$link : undefined;
+    const payload = body && typeof body === "object" && "$body" in body ? (body as { $body: unknown }).$body : body;
+    const json = JSON.stringify(payload);
+    return { ok: true, status: 0, stdout: headers ? `HTTP/2.0 200 OK\n${link ? `Link: ${link}\n` : ""}\n${json}` : json, stderr: "" };
   }) as Runner & { calls: string[] };
   runner.calls = calls;
   return runner;

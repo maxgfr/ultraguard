@@ -3,7 +3,7 @@
 // The agent writes its own answer on top; `check` holds that answer to these facts.
 import type { Run } from "./run.js";
 import type { HostInventory } from "./scan/hostintel.js";
-import type { Finding, Gap, Source, Surface } from "./types.js";
+import { type Finding, type Gap, SURFACES, type Source, type Surface } from "./types.js";
 import { type SurfaceVerdict, verdicts, worst } from "./verdict.js";
 
 const LABEL: Record<Surface, string> = {
@@ -32,6 +32,16 @@ const SEV_ORDER = ["compromised", "exposed", "suspicious", "info"] as const;
 export function payloadRan(findings: Finding[], repo: string): boolean {
   // A structured kind set by the scan: never parsed back from a title, which holds attacker-written text.
   return findings.some((f) => f.subject === repo && f.severity === "compromised" && f.ciRun === "attacker");
+}
+
+/** A hit repository with a probe PR: otherwise the attacker only left a branch (or a file) behind. */
+function probePr(findings: Finding[], repo: string): boolean {
+  return findings.some((f) => f.subject === repo && f.severity === "compromised" && (f.indicator?.type === "pr_title" || /\/pull\/\d+/.test(f.evidence.ref)));
+}
+
+/** A probe PR, or a run that only carried a docs-only probe commit. */
+function probeSeen(findings: Finding[], repo: string): boolean {
+  return probePr(findings, repo) || findings.some((f) => f.subject === repo && f.severity === "compromised" && f.ciRun === "probe");
 }
 
 function idList(ids: string[], max = 8): string {
@@ -79,7 +89,10 @@ export function renderReport(run: Run, now = new Date()): { report: string; reme
         const own = fs.filter((f) => f.subject === r);
         const ran = payloadRan(fs, r);
         const hitRepo = own.some((f) => f.severity === "compromised");
-        out.push(`### ${r}${hitRepo ? (ran ? ": the attacker made CI run" : ": probe only, no attacker run seen") : ""}`, "");
+        out.push(
+          `### ${r}${hitRepo ? (ran ? ": the attacker made CI run" : probeSeen(fs, r) ? ": probe only, no attacker run seen" : ": attacker branch only, no run seen") : ""}`,
+          "",
+        );
         for (const sev of SEV_ORDER) for (const f of own.filter((x) => x.severity === sev)) out.push(findingLine(f));
         out.push("");
       }
@@ -99,8 +112,17 @@ export function renderReport(run: Run, now = new Date()): { report: string; reme
   }
 
   out.push("## Coverage", "", "Gaps are not absence: what was not looked at is not clean.", "");
+  // A surface this run never scanned has no gap of its own: say so, or the section reads "nothing missing".
+  const results = run.surfaces();
+  const unscanned = SURFACES.filter((x) => !results.find((r) => r.surface === x)?.scanned);
+  for (const x of unscanned) {
+    const r = results.find((y) => y.surface === x);
+    out.push(
+      `- \`${x}\`: not scanned in this run${r?.notApplicable ? ` (${r.notApplicable})` : r ? "" : ": run `ultraguard scan` for it, or say it was left out"}`,
+    );
+  }
   for (const g of gaps) out.push(`- \`${g.surface}\`: ${g.what}: ${g.why}${g.fix ? ` (to close: ${g.fix})` : ""}`);
-  if (!gaps.length) out.push("- no gap recorded");
+  if (!gaps.length && !unscanned.length) out.push("- no gap recorded");
   out.push("");
 
   out.push("## Sources", "");
@@ -147,7 +169,10 @@ export function renderRemediation(findings: Finding[], vs: SurfaceVerdict[], _so
     hitRepos.sort((a, b) => Number(payloadRan(findings, b)) - Number(payloadRan(findings, a)) || a.localeCompare(b));
     for (const r of hitRepos) {
       const ran = payloadRan(findings, r);
-      out.push(`### ${r}${ran ? ": the attacker made CI run, rotate unless the run's code is provably yours" : ": probe PR only"}`, "");
+      out.push(
+        `### ${r}${ran ? ": the attacker made CI run, rotate unless the run's code is provably yours" : probePr(findings, r) ? ": probe PR only" : probeSeen(findings, r) ? ": probe only" : ": attacker branch only, no run seen"}`,
+        "",
+      );
       if (!ran)
         out.push(
           "The probe proves the attacker could write here. No attacker run was seen, but runs can be deleted: check the run list below for gaps, and rotate if any attacker run executed.",
@@ -176,7 +201,7 @@ export function renderRemediation(findings: Finding[], vs: SurfaceVerdict[], _so
   if (host.length) {
     h("This machine");
     if (host.some((f) => f.severity === "compromised")) {
-      out.push("An IOC is on this machine. Treat every credential it holds as stolen, and rotate them from ANOTHER, clean machine:", "");
+      out.push("An IOC is on this machine. Treat every credential it holds as stolen, and rotate them from another machine you trust:", "");
       const creds = inventory?.credentials ?? [];
       const envs = creds.filter((c) => c.kind.startsWith(".env"));
       for (const c of creds.filter((x) => !x.kind.startsWith(".env"))) out.push(`- ${c.kind}: \`${c.path}\``);
@@ -234,6 +259,13 @@ export function renderRemediation(findings: Finding[], vs: SurfaceVerdict[], _so
     for (const g of gaps.filter((x) => x.fix)) out.push(`- \`${g.surface}\` ${g.what}: ${g.fix}`);
     out.push("");
   }
-  if (step === 0) out.push("Nothing to do: no surface was hit.", "");
+  const unknown = vs.filter((x) => x.verdict === "UNKNOWN").map((x) => `\`${x.surface}\``);
+  if (step === 0)
+    out.push(
+      unknown.length
+        ? `Nothing to do on the surfaces that were scanned. Not scanned, so not known to be clean: ${unknown.join(", ")}.`
+        : "Nothing to do: no surface was hit.",
+      "",
+    );
   return out.join("\n");
 }

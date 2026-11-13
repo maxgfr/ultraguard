@@ -27,6 +27,7 @@ by the user's own login.
 When a COMPROMISED finding is a false positive (a real branch that happens to
 match a pattern), say so in the answer with the evidence you checked. Do not
 edit `findings.json`. When a REVIEW item is the user's own install, say so,
-and say what you checked. `check` only refuses an answer that calls a surface
-clean when its verdict is not CLEAN. Say "REVIEW: the remote-desktop agent, installed by you
+and say what you checked. `check` wants the computed verdict on each
+surface's line and refuses an answer that calls a surface clean when its
+verdict is not CLEAN. Say "REVIEW: the remote-desktop agent, installed by you
 on Oct 29 [F44]", not "clean".

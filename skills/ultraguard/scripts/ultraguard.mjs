@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 // src/cli.ts
-import { readFileSync as readFileSync15, realpathSync as realpathSync3 } from "fs";
+import { existsSync as existsSync14, readFileSync as readFileSync16, realpathSync as realpathSync4, statSync as statSync13 } from "fs";
 import { homedir as homedir5 } from "os";
-import { resolve as resolve4 } from "path";
+import { resolve as resolve5 } from "path";
 import { pathToFileURL } from "url";
 
 // src/vendor/webindex-engine.mjs
@@ -145,8 +145,8 @@ function decodeTJArray(items) {
   }
   return out2;
 }
-function inlineImageEnd(s, from) {
-  for (let k = s.indexOf("EI", from); k >= 0; k = s.indexOf("EI", k + 1)) {
+function inlineImageEnd(s, from2) {
+  for (let k = s.indexOf("EI", from2); k >= 0; k = s.indexOf("EI", k + 1)) {
     const after = k + 2 >= s.length || isWhite(s.charCodeAt(k + 2)) || isDelimiter(s.charCodeAt(k + 2));
     if (isWhite(s.charCodeAt(k - 1)) && after) return k + 2;
   }
@@ -792,9 +792,9 @@ function npxBinName(spec) {
   return spec.replace(/^@[^/]+\//, "").replace(/@.*$/, "");
 }
 function findInstalled(spec) {
-  let hit2 = installed.get(spec);
-  if (!hit2) {
-    hit2 = (async () => {
+  let hit3 = installed.get(spec);
+  if (!hit3) {
+    hit3 = (async () => {
       if (process.platform === "win32") return {};
       const probe = ["-y", "--prefer-offline", "--package", spec, "-c", `command -v ${npxBinName(spec)}`];
       const r = await runWithInput("npx", probe, Buffer.alloc(0), npxTimeoutMs(), { env: npxEnv() });
@@ -805,9 +805,9 @@ function findInstalled(spec) {
       const path = r.stdout.trim().split("\n").pop()?.trim();
       return path && isAbsolute(path) ? { path } : {};
     })();
-    installed.set(spec, hit2);
+    installed.set(spec, hit3);
   }
-  return hit2;
+  return hit3;
 }
 async function runNpx(spec, args, input) {
   if (registryDown && !proven.has(spec) && !installed.has(spec)) {
@@ -2175,13 +2175,13 @@ function toResult(status, stdout, stderr, err) {
   };
 }
 function have(cmd) {
-  let hit2 = havePresence.get(cmd);
-  if (hit2 === void 0) {
+  let hit3 = havePresence.get(cmd);
+  if (hit3 === void 0) {
     const probe = spawnSync2(process.platform === "win32" ? "where" : "which", [cmd], { encoding: "utf8" });
-    hit2 = probe.status === 0 && (probe.stdout ?? "").trim().length > 0;
-    havePresence.set(cmd, hit2);
+    hit3 = probe.status === 0 && (probe.stdout ?? "").trim().length > 0;
+    havePresence.set(cmd, hit3);
   }
-  return hit2;
+  return hit3;
 }
 function shAsync(cmd, args, opts = {}) {
   const timeoutMs = Math.min(opts.timeoutMs ?? defaultTimeoutMs(), MAX_TIMER_MS);
@@ -2462,7 +2462,7 @@ function mergeSegments(cues, breaks = []) {
     if (cur) out2.push(cur);
     cur = void 0;
   };
-  const crossesBreak = (from, to) => breaks.some((b) => b > from + BREAK_SLACK_S && b <= to + BREAK_SLACK_S);
+  const crossesBreak = (from2, to) => breaks.some((b) => b > from2 + BREAK_SLACK_S && b <= to + BREAK_SLACK_S);
   let sentences = 0;
   let spaceRuns = 0;
   let endsInSpace = false;
@@ -2628,8 +2628,8 @@ function pickAutoTrack(meta) {
   const lang = meta.language;
   if (lang) {
     for (const want of [`${lang}-orig`, lang]) {
-      const hit2 = tracks.find((t) => t.toLowerCase() === want.toLowerCase());
-      if (hit2) return hit2;
+      const hit3 = tracks.find((t) => t.toLowerCase() === want.toLowerCase());
+      if (hit3) return hit3;
     }
     const orig = tracks.find((t) => t.endsWith("-orig") && base(t) === base(lang));
     if (orig) return orig;
@@ -4766,8 +4766,8 @@ async function launch(deps, binary, profile, headless, kind, quiet) {
   }
   const owner = readProfileKind(profile);
   if (owner && owner !== found.kind) {
-    const named = binary !== void 0 || !!deps.env("BROWSER_BIN");
-    const hint = named ? `; ${envName("BROWSER_BIN")} names a ${found.kind} binary` : `, or ${owner} (\`--browser-kind ${owner}\`)`;
+    const named2 = binary !== void 0 || !!deps.env("BROWSER_BIN");
+    const hint = named2 ? `; ${envName("BROWSER_BIN")} names a ${found.kind} binary` : `, or ${owner} (\`--browser-kind ${owner}\`)`;
     throw new UsageError(
       `the profile "${profile}" belongs to ${owner} (its logins are encrypted for that browser), not ${found.kind}: use a profile of its own (\`--profile ${found.kind}\`)${hint}`
     );
@@ -5292,8 +5292,8 @@ var init_session = __esm({
               reject(new NavigationTimeoutError(`${what} within ${timeoutMs} ms`));
             }, timeoutMs);
             wake = () => {
-              const hit2 = seen.find(match);
-              if (hit2) resolve9(hit2);
+              const hit3 = seen.find(match);
+              if (hit3) resolve9(hit3);
               else if (cancelled) reject(new Error(`${cancelledWhat} was cancelled: the page asked to confirm leaving it (beforeunload), and that was declined`));
               else if (closed) reject(new Error("the browser connection closed while waiting for the page to load"));
               else return;
@@ -5356,9 +5356,9 @@ var init_session = __esm({
         try {
           await trigger(timeoutMs);
           const isNew = (l) => l !== before.loaderId;
-          let hit2;
+          let hit3;
           try {
-            hit2 = await nav.until(
+            hit3 = await nav.until(
               (e) => e.frameId === before.id && (e.kind === "same-document" || e.kind === "bfcache" || e.kind === "lifecycle" && e.name === "load" && isNew(e.loaderId)),
               timeoutMs,
               `${what} did not reach load`,
@@ -5369,7 +5369,7 @@ var init_session = __esm({
             clearRefs(this.targetId);
             return { ...await this.loaded(), note: stillLoading(timeoutMs) };
           }
-          if (hit2.kind !== "same-document") clearRefs(this.targetId);
+          if (hit3.kind !== "same-document") clearRefs(this.targetId);
           return await this.loaded();
         } finally {
           nav.stop();
@@ -5747,9 +5747,9 @@ function htmlAttributes(tag) {
   }
   return attrs;
 }
-function implicitHeadEnd(html, from) {
+function implicitHeadEnd(html, from2) {
   const re = new RegExp(TAG_RE.source, "g");
-  re.lastIndex = from;
+  re.lastIndex = from2;
   let m;
   while (m = re.exec(html)) {
     const tag = m[0];
@@ -5908,9 +5908,9 @@ function dropLanguageSelectors(html) {
   }
   return out2 + html.slice(at);
 }
-function countVisible(html, from, to) {
+function countVisible(html, from2, to) {
   let n = 0;
-  for (let i = from; i < to; i++) {
+  for (let i = from2; i < to; i++) {
     const c = html.charCodeAt(i);
     if (c > 32) n++;
   }
@@ -6411,12 +6411,12 @@ function flank(marker, core, start, end) {
     if (!(c === " " || FLANK_PUNCT.test(c)) || MARKUP_CHARS.includes(c) || core[i - 1] === "\\") return false;
     return c === "(" || c === ")" ? !link : !(c === "!" && core[i + 1] === "[");
   };
-  let from = 0;
+  let from2 = 0;
   let to = core.length;
-  if (start) while (from < to && movable(from)) from++;
-  if (end) while (to > from && movable(to - 1)) to--;
-  if (from === to) return core;
-  return `${core.slice(0, from)}${marker}${core.slice(from, to)}${marker}${core.slice(to)}`;
+  if (start) while (from2 < to && movable(from2)) from2++;
+  if (end) while (to > from2 && movable(to - 1)) to--;
+  if (from2 === to) return core;
+  return `${core.slice(0, from2)}${marker}${core.slice(from2, to)}${marker}${core.slice(to)}`;
 }
 function wrapInline(f, core, inHeading) {
   switch (f.kind) {
@@ -7169,8 +7169,8 @@ var init_firecrawl = __esm({
       entries = /* @__PURE__ */ new Map();
       /** The verdict for `key`, probing when there is none or a "down" one expired. */
       get(key, probe) {
-        const hit2 = this.entries.get(key);
-        if (hit2 && (hit2.downAt === void 0 || Date.now() - hit2.downAt < PROBE_DOWN_TTL_MS)) return hit2.verdict;
+        const hit3 = this.entries.get(key);
+        if (hit3 && (hit3.downAt === void 0 || Date.now() - hit3.downAt < PROBE_DOWN_TTL_MS)) return hit3.verdict;
         const entry = { verdict: probe() };
         void entry.verdict.then((up) => {
           if (!up) entry.downAt = Date.now();
@@ -7750,9 +7750,9 @@ function textProfile(html) {
     }
     return lo;
   };
-  return (from, to) => {
+  return (from2, to) => {
     if (!at.length) return { len: 0, link: 0, prose: 0 };
-    const i = index(from);
+    const i = index(from2);
     const j = index(to);
     return { len: len[j] - len[i], link: link[j] - link[i], prose: prose[j] - prose[i] };
   };
@@ -9004,9 +9004,9 @@ async function waitFor(session, cond, opts = {}) {
     for (; ; ) {
       live();
       if (await check()) return { waitedMs: now() - start, matched: present[0] };
-      const elapsed = now() - start;
-      if (elapsed >= timeoutMs) throw new WaitTimeoutError(cond, elapsed);
-      await sleep2(Math.min(POLL_MS2, timeoutMs - elapsed));
+      const elapsed2 = now() - start;
+      if (elapsed2 >= timeoutMs) throw new WaitTimeoutError(cond, elapsed2);
+      await sleep2(Math.min(POLL_MS2, timeoutMs - elapsed2));
     }
   } finally {
     net?.stop();
@@ -10066,7 +10066,10 @@ var INDICATOR_TYPES = [
   "cron_tag",
   "process",
   "azure_fedcred_prefix",
-  "actor"
+  "actor",
+  "repo_name",
+  "repo_description",
+  "runner_name"
 ];
 var SURFACES = ["github:account", "github:repos", "host", "deps", "cloud"];
 
@@ -10099,24 +10102,80 @@ function worst(list) {
 
 // src/check.ts
 var isCitation = (t) => /^[SF]\d+$/.test(t);
+var W = (body, flags = "iu") => new RegExp(`(?<![\\p{L}\\p{N}_])(?:${body})(?![\\p{L}\\p{N}_])`, flags);
 var NAMES = {
-  "github:account": /github:account|\b(your|the|my|mon|ton) (github )?(account|compte)\b|\bcompte github\b/i,
-  "github:repos": /github:repos|\brepositor(y|ies)\b|\brepos?\b|\bd[ée]p[ôo]ts?\b/i,
-  host: /\bhost\b|\bmachine\b|\bmac\b|\blaptop\b|\bcomputer\b|\bordinateur\b/i,
-  deps: /\bdeps\b|\bdependenc(y|ies)\b|\blockfiles?\b|\bd[ée]pendances?\b|\bpackages?\b|\bpaquets?\b/i,
-  cloud: /\bcloud\b|\baws\b|\bgcp\b|\bazure\b/i
+  "github:account": W("github:account|(your|the|my|mon|ton|votre|notre|son|their) (github )?(account|compte)|github account|compte github|github (login|user)"),
+  "github:repos": W("github:repos|repositor(y|ies)|repos?|d[\xE9e]p[\xF4o]ts?"),
+  host: W("host|machine|mac|macbook|laptop|computer|ordinateur|poste"),
+  deps: W("deps|dependenc(y|ies)|lockfiles?|d[\xE9e]pendances?|packages?|paquets?"),
+  cloud: W("cloud|aws|gcp|azure")
 };
-var CLEAN_WORDS = /\b(clean|safe|unaffected|not (been )?(compromised|hit|affected|touched)|propre|sain|intact|pas (été )?(touché|compromis))\b/i;
-var NOTHING_WORDS = /\b(nothing (was |is )?(found|detected|matched)|no (sign|trace|indicator|ioc|finding|match)s?\b.{0,30}\b(found|matched|detected)|rien (n'a été |de )?(trouvé|détecté)|aucune? (trace|ioc|indicateur|signe))/i;
-var NEGATED_CLEAN = /\b(not|isn't|aren't|n'est pas|ne sont pas|pas)\s+(\w+\s+)?(clean|safe|propre|sain)\b/i;
-var BAD_WORDS = /\b(compromised|exposed|infected|hit|review|unknown|compromis|exposé|touché|à vérifier|inconnu)\b/i;
-var ALL_CLEAN = /\b(everything|all (surfaces )?(is |are )?|nothing (was )?(found|hit)|tout est|rien n'a été)\b.{0,20}\b(clean|safe|found|propre|sain|trouvé|touché)\b/i;
+var GITHUB = W("github");
+var CLEAN_WORDS = W(
+  [
+    "clean|safe|unaffected|fine(?!-)|ok(?!-)|okay|healthy|all good|no issues?|no problems?",
+    "not (been )?(compromised|hit|affected|touched|infected|impacted)",
+    "no (sign|evidence|indication|trace)s? of (a |any |the |this )?(compromise|infection|campaign|attack)",
+    "shows? no (sign|indicator|trace)s?",
+    "propres?|saine?s?|intacte?s?|s\xFBre?s?|ras|rien \xE0 signaler|aucun probl\xE8me|aucune compromission",
+    "pas ([\xE9e]t[\xE9e] )?(touch[\xE9e]e?s?|compromise?s?|affect[\xE9e]e?s?|concern[\xE9e]e?s?|infect[\xE9e]e?s?)",
+    "\u2705|\u2714\uFE0F?|\u2713"
+  ].join("|")
+);
+var NOTHING_WORDS = W(
+  "nothing (was |is )?(found|detected|matched)|no(\\s+\\S+){0,4}?\\s+(was |were |is |are )?(found|matched|detected)|rien (n'a \xE9t\xE9 |de )?(trouv\xE9|d\xE9tect\xE9)|aucune? (trace|ioc|indicateur|signe)"
+);
+var NEGATED_CLEAN = W("(not|isn't|aren't|n'est pas|ne sont pas|pas|never)\\s+([\\p{L}']+\\s+)?(clean|safe|propres?|saine?s?|s\xFBre?s?)");
+var BAD_WORDS = W("compromised|exposed|infected|hit|review|unknown|compromise?s?|expos[\xE9e]e?s?|touch[\xE9e]e?s?|infect[\xE9e]e?s?|\xE0 v\xE9rifier|inconnue?s?");
+var ALL_CLEAN = W(
+  "(everything|all (surfaces )?(is |are )?|nothing (was )?(found|hit)|tout est|rien n'a \xE9t\xE9)[^.]{0,20}(clean|safe|found|fine|ok|propre|sain|trouv\xE9|touch\xE9|en ordre)"
+);
+var YOU_CLEAN = W(
+  "(you|your account|tu|vous|on)[^.]{0,30}(not|never|pas|n['\u2019])[^.]{0,20}(affected|compromised|hit|impacted|concern|touch|affect|compromis)\\p{L}*|no (sign|evidence|indicator|trace)s? of (the |this |any )?(campaign|compromise|attack)|rien [\xE0a] signaler"
+);
+var HEDGE = W(
+  "(cannot|can't|could ?n[o']t|unable to|whether|if|to (get|confirm|know)|not (be )?(confirmed|sure|known)|impossible de|ne (peux|peut|pouvons) pas|si)[^.]{0,60}(clean|safe|propre|sain)"
+);
+var ATTRIBUTIVE = new RegExp(
+  `${W("(another|other|different|separate|autre)").source}[^.]{0,12}(clean|safe|propre|sain)|${W("(clean|safe)\\s+(machine|computer|laptop|host|mac|version|release|install|copy|state|environment)").source}|${W("safe to|clean(-| )?up").source}`,
+  "giu"
+);
+var VERDICT_TOKEN = /(?<![\p{L}])(COMPROMISED|EXPOSED|REVIEW|CLEAN|UNKNOWN)(?![\p{L}])/gu;
+var UNKNOWN_PHRASE = W(
+  "unknown|not (been )?(scanned|checked|verified|covered)|could ?n[o']t (be )?(scann?|check|verif)\\w*|inconnue?s?|non (scann|v[\xE9e]rifi|analys)\\p{L}*|pas (pu [\xEAe]tre |[\xE9e]t[\xE9e] )?(scann|v[\xE9e]rifi|analys)\\p{L}*"
+);
+var SOURCES_SECTION = /\b(sources?|references?|références?)\b/i;
+function claimLines(lines) {
+  const out2 = [];
+  let fence = false;
+  let heading = "";
+  for (const [i, l] of lines.entries()) {
+    if (/^\s*```/.test(l)) {
+      fence = !fence;
+      continue;
+    }
+    if (fence) continue;
+    const h = /^#{1,6}\s+(.*)$/.exec(l);
+    if (h) heading = h[1] ?? "";
+    else if (SOURCES_SECTION.test(heading)) continue;
+    out2.push({ text: l.replace(/`[^`]*`/g, " "), line: i + 1, heading: h ? "" : heading });
+  }
+  return out2;
+}
+var named = (c) => {
+  const n = SURFACES.filter((x) => NAMES[x].test(c));
+  if (GITHUB.test(c) && !n.some((x) => x.startsWith("github:"))) n.push("github:account", "github:repos");
+  return n;
+};
 function checkAnswer(run, text) {
   const problems = [];
+  if (run.surfaces().length === 0)
+    return [{ rule: "not-swept", message: "no surface was scanned in this run: run sweep (or scan) before check, with the same --out" }];
   const known = [...run.sources().map((s) => s.id), ...run.findings().map((f) => f.id)];
   const lines = text.split("\n");
   const lineOf = (needle) => lines.findIndex((l) => l.includes(needle)) + 1 || void 0;
-  for (const t of danglingTokens(citationTokensIn(text, isCitation), known))
+  const cited = new Set(citationTokensIn(text, isCitation));
+  for (const t of danglingTokens([...cited], known))
     problems.push({ rule: "dangling", message: `[${t}] is not a source or finding of this run`, line: lineOf(`[${t}]`) });
   const isKnownF = (t) => /^F\d+$/.test(t) && known.includes(t);
   for (const b of claimBlocks(lines)) {
@@ -10128,35 +10187,47 @@ function checkAnswer(run, text) {
     }
   }
   const vs = verdicts(run.findings(), run.gaps(), run.surfaces());
+  const omitted = /* @__PURE__ */ new Set();
   for (const v of vs) {
-    if ((v.verdict === "COMPROMISED" || v.verdict === "EXPOSED") && !NAMES[v.surface].test(text) && !v.findings.some((id) => text.includes(`[${id}]`)))
-      problems.push({
-        rule: "omitted-surface",
-        message: `${v.surface} is ${v.verdict} (${v.findings.map((x) => `[${x}]`).join("")}) but the answer never mentions it`
-      });
+    if (v.verdict === "CLEAN") continue;
+    const byCitation = v.surface === "github:account" && v.verdict === "COMPROMISED" ? false : v.findings.some((id) => cited.has(id));
+    if (NAMES[v.surface].test(text) || byCitation) continue;
+    omitted.add(v.surface);
+    problems.push({
+      rule: "omitted-surface",
+      message: `${v.surface} is ${v.verdict}${v.findings.length ? ` (${v.findings.map((x) => `[${x}]`).join("")})` : ""} but the answer never mentions it`
+    });
   }
   const bySubject = /* @__PURE__ */ new Map();
   for (const f of run.findings())
     if (f.severity === "compromised" || f.severity === "exposed") bySubject.set(f.subject, [...bySubject.get(f.subject) ?? [], f.id]);
   for (const [subject, ids] of bySubject) {
-    const short = subject.split("/").pop() ?? subject;
-    if (text.includes(subject) || short.length >= 4 && text.includes(short) || ids.some((id) => text.includes(`[${id}]`))) continue;
+    const short = subject.split("/").filter(Boolean).slice(-2).join("/");
+    if (text.includes(subject) || short.includes("/") && text.includes(short) || ids.some((id) => cited.has(id))) continue;
     problems.push({
       rule: "omitted-subject",
       message: `${subject} has ${ids.length} compromised or exposed finding(s) (${ids.slice(0, 3).map((x) => `[${x}]`).join("")}) but the answer never names it`
     });
   }
-  const sentences = lines.flatMap((l, i) => l.split(/(?<=[.!?;])\s+/).map((t) => ({ t, line: i + 1 })));
+  const claimed = claimLines(lines);
+  const sentences = claimed.flatMap((l) => l.text.split(/(?<=[.!?;])\s+/).map((t) => ({ t, line: l.line, heading: named(l.heading) })));
   const anyBad = vs.some((v) => v.verdict !== "CLEAN");
+  const hardBad = vs.some((v) => v.verdict === "COMPROMISED" || v.verdict === "EXPOSED" || v.verdict === "UNKNOWN");
   const bad = (surface, strength) => {
     const v = vs.find((x) => x.surface === surface);
     if (!v || v.verdict === "CLEAN") return void 0;
     if (strength === "nothing" && v.verdict === "REVIEW") return void 0;
     return v;
   };
-  for (const { t, line } of sentences) {
-    const head = t.split(/\b(?:but|however|except|although|though|mais|sauf|cependant|toutefois|bien que)\b/i)[0] ?? t;
-    if (anyBad && ALL_CLEAN.test(head) && !SURFACES.some((x) => NAMES[x].test(head))) {
+  const stated = /* @__PURE__ */ new Map();
+  const state = (surfaces, words) => {
+    for (const x of surfaces) for (const w of words) stated.set(x, /* @__PURE__ */ new Set([...stated.get(x) ?? [], w]));
+  };
+  for (const { t, line, heading } of sentences) {
+    const head = t.split(W("but|however|except|although|though|mais|sauf|cependant|toutefois|bien que"))[0] ?? t;
+    const surfaceless = !SURFACES.some((x) => NAMES[x].test(head)) && !GITHUB.test(head) && heading.length === 0;
+    const hedged = HEDGE.test(head);
+    if (!hedged && surfaceless && (anyBad && ALL_CLEAN.test(head) || hardBad && YOU_CLEAN.test(head))) {
       problems.push({
         rule: "wrong-clean",
         message: `"${head.trim().slice(0, 80)}" but the verdicts are ${vs.map((v) => `${v.surface}=${v.verdict}`).join(", ")}`,
@@ -10164,28 +10235,59 @@ function checkAnswer(run, text) {
       });
       continue;
     }
-    const clauses = head.split(/,|;|\b(?:and|et|while|whereas|alors que|tandis que)\b/i);
+    const clauses = /^\s*\|/.test(t) ? [t] : t.split(W(",|;|and|et|while|whereas|alors que|tandis que"));
     let pending = [];
+    let pendingVerdict = [];
     for (const c of clauses) {
-      const named = SURFACES.filter((x) => NAMES[x].test(c));
-      const strength = NEGATED_CLEAN.test(c) ? void 0 : CLEAN_WORDS.test(c) ? "clean" : NOTHING_WORDS.test(c) ? "nothing" : void 0;
-      if (!strength) {
-        pending = BAD_WORDS.test(c) ? [] : [...pending, ...named];
+      if (c === void 0) continue;
+      const here = named(c);
+      const words = [...c.matchAll(VERDICT_TOKEN)].map((m) => m[1]);
+      if (UNKNOWN_PHRASE.test(c)) words.push("UNKNOWN");
+      const subjects = here.length || pendingVerdict.length ? [...pendingVerdict, ...here] : heading;
+      if (words.length) {
+        state(subjects, words);
+        pendingVerdict = [];
+      } else pendingVerdict = [...pendingVerdict, ...here];
+      if (HEDGE.test(c)) {
+        pending = [];
         continue;
       }
-      for (const surface of /* @__PURE__ */ new Set([...pending, ...named])) {
+      const plain2 = c.replace(ATTRIBUTIVE, " ");
+      const negated = NEGATED_CLEAN.test(plain2);
+      const word = negated ? void 0 : CLEAN_WORDS.exec(plain2)?.[0] ?? NOTHING_WORDS.exec(plain2)?.[0];
+      const strength = word === void 0 ? void 0 : CLEAN_WORDS.test(plain2) ? "clean" : "nothing";
+      if (!strength) {
+        pending = BAD_WORDS.test(c) ? [] : [...pending, ...here];
+        continue;
+      }
+      const targets = here.length || pending.length ? [...pending, ...here] : heading;
+      for (const surface of new Set(targets)) {
         const v = bad(surface, strength);
         if (v)
           problems.push({
             rule: "wrong-clean",
-            message: `calls ${surface} ${strength === "clean" ? "clean" : "free of findings"} but its verdict is ${v.verdict}`,
+            message: `calls ${surface} ${strength === "clean" ? "clean" : "free of findings"} ("${word}" in "${c.trim().slice(0, 60)}") but its verdict is ${v.verdict}`,
             line
           });
       }
       pending = [];
     }
   }
-  if (run.gaps().length && !/\b(coverage|gaps?|not (checked|scanned|covered)|couverture|non vérifié|pas vérifié|angles? morts?)\b/i.test(text))
+  for (const v of vs) {
+    if (omitted.has(v.surface)) continue;
+    const said = stated.get(v.surface);
+    if (!said?.size)
+      problems.push({
+        rule: "missing-verdict",
+        message: `no line gives ${v.surface}'s verdict: write it as the report does ("${v.surface}: ${v.verdict}"${v.findings.length ? ` with ${v.findings.map((x) => `[${x}]`).join("")}` : ""})`
+      });
+    else if (!said.has(v.verdict))
+      problems.push({
+        rule: "wrong-verdict",
+        message: `the answer gives ${v.surface} as ${[...said].join("/")} but its verdict is ${v.verdict}: keep the computed verdict and explain a false positive next to it`
+      });
+  }
+  if (run.gaps().length && !W("coverage|gaps?|not (checked|scanned|covered|read)|couverture|non v\xE9rifi\xE9e?s?|pas v\xE9rifi\xE9e?s?|non scann\\p{L}*|angles? morts?|limits|limites").test(text))
     problems.push({
       rule: "no-coverage",
       message: `the run has ${run.gaps().length} coverage gap(s) and the answer does not mention any: gaps are not absence`
@@ -10341,9 +10443,1007 @@ function rulesAgeDays(meta, now = /* @__PURE__ */ new Date()) {
 }
 
 // src/scan/antivirus.ts
-import { accessSync as accessSync2, constants as constants2, readdirSync as readdirSync6, realpathSync as realpathSync2, statSync as statSync7 } from "fs";
-import { join as join5 } from "path";
+import { accessSync as accessSync2, constants as constants2, readdirSync as readdirSync7, realpathSync as realpathSync2, statSync as statSync8 } from "fs";
+import { tmpdir } from "os";
+import { join as join6 } from "path";
+
+// src/scan/hostintel.ts
+import { createHash as createHash3 } from "crypto";
+import { closeSync as closeSync2, existsSync as existsSync8, openSync as openSync2, readdirSync as readdirSync6, readFileSync as readFileSync9, readSync, statSync as statSync7 } from "fs";
+import { basename as basename3, join as join5 } from "path";
+var hit = (rule, s) => typeof rule === "function" ? rule(s) : rule.test(s);
+var from = (s, re) => {
+  const i = s.search(re);
+  return i < 0 ? void 0 : s.slice(i);
+};
+var FETCHER = /\b(curl|wget)\b/i;
+var PIPE_TO_RUN = /\b(curl|wget)\b[^|;\n]*\|\s*(sudo\s+(-\S+\s+)*)?(env\s+)?(\/\S*\/)?((ba|z|da|k|fi)?sh\b|(python[\d.]*|node|perl|ruby|osascript|bun|deno)\b(?!\s+-{1,2}[a-zA-Z]))/i;
+var RUN_FETCHED = /(\beval|\b(ba|z|da|k)?sh(\s+-\w+)*|\bsource|(^|[\s;&(])\.)\s+["']?(\$\(|<\(|`)\s*(curl|wget)\b/i;
+var INLINE_CODE = /\b(python[\d.]*|perl|ruby|node)\b(\s+-\S+)*\s+-(c|e)\b/i;
+var INLINE_RISK = /os\.system|popen|subprocess|socket|urllib|urlopen|child_process|execSync|spawn|TCPSocket|\beval\b|\bexec\b/i;
+var STRONG = [
+  [PIPE_TO_RUN, "downloads and runs a script"],
+  [RUN_FETCHED, "runs code fetched at run time"],
+  [
+    (s) => {
+      const rest = from(s, FETCHER);
+      const out2 = rest && from(rest, /\s-[a-zA-Z]*[oO]\b|--output\b|>/);
+      return !!out2 && /(&&|;|\|\|)\s*(sudo\s+)?(chmod\b|\.\/|(ba|z|da)?sh\b|python|node)/i.test(out2);
+    },
+    "downloads then executes a file"
+  ],
+  [/\/dev\/(tcp|udp)\//, "opens a raw network socket (reverse shell pattern)"],
+  [
+    (s) => /\bbase64\s+(-d|-D|--decode)\b/.test(s) && /\beval\b|\|\s*(sudo\s+)?(\S*\/)?((ba|z|da|k)?sh|python[\d.]*|perl|ruby|node|osascript)\b|\b(ba|z|da)?sh\s+-c\s+["']?\$\(/i.test(s) || /\becho\s+["']?[A-Za-z0-9+/=]{40,}["']?\s*\|\s*base64/i.test(s),
+    "decodes and runs an encoded payload"
+  ],
+  [(s) => INLINE_CODE.test(s) && INLINE_RISK.test(s), "runs inline interpreter code that spawns or connects"],
+  [
+    (s) => {
+      const rest = from(s, /\bosascript\b/i);
+      return !!rest && /do shell script|doShellScript|password|\$\.system|ObjC\.import/i.test(rest);
+    },
+    "AppleScript that runs shell code or asks for a password"
+  ],
+  [
+    (s) => {
+      const nc = from(s, /\b(nc|ncat|netcat)\b/i);
+      if (nc && /\s-(e|c)\s+\S*sh\b/i.test(nc)) return true;
+      const socat = from(s, /\bsocat\b/i);
+      if (socat && /exec:|system:/i.test(socat)) return true;
+      const fifo = from(s, /\bmkfifo\b/i);
+      return !!fifo && /\b(nc|ncat|netcat)\b/i.test(fifo);
+    },
+    "opens a reverse shell (netcat or socat)"
+  ]
+];
+var TEMP_PATH = /^(\/tmp\/|\/private\/tmp\/|\/var\/tmp\/|\/private\/var\/tmp\/|\/dev\/shm\/|\/Users\/Shared\/)/;
+var MAC_TMPDIR = /^\/(private\/)?var\/folders\//;
+var stripToken = (token) => token.replace(/^[\s"'`()<>;&|]+|[\s"'`()<>;&|]+$/g, "");
+var inTemp = (token) => {
+  const t = stripToken(token);
+  return TEMP_PATH.test(t) || MAC_TMPDIR.test(t);
+};
+function pathToken(token, home) {
+  return stripToken(token).replace(/^(~|\$HOME|\$\{HOME\})(?=\/)/, home);
+}
+var KNOWN_HIDDEN = /* @__PURE__ */ new Set([
+  ".nvm",
+  ".volta",
+  ".local",
+  ".cargo",
+  ".rustup",
+  ".bun",
+  ".deno",
+  ".pyenv",
+  ".rbenv",
+  ".asdf",
+  ".sdkman",
+  ".vscode",
+  ".vscode-insiders",
+  ".cursor",
+  ".windsurf",
+  ".docker",
+  ".orbstack",
+  ".colima",
+  ".rd",
+  ".config",
+  ".npm",
+  ".pnpm",
+  ".yarn",
+  ".fnm",
+  ".gem",
+  ".go",
+  ".foundry",
+  ".claude",
+  ".codex",
+  ".agents",
+  ".lima",
+  ".ollama",
+  ".dotnet",
+  ".jenv",
+  ".nix-profile",
+  ".oh-my-zsh",
+  ".antigen",
+  ".zinit",
+  ".tmux",
+  ".gradle",
+  ".m2"
+]);
+function riskSignals(rawCommand, executable, home, opts = {}) {
+  const command2 = rawCommand.length > 4e3 ? rawCommand.slice(0, 4e3) : rawCommand;
+  const out2 = [];
+  for (const [rule, label] of STRONG) if (hit(rule, command2)) out2.push(label);
+  const tokens = opts.location === false ? [] : [executable, ...command2.split(/\s+/)].filter(Boolean);
+  for (const raw of tokens) {
+    const p = pathToken(raw, home);
+    if (TEMP_PATH.test(p) || opts.tmpdir !== false && MAC_TMPDIR.test(p)) {
+      out2.push(`runs from a temporary or shared folder (${p})`);
+      break;
+    }
+    if (p.startsWith(`${home}/.`)) {
+      const top = p.slice(home.length + 1).split("/")[0] ?? "";
+      if (!KNOWN_HIDDEN.has(top)) {
+        out2.push(`runs from a hidden folder of your home (${p})`);
+        break;
+      }
+    }
+  }
+  return [...new Set(out2)];
+}
+var PLIST_STRING = /<string>(?:<!\[CDATA\[([\s\S]*?)\]\]>|([^<]*))<\/string>/g;
+var plistStrings = (xml) => [...xml.matchAll(PLIST_STRING)].map((m) => m[1] !== void 0 ? m[1] : decodeXml2(m[2] ?? ""));
+function startupCommand(text) {
+  const programKey = /<key>Program<\/key>\s*(<string>(?:<!\[CDATA\[[\s\S]*?\]\]>|[^<]*)<\/string>)/.exec(text)?.[1];
+  const program = programKey ? plistStrings(programKey)[0] || void 0 : void 0;
+  const argsXml = /<key>ProgramArguments<\/key>\s*<array>([\s\S]*?)<\/array>/.exec(text)?.[1];
+  const parts = argsXml ? plistStrings(argsXml) : [];
+  if (parts.length) {
+    const shellC = parts.length >= 3 && /\/(ba|z|da)?sh$/.test(parts[0] ?? "") && parts[1] === "-c";
+    const executable = program ?? (shellC ? (parts[2] ?? "").trim().split(/\s+/)[0]?.replace(/^["']|["']$/g, "") : parts[0]);
+    return { command: parts.join(" "), executable, args: parts };
+  }
+  if (program) return { command: program, executable: program, args: [program] };
+  if (/<key>(ProgramArguments|Program)<\/key>/.test(text)) return { command: "", unparsed: true };
+  const execs = [...text.matchAll(/^\s*(Exec\w*)=[-@+!:]*(.*)$/gm)].map((m) => ({ key: m[1], cmd: (m[2] ?? "").trim() })).filter((e) => e.cmd);
+  if (execs.length) {
+    const main2 = execs.find((e) => e.key === "ExecStart" || e.key === "Exec") ?? execs[0];
+    const cmd = main2?.cmd ?? "";
+    return { command: cmd, executable: cmd.split(/\s+/)[0], more: execs.filter((e) => e !== main2).map((e) => e.cmd) };
+  }
+  return { command: "" };
+}
+function decodeXml2(s) {
+  return s.replace(/&#(\d+);/g, (_, n) => safeCodePoint(Number(n))).replace(/&#x([0-9a-f]+);/gi, (_, n) => safeCodePoint(Number.parseInt(n, 16))).replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+}
+var safeCodePoint = (n) => n > 0 && n <= 1114111 ? String.fromCodePoint(n) : "";
+async function signerOf(runner2, executable) {
+  const res = await runner2("codesign", ["-dv", "--verbose=2", executable], { timeoutMs: 15e3 });
+  if (res.missing) return void 0;
+  const text = `${res.stderr}
+${res.stdout}`;
+  if (/not signed at all|code object is not signed/i.test(text)) return { signed: false };
+  if (!res.ok && !/Authority=|Signature=adhoc/.test(text)) return void 0;
+  const authority = /^Authority=(.+)$/m.exec(text)?.[1]?.trim();
+  const team = /^TeamIdentifier=(.+)$/m.exec(text)?.[1]?.trim();
+  if (/Signature=adhoc/.test(text)) return { signed: false, signer: "ad-hoc signature (no identity)" };
+  const verify = await runner2("codesign", ["--verify", "--strict", executable], { timeoutMs: 15e3 });
+  if (!verify.ok && !verify.missing && /invalid signature|modified|not valid|revoked/i.test(`${verify.stderr}
+${verify.stdout}`))
+    return { signed: false, signer: `invalid signature (modified after signing; claimed ${authority ?? "an identity"})`, invalid: true };
+  return { signed: true, signer: authority, team: team && team !== "not set" ? team : void 0 };
+}
+var SHELL_STARTUP = [
+  ".zshrc",
+  ".zprofile",
+  ".zshenv",
+  ".zlogin",
+  ".zlogout",
+  ".zshrc.local",
+  ".bashrc",
+  ".bash_profile",
+  ".bash_login",
+  ".bash_logout",
+  ".profile",
+  ".config/fish/config.fish"
+];
+function shellStartupFiles(home) {
+  let fish = [];
+  try {
+    fish = readdirSync6(join5(home, ".config/fish/conf.d")).filter((f) => f.endsWith(".fish")).sort().slice(0, 200).map((f) => `.config/fish/conf.d/${f}`);
+  } catch {
+  }
+  return [...SHELL_STARTUP, ...fish];
+}
+var VENDOR_AI_HOST = /^https:\/\/(api\.anthropic\.com|api\.openai\.com|bedrock(-runtime)?(-fips)?\.[a-z0-9-]+\.amazonaws\.com|[a-z0-9-]+\.openai\.azure\.com|[a-z0-9-]+\.services\.ai\.azure\.com|[a-z0-9-]+\.cognitiveservices\.azure\.com|generativelanguage\.googleapis\.com|([a-z0-9-]+-)?aiplatform\.googleapis\.com)(:443)?(\/|$)/i;
+var isVendorAiUrl = (url) => VENDOR_AI_HOST.test(url.trim());
+var SHELL_RISK = [
+  ...STRONG,
+  [/\b(DYLD_INSERT_LIBRARIES|LD_PRELOAD)\s*=/, "injects a library into every program"],
+  [/\bNODE_OPTIONS\s*=.*--(require|import|loader)\b/, "makes every Node.js process load a module"],
+  [/\bPYTHONSTARTUP\s*=|\bPERL5OPT\s*=|\bRUBYOPT\s*=.*-r/, "makes every interpreter load a file"],
+  [/^\s*alias\s+(sudo|ssh|git|gh|npm|su|passwd)=/, "redefines a security-sensitive command"],
+  [/^\s*function\s+(sudo|ssh|git|gh)\b|^\s*(sudo|ssh|git|gh)\s*\(\)/, "redefines a security-sensitive command"],
+  [/\b(export\s+)?PATH=["']?(\/tmp|\/private\/tmp|\/var\/tmp|\/Users\/Shared)/, "puts a temporary folder first in PATH"],
+  [/^\s*(sudo\s+)?(shutdown|halt|poweroff|reboot)\b/, "shuts the machine down at every shell start"],
+  [
+    (s) => {
+      const v = /\b(ANTHROPIC|OPENAI|GEMINI|GOOGLE_GEMINI)\w*_(BASE_URL|API_BASE)\s*=\s*["']?([^"'\s]*)/.exec(s)?.[3];
+      return !!v && !isVendorAiUrl(v);
+    },
+    "sends AI agent traffic to another host"
+  ],
+  [/\b(PIP_(EXTRA_)?INDEX_URL|NPM_CONFIG_REGISTRY|UV_(EXTRA_)?INDEX_URL)\s*=/, "points a package manager to another registry"],
+  // A program run from a temp or shared folder. Not hidden home folders: `source ~/.fzf.zsh` is everywhere.
+  [(s) => s.split(/\s+/).some(inTemp), "runs from a temporary or shared folder"]
+];
+function logicalLines(text) {
+  const out2 = [];
+  let cur;
+  text.split("\n").forEach((raw, i) => {
+    const l = raw.length > 4e3 ? raw.slice(0, 4e3) : raw;
+    if (cur) cur.text += ` ${l}`;
+    else cur = { line: i + 1, text: l };
+    if (/\\\s*$/.test(l) && cur.text.length < 8e3) cur.text = cur.text.replace(/\\\s*$/, "");
+    else {
+      out2.push(cur);
+      cur = void 0;
+    }
+  });
+  if (cur) out2.push(cur);
+  return out2;
+}
+function shellStartupFindings(home) {
+  const findings = [];
+  const lines = [];
+  for (const rel of shellStartupFiles(home)) {
+    const p = join5(home, rel);
+    let text;
+    try {
+      if (statSync7(p).size > 2 * 1024 * 1024) continue;
+      text = readFileSync9(p, "utf8");
+    } catch {
+      continue;
+    }
+    for (const { line: n, text: line } of logicalLines(text)) {
+      if (/^\s*#/.test(line)) continue;
+      for (const [rule, signal] of SHELL_RISK) {
+        if (!hit(rule, line)) continue;
+        lines.push({ path: p, line: n, signal, text: line.trim().slice(0, 200) });
+        findings.push({
+          surface: "host",
+          severity: "suspicious",
+          subject: p,
+          title: `${basename3(p)} line ${n} ${signal}`,
+          evidence: { kind: "file", ref: `${p}:${n}`, excerpt: line.trim().slice(0, 200) },
+          key: `host|${p}|${n}|${signal}`
+        });
+        break;
+      }
+    }
+  }
+  return { findings, lines };
+}
+function readSmall(p) {
+  try {
+    if (statSync7(p).size > 1024 * 1024) return void 0;
+    return readFileSync9(p, "utf8");
+  } catch {
+    return void 0;
+  }
+}
+function changedMs(st, nowMs = Date.now()) {
+  return st.ctimeMs <= nowMs + 6e4 ? Math.max(st.mtimeMs, st.ctimeMs) : st.mtimeMs;
+}
+function backdated(st, nowMs = Date.now()) {
+  if (st.ctimeMs > nowMs + 6e4 || st.ctimeMs - st.mtimeMs <= 864e5) return "";
+  return ` (changed on ${new Date(st.ctimeMs).toISOString().slice(0, 10)}, dated ${new Date(st.mtimeMs).toISOString().slice(0, 10)})`;
+}
+function readGitConfig(path, home, depth = 0) {
+  const text = readSmall(path);
+  if (!text) return [];
+  const out2 = [];
+  let section = "";
+  let sub;
+  text.split("\n").forEach((raw, i) => {
+    const l = raw.trim();
+    if (!l || /^[#;]/.test(l)) return;
+    const sec = /^\[\s*([\w.-]+)(?:\s+"((?:[^"\\]|\\.)*)")?\s*\]\s*(.*)$/.exec(l);
+    let rest = l;
+    if (sec) {
+      section = (sec[1] ?? "").toLowerCase();
+      sub = sec[2];
+      if (!sub && section.includes(".")) [section, sub] = [section.split(".")[0], section.split(".").slice(1).join(".")];
+      rest = sec[3] ?? "";
+      if (!rest) return;
+    }
+    const kv = /^([\w-]+)\s*(?:=\s*(.*))?$/.exec(rest);
+    if (!kv) return;
+    const value = (kv[2] ?? "true").replace(/\s+[#;].*$/, "").replace(/^"(.*)"$/, "$1").trim();
+    out2.push({ file: path, line: i + 1, section, sub, key: (kv[1] ?? "").toLowerCase(), value });
+  });
+  if (depth < 1)
+    for (const e of out2.filter((x) => (x.section === "include" || x.section === "includeif") && x.key === "path")) {
+      const inc = e.value.replace(/^~(?=\/)/, home);
+      out2.push(...readGitConfig(inc.startsWith("/") ? inc : join5(path, "..", inc), home, depth + 1));
+    }
+  return out2;
+}
+function globalGitConfig(home) {
+  return [...readGitConfig(join5(home, ".gitconfig"), home), ...readGitConfig(join5(home, ".config/git/config"), home)];
+}
+function gitHost(url) {
+  return (/^[a-z+]+:\/\/(?:[^@/]+@)?([^/:]+)/i.exec(url)?.[1] ?? /^(?:[^@/]+@)?([^/:]+):/.exec(url)?.[1])?.toLowerCase();
+}
+var FORGES = /* @__PURE__ */ new Set(["github.com", "gitlab.com", "bitbucket.org"]);
+var KNOWN_HELPER = /^!?\s*(\S*\/)?(gh|glab) auth git-credential\b|^!?\s*aws\s+codecommit\s+credential-helper\b|git-credential-(manager|osxkeychain|libsecret|wincred)|^(osxkeychain|store|cache|manager|manager-core|libsecret|wincred)(\s|$)/;
+function configFindings(home, reviewSinceMs, nowMs = Date.now()) {
+  const out2 = [];
+  const add2 = (p, title, excerpt, line) => out2.push({
+    surface: "host",
+    severity: "suspicious",
+    subject: p,
+    title,
+    evidence: { kind: "file", ref: line ? `${p}:${line}` : p, excerpt },
+    key: `host|${p}|${title}`
+  });
+  const short = (p) => p.startsWith(`${home}/`) ? `~/${p.slice(home.length + 1)}` : p;
+  const npmrcPath = join5(home, ".npmrc");
+  const npmrc = readSmall(npmrcPath);
+  npmrc?.split("\n").forEach((raw, i) => {
+    const l = raw.trim();
+    if (!l || /^[#;]/.test(l)) return;
+    const reg = /^(@[^:\s]+:)?registry\s*=\s*(\S+)/.exec(l);
+    if (reg) {
+      const url = reg[2];
+      if (!/^https:\/\/(registry\.npmjs\.org|registry\.yarnpkg\.com|npm\.pkg\.github\.com)\/?$/.test(url))
+        add2(
+          npmrcPath,
+          reg[1] ? `~/.npmrc sends ${reg[1].slice(0, -1)} packages to another registry: ${url}` : `~/.npmrc sends every npm install to another registry: ${url}`,
+          l,
+          i + 1
+        );
+      return;
+    }
+    const kv = /^(script-shell|node-options|proxy|https-proxy|strict-ssl)\s*=\s*(.*)$/.exec(l);
+    if (kv && !(kv[1] === "strict-ssl" && !/^false$/i.test((kv[2] ?? "").trim())))
+      add2(npmrcPath, `~/.npmrc sets ${kv[1]} = ${(kv[2] ?? "").slice(0, 120)}: it changes what every npm command runs or where it connects`, l, i + 1);
+  });
+  for (const pip of [join5(home, ".pip/pip.conf"), join5(home, ".config/pip/pip.conf"), join5(home, "Library/Application Support/pip/pip.conf")]) {
+    const text = readSmall(pip);
+    text?.split("\n").forEach((raw, i) => {
+      const idx = /^\s*(extra-)?index-url\s*=\s*(\S+)/.exec(raw);
+      if (idx && !/^https:\/\/pypi\.org\/simple\/?$/.test(idx[2]))
+        add2(pip, `pip installs from ${idx[1] ? "an extra" : "another"} index: ${idx[2]}`, raw.trim(), i + 1);
+      const trusted = /^\s*trusted-host\s*=\s*(.+)$/.exec(raw);
+      if (trusted) add2(pip, `pip trusts ${trusted[1]?.trim()} without TLS verification`, raw.trim(), i + 1);
+    });
+  }
+  for (const e of globalGitConfig(home)) {
+    const where = short(e.file);
+    const name = `${e.section}${e.sub ? `.${e.sub}` : ""}.${e.key}`;
+    const flag = (why) => add2(e.file, `${where}: ${why}`, `${name} = ${e.value}`.slice(0, 300), e.line);
+    const risky = (cmd) => riskSignals(cmd.replace(/^!/, ""), void 0, home).length > 0;
+    if (e.section === "core" && e.key === "hookspath") {
+      const dir = e.value.replace(/^~(?=\/)/, home);
+      let recent = [];
+      try {
+        recent = readdirSync6(dir).filter((f) => changedMs(statSync7(join5(dir, f)), nowMs) >= reviewSinceMs);
+      } catch {
+      }
+      add2(
+        e.file,
+        `git runs global hooks from ${e.value} in every repository${recent.length ? `; changed recently: ${recent.join(", ")}` : ""}`,
+        `hooksPath = ${e.value}`,
+        e.line
+      );
+    } else if (e.section === "core" && e.key === "sshcommand") {
+      if (!/^ssh(\s|$)/.test(e.value)) add2(e.file, `git runs a custom SSH command: ${e.value}`, e.value, e.line);
+    } else if (e.section === "core" && e.key === "fsmonitor") {
+      if (!/^(true|false|yes|no|on|off|1|0)?$/i.test(e.value)) flag(`git runs ${e.value} at every git status (core.fsmonitor)`);
+    } else if (e.section === "credential" && e.key === "helper") {
+      if (e.value && !KNOWN_HELPER.test(e.value) && (e.value.startsWith("!") || e.value.startsWith("/") || risky(e.value)))
+        flag(`git hands every credential to ${e.value} (credential.helper)`);
+    } else if (e.section === "core" && (e.key === "pager" || e.key === "editor") || e.section === "diff" && e.key === "external" || e.section === "alias") {
+      if (risky(e.value)) flag(`${name} runs ${e.value.slice(0, 120)}`);
+    } else if (e.section === "url" && e.key === "insteadof") {
+      const to = gitHost(e.sub ?? "");
+      const from2 = gitHost(e.value);
+      if (from2 && FORGES.has(from2) && to !== from2 && !(to && FORGES.has(to))) flag(`git sends ${e.value} to ${e.sub} instead (url.insteadOf)`);
+    } else if (e.section === "http" && e.key === "sslverify" && /^(false|no|off|0)$/i.test(e.value))
+      flag("git does not verify TLS certificates (http.sslVerify = false)");
+    else if (e.section === "http" && e.key === "proxy" && e.value) flag(`git sends its traffic through ${e.value} (http.proxy)`);
+  }
+  const ak = join5(home, ".ssh/authorized_keys");
+  try {
+    const st = statSync7(ak);
+    if (changedMs(st, nowMs) >= reviewSinceMs) {
+      const keys = (readSmall(ak) ?? "").split("\n").filter((l) => l.trim() && !l.startsWith("#"));
+      const comments = keys.map((k) => k.trim().split(/\s+/).slice(2).join(" ") || "(no comment)");
+      out2.push({
+        surface: "host",
+        severity: "suspicious",
+        subject: ak,
+        title: `~/.ssh/authorized_keys changed recently${backdated(st, nowMs)}: ${keys.length} key(s) can log in to this machine (${comments.join(", ").slice(0, 120)})`,
+        at: new Date(changedMs(st, nowMs)).toISOString(),
+        evidence: { kind: "file", ref: ak },
+        key: `host|${ak}|recent`
+      });
+    }
+  } catch {
+  }
+  return out2;
+}
+var EXTENSION_ENTRY = /^[\w-]+\.[\w.-]+?-\d+\.\d+\.\d+/;
+function extensionDirs2(home) {
+  const out2 = [];
+  let names = [];
+  try {
+    names = readdirSync6(home);
+  } catch {
+    return out2;
+  }
+  for (const n of names.filter((x) => x.startsWith(".")).sort()) {
+    const dir = join5(home, n, "extensions");
+    let entries;
+    try {
+      entries = readdirSync6(dir);
+    } catch {
+      continue;
+    }
+    if (entries.includes("extensions.json") || entries.some((e) => EXTENSION_ENTRY.test(e))) out2.push(dir);
+  }
+  return out2;
+}
+var editorOf = (dir) => basename3(join5(dir, "..")).replace(/^\./, "");
+var SELECTOR_RUN = /[\uFE00-\uFE0F\u{E0100}-\u{E01EF}]{32,}/u;
+function extensionEntryFile(extDir) {
+  let pkg;
+  try {
+    pkg = JSON.parse(readFileSync9(join5(extDir, "package.json"), "utf8"));
+  } catch {
+    return void 0;
+  }
+  const rel = typeof pkg.main === "string" ? pkg.main : typeof pkg.browser === "string" ? pkg.browser : void 0;
+  if (!rel) return void 0;
+  for (const cand of [rel, `${rel}.js`, join5(rel, "index.js")]) {
+    const p = join5(extDir, cand);
+    try {
+      const st = statSync7(p);
+      if (!st.isFile()) continue;
+      if (st.size > 5 * 1024 * 1024) return void 0;
+      return { path: p, text: readFileSync9(p, "utf8") };
+    } catch {
+    }
+  }
+  return void 0;
+}
+function recentExtensions(home, reviewSinceMs) {
+  const findings = [];
+  const list = [];
+  for (const dir of extensionDirs2(home)) {
+    const editor = editorOf(dir);
+    const manifest = readSmall(join5(dir, "extensions.json")) ?? (() => {
+      try {
+        return readFileSync9(join5(dir, "extensions.json"), "utf8");
+      } catch {
+        return void 0;
+      }
+    })();
+    let entries = [];
+    if (manifest) {
+      try {
+        entries = JSON.parse(manifest).map((e) => ({
+          id: e.identifier?.id,
+          version: e.version,
+          path: e.location?.path ?? join5(dir, e.relativeLocation ?? ""),
+          installed: e.metadata?.installedTimestamp,
+          updated: e.metadata?.updated,
+          source: e.metadata?.source,
+          publisher: e.metadata?.publisherDisplayName
+        }));
+      } catch {
+      }
+    } else {
+      let names = [];
+      try {
+        names = readdirSync6(dir);
+      } catch {
+        continue;
+      }
+      for (const name of names) {
+        if (name.startsWith(".") || !/-\d+\.\d+\.\d+/.test(name)) continue;
+        try {
+          const st = statSync7(join5(dir, name));
+          if (st.isDirectory()) entries.push({ id: name.replace(/-\d+\.\d+\.\d+.*$/, ""), version: "", path: join5(dir, name), installed: st.birthtimeMs });
+        } catch {
+        }
+      }
+    }
+    for (const e of entries) {
+      if (!e.id || !e.installed || e.installed < reviewSinceMs || e.updated) continue;
+      const installed2 = new Date(e.installed).toISOString();
+      list.push({ path: e.path, id: e.id, installed: installed2 });
+      const sideloaded = e.source === "vsix";
+      findings.push({
+        surface: "host",
+        severity: "suspicious",
+        subject: e.path,
+        title: `Editor extension ${e.id}${e.version ? `@${e.version}` : ""} was newly installed in ${editor}${e.publisher ? ` (publisher: ${e.publisher})` : ""}${sideloaded ? ", from a .vsix file, not the Marketplace" : ""}: check it is the one you meant`,
+        at: installed2,
+        evidence: { kind: "file", ref: e.path },
+        key: `host|${e.path}|new-ext`
+      });
+    }
+  }
+  return { findings, list };
+}
+async function lsofPath(runner2, pid, fd) {
+  const r = await runner2("lsof", ["-a", "-p", pid, "-d", fd, "-Fn"], { timeoutMs: 5e3 });
+  return r.ok ? /^n(\/.*)$/m.exec(r.stdout)?.[1] : void 0;
+}
+async function processFindings(runner2, home, os = process.platform) {
+  const ps = await runner2("ps", os === "darwin" ? ["-axo", "pid=,comm="] : ["-eo", "pid=,args="], { timeoutMs: 1e4 });
+  if (!ps.ok) return [];
+  const args = /* @__PURE__ */ new Map();
+  if (os === "darwin") {
+    const pa = await runner2("ps", ["-axo", "pid=,args="], { timeoutMs: 1e4 });
+    if (pa.ok)
+      for (const l of pa.stdout.split("\n")) {
+        const m = /^\s*(\d+)\s+(.*)$/.exec(l);
+        if (m) args.set(m[1], m[2]);
+      }
+  }
+  const out2 = [];
+  const seen = /* @__PURE__ */ new Set();
+  let lookups = 0;
+  for (const line of ps.stdout.split("\n")) {
+    const m = /^\s*(\d+)\s+(.+)$/.exec(line);
+    if (!m) continue;
+    const pid = m[1];
+    const cmdline = os === "darwin" ? args.get(pid) ?? m[2] : m[2];
+    let exe = os === "darwin" ? m[2].trim() : m[2].split(/\s+/)[0] ?? "";
+    if (!exe.startsWith("/") && /^\.{0,2}\//.test(exe) && lookups++ < 50) exe = await lsofPath(runner2, pid, "txt") ?? exe;
+    let subject = exe;
+    let signals = exe.startsWith("/") ? riskSignals("", exe, home, { tmpdir: false }) : [];
+    if (!signals.length && INTERPRETERS.test(basename3(exe))) {
+      const script = cmdline.split(/\s+/).slice(1).find((t) => t && !t.startsWith("-"));
+      if (script && /\//.test(script)) {
+        let path = script;
+        if (!path.startsWith("/") && lookups++ < 50) {
+          const cwd = await lsofPath(runner2, pid, "cwd");
+          if (cwd) path = join5(cwd, path);
+        }
+        if (path.startsWith("/")) {
+          signals = riskSignals("", path, home, { tmpdir: false }).map((x) => `its script ${x}`);
+          subject = path;
+        }
+      }
+    }
+    if (!signals.length || seen.has(subject)) continue;
+    seen.add(subject);
+    out2.push({
+      surface: "host",
+      severity: "suspicious",
+      subject,
+      title: `Running process ${basename3(exe)} (pid ${pid}) ${signals[0]}`,
+      evidence: {
+        kind: "command",
+        ref: os === "darwin" ? "ps -axo pid=,comm=" : "ps -eo pid=,args=",
+        excerpt: (os === "darwin" ? `${pid} ${cmdline}` : line).trim().slice(0, 300)
+      },
+      key: `host|process|${subject}`
+    });
+  }
+  return out2;
+}
+function credentialInventory(home, envFiles) {
+  const out2 = [];
+  const has = (rel, kind, test) => {
+    const p = join5(home, rel);
+    if (!existsSync8(p)) return;
+    if (test) {
+      const text = readSmall(p);
+      if (!text || !test.test(text)) return;
+    }
+    out2.push({ path: p, kind });
+  };
+  has(".aws/credentials", "AWS access keys");
+  has(".aws/sso/cache", "AWS SSO tokens");
+  has(".config/gcloud/credentials.db", "Google Cloud credentials");
+  has(".config/gcloud/application_default_credentials.json", "Google Cloud application credentials");
+  has(".azure/msal_token_cache.json", "Azure tokens");
+  has(".azure/accessTokens.json", "Azure tokens");
+  has(".npmrc", "npm publish token", /_authToken\s*=/);
+  has(".yarnrc.yml", "yarn registry token", /npmAuthToken/);
+  has(".pypirc", "PyPI upload token", /password\s*=|token/i);
+  has(".cargo/credentials.toml", "crates.io token");
+  has(".gem/credentials", "RubyGems key");
+  has(".docker/config.json", "Docker registry logins", /"auths"\s*:\s*\{\s*"/);
+  has(".kube/config", "Kubernetes credentials");
+  has(".config/gh/hosts.yml", "GitHub CLI token", /oauth_token|user:/);
+  has(".git-credentials", "git HTTPS credentials (plain text)");
+  has(".netrc", "netrc logins (plain text)");
+  has(".vault-token", "HashiCorp Vault token");
+  has(".terraform.d/credentials.tfrc.json", "Terraform Cloud token");
+  try {
+    for (const f of readdirSync6(join5(home, ".ssh"))) {
+      if (/^id_[a-z0-9]+$/.test(f) || /\.pem$/.test(f)) out2.push({ path: join5(home, ".ssh", f), kind: "SSH private key" });
+    }
+  } catch {
+  }
+  if (existsSync8(join5(home, ".gnupg/private-keys-v1.d"))) out2.push({ path: join5(home, ".gnupg"), kind: "GPG private keys" });
+  for (const p of envFiles.slice(0, 200)) out2.push({ path: p, kind: ".env file (project secrets)" });
+  return out2;
+}
+function npmCacheHits(home, pkgs) {
+  const dir = join5(home, ".npm/_cacache/index-v5");
+  if (!pkgs.length || !existsSync8(dir)) return [];
+  const wanted = pkgs.map((p) => ({ ...p, base: p.name.split("/").pop() }));
+  const out2 = [];
+  const stack = [dir];
+  let files = 0;
+  while (stack.length && files < 2e5) {
+    const d = stack.pop();
+    let names = [];
+    try {
+      names = readdirSync6(d);
+    } catch {
+      continue;
+    }
+    for (const n of names) {
+      const p = join5(d, n);
+      let st;
+      try {
+        st = statSync7(p);
+      } catch {
+        continue;
+      }
+      if (st.isDirectory()) {
+        stack.push(p);
+        continue;
+      }
+      files++;
+      if (st.size > 4 * 1024 * 1024) continue;
+      let text;
+      try {
+        text = readFileSync9(p, "utf8");
+      } catch {
+        continue;
+      }
+      if (!text.includes(".tgz")) continue;
+      for (const w of wanted) {
+        if (!text.includes(`/-/${w.base}-`)) continue;
+        for (const line of text.split("\n")) {
+          const m = /"key":"[^"]*?(https:\/\/[^"]+\/-\/([^"/]+)-(\d[^"/]*)\.tgz)"/.exec(line);
+          if (!m || m[2] !== w.base) continue;
+          const url = decodeURIComponent(m[1]);
+          if (!url.includes(`/${w.name}/-/`) && !url.includes(`/${w.name.replace("/", "%2f")}/-/`)) continue;
+          const version = m[3];
+          if (w.versions?.length && !w.versions.some((v) => v.replace(/^v/, "") === version)) continue;
+          const time = /"time":(\d+)/.exec(line)?.[1];
+          const at = time ? new Date(Number(time)).toISOString() : void 0;
+          out2.push({
+            surface: "host",
+            severity: "exposed",
+            subject: "~/.npm/_cacache",
+            title: `npm downloaded ${w.name}@${version}${at ? ` on ${at.slice(0, 16).replace("T", " ")}` : ""}, named by the campaign: its install scripts likely ran on this machine`,
+            at,
+            campaign: w.campaign,
+            source: w.source,
+            indicator: { type: "package", value: w.value },
+            evidence: { kind: "file", ref: p, excerpt: url },
+            key: `host|npm-cache|${w.name}|${version}`
+          });
+        }
+      }
+    }
+  }
+  return out2;
+}
+var readdirOr = (d) => {
+  try {
+    return readdirSync6(d);
+  } catch {
+    return [];
+  }
+};
+function packageStoreHits(home, pkgs) {
+  if (!pkgs.length) return [];
+  const out2 = [];
+  const seen = /* @__PURE__ */ new Set();
+  const report2 = (tool, p, name, version) => {
+    for (const w of pkgs) {
+      if (w.name.toLowerCase() !== name.toLowerCase()) continue;
+      if (w.versions?.length && !w.versions.some((v) => v.replace(/^v/, "") === version)) continue;
+      const key = `host|${tool}|${name}|${version}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      let at;
+      try {
+        at = statSync7(p).mtime.toISOString();
+      } catch {
+      }
+      out2.push({
+        surface: "host",
+        severity: "exposed",
+        subject: p,
+        title: `${tool} fetched ${name}@${version}${at ? ` (${at.slice(0, 16).replace("T", " ")})` : ""}, named by the campaign: its install scripts likely ran on this machine`,
+        at,
+        campaign: w.campaign,
+        source: w.source,
+        indicator: { type: "package", value: w.value },
+        evidence: { kind: "file", ref: p },
+        key
+      });
+    }
+  };
+  for (const root of [join5(home, "Library/pnpm/store"), join5(home, ".local/share/pnpm/store"), join5(home, ".pnpm-store")])
+    for (const v of readdirOr(root).filter((x) => /^v\d+$/.test(x))) {
+      const index = join5(root, v, "index");
+      for (const sub of readdirOr(index))
+        for (const f of readdirOr(join5(index, sub))) {
+          const m = /^[0-9a-f]+-(.+)@([^@]+)\.json$/.exec(f);
+          if (m) report2("pnpm", join5(index, sub, f), m[1].replace(/^(@[^+]+)\+/, "$1/"), m[2]);
+        }
+    }
+  const bun = join5(home, ".bun/install/cache");
+  for (const e of readdirOr(bun)) {
+    const entries = e.startsWith("@") ? readdirOr(join5(bun, e)).map((x) => [join5(bun, e, x), `${e}/${x}`]) : [[join5(bun, e), e]];
+    for (const [p, n] of entries) {
+      const m = /^(@[^/]+\/[^@]+|[^@]+)@(\d[^@]*)(@@@\d+)?$/.exec(n);
+      if (m) report2("bun", p, m[1], m[2]);
+    }
+  }
+  return out2;
+}
+function sitePackages(home, clones, system) {
+  const out2 = [];
+  const pythons = (lib) => readdirOr(lib).filter((x) => /^python\d/.test(x)).map((x) => join5(lib, x, "site-packages"));
+  for (const c of clones) for (const v of [".venv", "venv"]) out2.push(...pythons(join5(c, v, "lib")));
+  for (const tools of [join5(home, ".local/share/uv/tools"), join5(home, ".local/pipx/venvs"), join5(home, ".local/share/pipx/venvs")])
+    for (const t of readdirOr(tools)) out2.push(...pythons(join5(tools, t, "lib")));
+  for (const v of readdirOr(join5(home, ".pyenv/versions"))) out2.push(...pythons(join5(home, ".pyenv/versions", v, "lib")));
+  if (system) out2.push(...pythons("/opt/homebrew/lib"), ...pythons("/usr/local/lib"));
+  out2.push(...pythons(join5(home, ".local/lib")));
+  for (const v of readdirOr(join5(home, "Library/Python"))) out2.push(join5(home, "Library/Python", v, "lib/python/site-packages"));
+  return out2.filter((d) => existsSync8(d));
+}
+function benignPth(name, text) {
+  const t = text.trim();
+  if (name === "_virtualenv.pth") return t === "import _virtualenv";
+  if (name === "distutils-precedence.pth") return t.length < 300 && t.includes("_distutils_hack");
+  if (/-nspkg\.pth$/.test(name)) return /importlib\.util|module_from_spec|types\.ModuleType/.test(t) && !/base64|exec\(|eval\(/.test(t);
+  if (/^pytest-cov.*\.pth$|^init_cov_core\.pth$/.test(name)) return t.includes("COV_CORE_SOURCE");
+  return /^__editable__.*\.pth$/.test(name) && !/base64|b64decode|urllib|socket|subprocess/.test(t);
+}
+function pthFindings(home, clones, files, hashes, system = true) {
+  const out2 = [];
+  for (const dir of sitePackages(home, clones, system))
+    for (const n of readdirOr(dir).filter((x) => x.endsWith(".pth"))) {
+      const p = join5(dir, n);
+      let text;
+      try {
+        if (statSync7(p).size > 1024 * 1024) continue;
+        text = readFileSync9(p, "utf8");
+      } catch {
+        continue;
+      }
+      const ioc = files.find((x) => x.test(p)) ?? hashes.get(createHash3("sha256").update(text).digest("hex"));
+      if (ioc) {
+        out2.push({
+          surface: "host",
+          severity: "compromised",
+          subject: p,
+          title: `Python startup file ${p} matches "${ioc.indicator.value}": it runs at every Python start`,
+          campaign: ioc.campaign.id,
+          source: ioc.indicator.source,
+          indicator: { type: ioc.indicator.type, value: ioc.indicator.value },
+          evidence: { kind: "file", ref: p },
+          key: `host|pth|${p}|${ioc.indicator.value}`
+        });
+        continue;
+      }
+      if (benignPth(n, text)) continue;
+      const line = text.split("\n").find((l) => /^import[ \t]/.test(l) && (/base64|b64decode|exec\(|eval\(|compile\(|subprocess|urllib|socket|os\.system/.test(l) || l.length > 1e3));
+      if (line)
+        out2.push({
+          surface: "host",
+          severity: "suspicious",
+          subject: p,
+          title: `Python startup file ${n} in ${dir} runs code at every Python start (decodes, executes or connects)`,
+          evidence: { kind: "file", ref: p, excerpt: line.slice(0, 200) },
+          key: `host|pth|${p}`
+        });
+    }
+  return out2;
+}
+function chromiumRoots(home, os) {
+  const mac = [
+    ["Chrome", "Google/Chrome"],
+    ["Brave", "BraveSoftware/Brave-Browser"],
+    ["Edge", "Microsoft Edge"],
+    ["Arc", "Arc/User Data"],
+    ["Chromium", "Chromium"],
+    ["Vivaldi", "Vivaldi"]
+  ];
+  const linux = [
+    ["Chrome", "google-chrome"],
+    ["Brave", "BraveSoftware/Brave-Browser"],
+    ["Edge", "microsoft-edge"],
+    ["Chromium", "chromium"],
+    ["Vivaldi", "vivaldi"]
+  ];
+  return os === "darwin" ? mac.map(([browser, d]) => ({ browser, dir: join5(home, "Library/Application Support", d) })) : linux.map(([browser, d]) => ({ browser, dir: join5(home, ".config", d) }));
+}
+function browserExtensions(home, os) {
+  const out2 = [];
+  for (const { browser, dir } of chromiumRoots(home, os))
+    for (const profile of readdirOr(dir).filter((x) => x === "Default" || /^Profile \d+$/.test(x))) {
+      const ext = join5(dir, profile, "Extensions");
+      for (const id of readdirOr(ext).filter((x) => /^[a-p]{32}$/.test(x)))
+        for (const v of readdirOr(join5(ext, id))) {
+          const path = join5(ext, id, v);
+          let installedMs;
+          try {
+            const st = statSync7(path);
+            if (!st.isDirectory()) continue;
+            installedMs = st.birthtimeMs || void 0;
+          } catch {
+            continue;
+          }
+          out2.push({ browser, profile, id, version: v.replace(/_\d+$/, ""), path, installedMs });
+        }
+    }
+  const ff = os === "darwin" ? join5(home, "Library/Application Support/Firefox/Profiles") : join5(home, ".mozilla/firefox");
+  for (const profile of readdirOr(ff)) {
+    const p = join5(ff, profile, "extensions.json");
+    const text = readSmall(p) ?? (existsSync8(p) ? readBig(p) : void 0);
+    if (!text) continue;
+    try {
+      for (const a of JSON.parse(text).addons ?? [])
+        if (a.id && a.version && a.location !== "app-builtin" && a.location !== "app-system-defaults")
+          out2.push({ browser: "Firefox", profile, id: a.id, version: a.version, path: p, installedMs: a.installDate });
+    } catch {
+    }
+  }
+  return out2;
+}
+function readBig(p) {
+  try {
+    return statSync7(p).size <= 16 * 1024 * 1024 ? readFileSync9(p, "utf8") : void 0;
+  } catch {
+    return void 0;
+  }
+}
+var INTERPRETERS = /^(sh|bash|zsh|dash|ksh|fish|python[\d.]*|node|perl|ruby|osascript|deno|bun)$/;
+var isFile = (p) => {
+  try {
+    return statSync7(p).isFile();
+  } catch {
+    return false;
+  }
+};
+function isShebang(p) {
+  try {
+    const fd = openSync2(p, "r");
+    try {
+      const b = Buffer.alloc(2);
+      return readSync(fd, b, 0, 2, 0) === 2 && b.toString() === "#!";
+    } finally {
+      closeSync2(fd);
+    }
+  } catch {
+    return false;
+  }
+}
+function interpretedScript(command2, executable, home, args) {
+  const parts = args?.length ? args : command2.split(/\s+/).filter(Boolean);
+  const exePath = pathToken(executable ?? parts[0] ?? "", home);
+  let script;
+  if (INTERPRETERS.test(basename3(exePath))) {
+    const cands = parts.slice(1).flatMap((a) => [a, ...a.split(/\s+/)]);
+    script = cands.map((t) => pathToken(t, home)).find((t) => t.startsWith("/") && isFile(t));
+  } else if (exePath.startsWith("/") && isFile(exePath) && isShebang(exePath)) script = exePath;
+  if (!script) return { signals: [] };
+  let text = "";
+  try {
+    if (statSync7(script).size <= 256 * 1024) text = readFileSync9(script, "utf8");
+  } catch {
+  }
+  const signals = new Set(script === exePath ? [] : riskSignals("", script, home).map((s) => `its script ${s}`));
+  for (const l of text.split("\n").slice(0, 5e3))
+    if (l.trim() && !/^\s*#/.test(l)) for (const s of riskSignals(l, void 0, home)) signals.add(`its script ${basename3(script)} ${s}`);
+  return { script, text, signals: [...signals] };
+}
+var GIT_HOOKS = /* @__PURE__ */ new Set([
+  "applypatch-msg",
+  "pre-applypatch",
+  "post-applypatch",
+  "pre-commit",
+  "pre-merge-commit",
+  "prepare-commit-msg",
+  "commit-msg",
+  "post-commit",
+  "pre-rebase",
+  "post-checkout",
+  "post-merge",
+  "pre-push",
+  "pre-receive",
+  "update",
+  "proc-receive",
+  "post-receive",
+  "post-update",
+  "reference-transaction",
+  "push-to-checkout",
+  "pre-auto-gc",
+  "post-rewrite",
+  "sendemail-validate",
+  "fsmonitor-watchman",
+  "p4-changelist",
+  "p4-prepare-changelist",
+  "p4-post-changelist",
+  "p4-pre-submit",
+  "post-index-change"
+]);
+var MANAGED_HOOK = /husky\.sh|\.husky\/_\/h\b|^\s*git lfs (pre-push|post-checkout|post-commit|post-merge)\b|lefthook\b.*\b(run|install)\b|pre-commit.*hook-impl|^\s*INSTALL_PYTHON=|simple-git-hooks|overcommit|yorkie|lint-staged/m;
+function hookDirs(repo, home) {
+  const dirs = [join5(repo, ".git/hooks")];
+  const hp = readGitConfig(join5(repo, ".git/config"), home, 1).find((e) => e.section === "core" && e.key === "hookspath")?.value;
+  if (hp) {
+    const d = hp.replace(/^~(?=\/)/, home);
+    dirs.push(d.startsWith("/") ? d : join5(repo, d));
+  }
+  dirs.push(join5(repo, ".husky"));
+  return [...new Set(dirs)];
+}
+function gitHookFindings(clones, home, reviewSinceMs, content = [], nowMs = Date.now()) {
+  const out2 = [];
+  const seen = /* @__PURE__ */ new Set();
+  const globalHp = globalGitConfig(home).find((e) => e.section === "core" && e.key === "hookspath")?.value;
+  const groups = clones.map((repo) => ({ owner: repo, dirs: hookDirs(repo, home) }));
+  if (globalHp) groups.push({ owner: "every repository (global core.hooksPath)", dirs: [globalHp.replace(/^~(?=\/)/, home)] });
+  for (const { owner, dirs } of groups)
+    for (const dir of dirs) {
+      let names = [];
+      try {
+        names = readdirSync6(dir);
+      } catch {
+        continue;
+      }
+      for (const n of names) {
+        if (!GIT_HOOKS.has(n)) continue;
+        const p = join5(dir, n);
+        if (seen.has(p)) continue;
+        seen.add(p);
+        let st;
+        let text = "";
+        try {
+          st = statSync7(p);
+          if (!st.isFile()) continue;
+          if (st.size <= 256 * 1024) text = readFileSync9(p, "utf8");
+        } catch {
+          continue;
+        }
+        const at = new Date(changedMs(st, nowMs)).toISOString();
+        const ioc = content.find((x) => x.test(text));
+        if (ioc) {
+          out2.push({
+            surface: "host",
+            severity: "compromised",
+            subject: p,
+            title: `Git hook ${n} in ${owner} contains "${ioc.indicator.value}"`,
+            at,
+            campaign: ioc.campaign.id,
+            source: ioc.indicator.source,
+            indicator: { type: ioc.indicator.type, value: ioc.indicator.value },
+            evidence: { kind: "file", ref: p },
+            key: `host|git-hook|${p}|${ioc.indicator.type}:${ioc.indicator.value}`
+          });
+          continue;
+        }
+        const signals = /* @__PURE__ */ new Set();
+        for (const l of text.split("\n").slice(0, 5e3)) if (l.trim() && !/^\s*#/.test(l)) for (const s of riskSignals(l, void 0, home)) signals.add(s);
+        const managed = MANAGED_HOOK.test(text) || /(^|\/)\.husky(\/_)?$/.test(dir);
+        const recent = changedMs(st, nowMs) >= reviewSinceMs;
+        if (!signals.size && (managed || !recent)) continue;
+        out2.push({
+          surface: "host",
+          severity: "suspicious",
+          subject: p,
+          title: `Git hook ${n} in ${owner}${signals.size ? ` ${[...signals].join("; ")}` : ` was written recently${backdated(st, nowMs)} and is not from a known hook manager`}: it runs on every ${n.replace(/^(pre|post)-/, "")}`,
+          at,
+          evidence: { kind: "file", ref: p },
+          key: `host|git-hook|${p}`
+        });
+      }
+    }
+  return out2;
+}
+
+// src/scan/antivirus.ts
 var MAX_TARGETS = 5e3;
+var MAX_FOLDER_ENTRIES = 5e4;
 function parseClamVersion(line, now = /* @__PURE__ */ new Date()) {
   const m = /ClamAV\s+([\d.]+)(?:\/(\d+)\/(.+))?/.exec(line.trim());
   if (!m) return void 0;
@@ -10363,55 +11463,98 @@ async function detectAv(runner2, now = /* @__PURE__ */ new Date()) {
   const parsed = parseClamVersion(v.stdout, now);
   return parsed ? { name, ...parsed } : void 0;
 }
-function recentFiles(dir, sinceMs, cap, depth = 3) {
-  const out2 = [];
+function recentFiles(dir, sinceMs, cap, depth = 3, nowMs = Date.now()) {
+  const files = [];
+  let capped = false;
+  let deeper = 0;
+  let entries = 0;
+  let stopped = false;
   const walk2 = (d, left) => {
     let names = [];
     try {
-      names = readdirSync6(d);
+      names = readdirSync7(d);
     } catch {
       return;
     }
     for (const n of names) {
-      if (out2.length >= cap) return;
-      const p = join5(d, n);
+      if (files.length >= cap) {
+        capped = true;
+        return;
+      }
+      if (++entries > MAX_FOLDER_ENTRIES) {
+        stopped = true;
+        return;
+      }
+      const p = join6(d, n);
       try {
-        const st = statSync7(p);
+        const st = statSync8(p);
         if (st.isDirectory()) {
-          if (left > 0 && n !== "node_modules" && n !== ".git") walk2(p, left - 1);
-        } else if (st.isFile() && st.mtimeMs >= sinceMs) out2.push(p);
+          if (n === "node_modules" || n === ".git") continue;
+          if (left > 0) walk2(p, left - 1);
+          else deeper++;
+        } else if (st.isFile() && changedMs(st, nowMs) >= sinceMs) files.push(p);
       } catch {
       }
     }
   };
   walk2(dir, depth);
-  return out2;
+  return { files, capped, deeper, entries, stopped };
 }
-function avTargets(home, inventory, flagged2, sinceMs) {
-  const set = /* @__PURE__ */ new Set();
+var realOf = (p) => {
+  try {
+    return realpathSync2(p);
+  } catch {
+    return p;
+  }
+};
+function excludedBy(dirs) {
+  const roots = [...new Set(dirs.filter(Boolean).flatMap((d) => [d, realOf(d)].map((x) => x.replace(/\/+$/, ""))))];
+  const under = (p) => roots.some((d) => p === d || p.startsWith(`${d}/`));
+  return (p) => roots.length > 0 && (under(p) || under(realOf(p)));
+}
+function dropFolders(home) {
+  return [join6(home, "Downloads"), tmpdir(), "/tmp", "/var/tmp", "/Users/Shared", "/dev/shm"];
+}
+function avTargetList(home, inventory, flagged2, sinceMs, opts = {}) {
+  const out2 = [];
+  const real = /* @__PURE__ */ new Set();
+  const skip = excludedBy(opts.exclude ?? []);
+  const truncated = [];
   const add2 = (p) => {
-    if (p?.startsWith("/") && set.size < MAX_TARGETS) set.add(p);
+    if (!p?.startsWith("/") || out2.length >= MAX_TARGETS) return;
+    let r;
+    try {
+      statSync8(p);
+      r = realpathSync2(p);
+    } catch {
+      return;
+    }
+    if (real.has(r) || skip(p)) return;
+    real.add(r);
+    out2.push(p);
   };
   for (const s of inventory.startupItems) {
     add2(s.path);
     if (s.exists) add2(s.executable);
+    add2(s.script);
   }
   for (const p of flagged2) add2(p);
   for (const e of inventory.recentExtensions) add2(e.path);
-  for (const dir of ["/tmp", "/private/tmp", "/var/tmp", "/Users/Shared", "/dev/shm", join5(home, "Downloads")])
-    for (const p of recentFiles(dir, sinceMs, 2e3)) add2(p);
-  const real = /* @__PURE__ */ new Set();
-  return [...set].filter((p) => {
-    try {
-      statSync7(p);
-      const r = realpathSync2(p);
-      if (real.has(r)) return false;
-      real.add(r);
-      return true;
-    } catch {
-      return false;
-    }
-  });
+  const seenDirs = /* @__PURE__ */ new Set();
+  for (const dir of opts.folders ?? dropFolders(home)) {
+    const rd = realOf(dir);
+    if (seenDirs.has(rd)) continue;
+    seenDirs.add(rd);
+    const r = recentFiles(dir, sinceMs, 2e3, 3, opts.nowMs);
+    const before = out2.length;
+    for (const p of r.files) add2(p);
+    const dropped = r.files.length - (out2.length - before);
+    if (r.capped) truncated.push(`recent files in ${dir} past the first 2000`);
+    else if (r.stopped) truncated.push(`entries in ${dir} past the first ${MAX_FOLDER_ENTRIES}`);
+    else if (dropped > 0 && out2.length >= MAX_TARGETS) truncated.push(`${dropped} recent file(s) in ${dir} past the ${MAX_TARGETS}-target cap`);
+    if (r.deeper) truncated.push(`${r.deeper} folder(s) in ${dir} deeper than 3 levels`);
+  }
+  return { targets: out2, truncated };
 }
 function readableTargets(targets) {
   const readable = [];
@@ -10456,7 +11599,9 @@ async function antivirusPass(runner2, opts) {
       why: `ClamAV's signatures are ${engine.ageDays} days old`,
       fix: "ultraguard rules update (runs freshclam), then re-run scan host"
     });
-  const { readable: targets, unreadable } = readableTargets(opts.full ?? avTargets(opts.home, opts.inventory, opts.flagged, opts.sinceMs));
+  const list0 = opts.full ? { targets: opts.full, truncated: [] } : opts.targets ?? avTargetList(opts.home, opts.inventory, opts.flagged, opts.sinceMs, { exclude: opts.exclude, folders: opts.folders });
+  const { readable: targets, unreadable } = readableTargets(list0.targets);
+  const skip = excludedBy(opts.exclude ?? []);
   stats.avTargets = targets.length;
   if (unreadable.length)
     gaps.push({
@@ -10467,15 +11612,44 @@ async function antivirusPass(runner2, opts) {
     });
   if (!targets.length) return { findings, gaps, stats, engine };
   const { listed, odd } = splitTargets(targets);
-  const list = join5(opts.listDir, "av-targets.txt");
+  const list = join6(opts.listDir, "av-targets.txt");
   writeFileAtomic(list, `${listed.join("\n")}
 `);
   const args = ["--infected", "--no-summary", `--file-list=${list}`];
-  if (engine.name === "clamscan") args.push("--recursive", "--stdout", "--max-filesize=100M", "--max-scansize=400M", "--detect-pua=yes");
+  if (engine.name === "clamscan")
+    args.push(
+      "--recursive",
+      "--stdout",
+      ...opts.full ? ["--max-filesize=100M", "--max-scansize=400M"] : ["--max-filesize=2000M", "--max-scansize=4000M"],
+      "--alert-exceeds-max=yes",
+      "--detect-pua=yes"
+    );
   else args.push("--fdpass", "--multiscan");
   args.push(...odd);
   const res = await runner2(engine.name, args, { timeoutMs: opts.full ? 3 * 60 * 6e4 : 20 * 6e4 });
-  const hits = parseClamOutput(res.stdout);
+  const out2 = `${res.stdout}
+${res.stderr}`;
+  const engineDown = /cli_loaddbdir|No supported database files|Could not connect to clamd|^ERROR: Can't open file or directory\s*$/im.exec(out2);
+  const all = parseClamOutput(res.stdout).filter((h) => !skip(h.path));
+  if (engineDown && !all.length) {
+    stats.avTargets = 0;
+    gaps.push({
+      surface: "host",
+      what: "the antivirus pass did not run",
+      why: `${engine.name}: ${engineDown[0].trim().slice(0, 160)}`,
+      fix: "ultraguard rules update (downloads ClamAV's signatures), then re-run scan host"
+    });
+    return { findings, gaps, stats, engine };
+  }
+  const tooBig = all.filter((h) => /^Heuristics\.Limits\.Exceeded/.test(h.signature));
+  const hits = all.filter((h) => !/^Heuristics\.Limits\.Exceeded/.test(h.signature));
+  if (tooBig.length)
+    gaps.push({
+      surface: "host",
+      what: `${tooBig.length} file(s) over ClamAV's size limits: ${tooBig.slice(0, 3).map((h) => h.path).join(", ")}${tooBig.length > 3 ? ", ..." : ""}`,
+      why: "clamscan reads files up to its size limits only",
+      fix: `clamscan --max-filesize=4000M --max-scansize=4000M ${tooBig.slice(0, 3).map((h) => JSON.stringify(h.path)).join(" ")}`
+    });
   for (const h of hits) {
     const pua = /^PUA\./i.test(h.signature);
     findings.push({
@@ -10492,20 +11666,26 @@ async function antivirusPass(runner2, opts) {
     });
   }
   stats.avDetections = hits.length;
-  const errors = `${res.stdout}
-${res.stderr}`.split("\n").filter((l) => /ERROR|Can't open|Access denied|Permission denied|Not supported/i.test(l) && !/Warning/i.test(l) && !/ FOUND$/.test(l));
+  const errors = out2.split("\n").filter((l) => /ERROR|Can't open|Access denied|Permission denied|Not supported/i.test(l) && !/Warning/i.test(l) && !/ FOUND$/.test(l));
   if (errors.length || !res.ok && res.status !== 1 && !hits.length && !/Warning/i.test(res.stderr))
     gaps.push({
       surface: "host",
       what: `${errors.length || "some"} antivirus target(s)`,
       why: `${engine.name} could not read them: ${(errors[0] ?? res.stderr.trim().split("\n")[0] ?? "").slice(0, 160) || `it exited with status ${res.status} without naming the file`}`
     });
-  if (res.status !== 0 && res.status !== 1 && res.status !== 2)
+  if (res.status !== 0 && res.status !== 1 && res.status !== 2 || res.status === 1 && !all.length)
     gaps.push({
       surface: "host",
       what: "part of the antivirus pass",
       why: `${engine.name} did not finish (exit ${res.status}): files after the stop were not scanned`,
       fix: "re-run scan host, or narrow --roots"
+    });
+  if (list0.truncated.length)
+    gaps.push({
+      surface: "host",
+      what: `antivirus targets left out: ${list0.truncated.slice(0, 6).join("; ")}${list0.truncated.length > 6 ? "; ..." : ""}`,
+      why: "the targeted list is bounded",
+      fix: "scan host --av-full, or --roots <folder> --av-full"
     });
   if (!opts.full)
     gaps.push({
@@ -10518,9 +11698,9 @@ ${res.stderr}`.split("\n").filter((l) => /ERROR|Can't open|Access denied|Permiss
 }
 function yaraRuleFiles(path) {
   try {
-    const st = statSync7(path);
+    const st = statSync8(path);
     if (st.isFile()) return [path];
-    return readdirSync6(path).filter((f) => /\.(yar|yara)$/i.test(f)).sort().slice(0, 500).map((f) => join5(path, f));
+    return readdirSync7(path).filter((f) => /\.(yar|yara)$/i.test(f)).sort().slice(0, 500).map((f) => join6(path, f));
   } catch {
     return [];
   }
@@ -10559,10 +11739,10 @@ async function yaraPass(runner2, opts) {
     return { findings, gaps, stats: {} };
   }
   const { listed, odd } = splitTargets(opts.targets);
-  const list = join5(opts.listDir, opts.community ? "yara-community-targets.txt" : "yara-targets.txt");
+  const list = join6(opts.listDir, opts.community ? "yara-community-targets.txt" : "yara-targets.txt");
   writeFileAtomic(list, `${listed.join("\n")}
 `);
-  const base2 = ["--no-warnings", "--print-meta", ...opts.recursive ? ["--recursive"] : [], ...opts.compiled ? ["-C"] : []];
+  const base2 = ["--no-warnings", "--print-meta", "--recursive", ...opts.compiled ? ["-C"] : []];
   const timeoutMs = opts.recursive ? 3 * 60 * 6e4 : 30 * 6e4;
   const res = await runner2("yara", [...base2, "--scan-list", ...files, list], { timeoutMs });
   if (res.missing) {
@@ -10585,8 +11765,16 @@ ${one.stderr}`;
     return { findings, gaps, stats: { yaraRules: files.length } };
   }
   if (unreadable) gaps.push({ surface: "host", what: `${unreadable} ${label} target(s)`, why: "yara could not open them (permissions, or the file vanished)" });
+  if (!res.ok)
+    gaps.push({
+      surface: "host",
+      what: `part of the ${label} pass`,
+      why: `yara did not finish (exit ${res.status}): ${(fatal ?? stderr.trim().split("\n")[0] ?? "").slice(0, 160) || "no message"}`,
+      fix: "re-run scan host, or narrow --roots"
+    });
   const ruleSet = new Set(files);
-  for (const h of parseYaraOutput(stdout).filter((x) => !ruleSet.has(x.path))) {
+  const skip = excludedBy(opts.exclude ?? []);
+  for (const h of parseYaraOutput(stdout).filter((x) => !ruleSet.has(x.path) && !skip(x.path))) {
     const weak = opts.community && (h.score ?? 0) < COMMUNITY_SCORE;
     findings.push({
       surface: "host",
@@ -10613,44 +11801,79 @@ ${one.stderr}`;
 }
 
 // src/scan/gh.ts
+var isRateLimit = (s) => /rate limit/i.test(s ?? "");
+var sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
 var Gh = class {
-  constructor(run, timeoutMs = 6e4) {
+  constructor(run, timeoutMs = 6e4, sleep2 = sleepMs) {
     this.run = run;
     this.timeoutMs = timeoutMs;
+    this.sleep = sleep2;
   }
   run;
   timeoutMs;
+  sleep;
   calls = 0;
   /** Calls the rate limit refused: every one is something not looked at. */
   rateLimited = 0;
+  /** The same, counting only the hourly REST budget (not the per-minute search budget). */
+  coreRateLimited = 0;
   /**
    * Every failed call except "not found" (no such file or list) and "empty
    * repository": a 403 or a 500 is something not looked at, never a clean answer.
    */
   failures = [];
+  /** Every call and whether it got an answer (a 404 is an answer: "there is none"). */
+  log = [];
   /** Lists cut by the page cap: their oldest items were not read. */
   truncated = [];
-  async api(path, extra = []) {
+  async request(path, extra, retried = false) {
     this.calls++;
     const res = await this.run("gh", ["api", ...extra, path], { timeoutMs: this.timeoutMs });
-    if (res.missing) return { ok: false, status: 0, error: "gh is not installed" };
+    if (res.missing) {
+      this.log.push({ path, answered: false });
+      return { ok: false, status: 0, error: "gh is not installed" };
+    }
     if (!res.ok) {
-      if (/rate limit/i.test(res.stderr) || /rate limit/i.test(res.stdout)) this.rateLimited++;
-      const m = /HTTP (\d{3})/.exec(res.stderr) ?? /"status":\s*"?(\d{3})/.exec(res.stdout);
+      const limited = isRateLimit(res.stderr) || isRateLimit(res.stdout);
+      if (limited && !retried && path.startsWith("search/")) {
+        await this.sleep(3e4);
+        return this.request(path, extra, true);
+      }
+      if (limited) {
+        this.rateLimited++;
+        if (!path.startsWith("search/")) this.coreRateLimited++;
+      }
+      const m = /HTTP (\d{3})/.exec(res.stderr) ?? /"status":\s*"?(\d{3})/.exec(res.stdout) ?? /^HTTP\/[\d.]+ (\d{3})/.exec(res.stdout);
       const status = m ? Number(m[1]) : 0;
       const error = (res.stderr || res.stdout).trim().split("\n")[0];
-      if (status !== 404 && status !== 409) this.failures.push({ path, status, error });
+      const answered3 = status === 404 || status === 409;
+      if (!answered3) this.failures.push({ path, status, error });
+      this.log.push({ path, answered: answered3 });
       return { ok: false, status, error };
     }
+    return { ok: true, status: 200, data: res.stdout };
+  }
+  parse(path, body) {
     try {
-      return { ok: true, status: 200, data: JSON.parse(res.stdout) };
+      const data = JSON.parse(body);
+      this.log.push({ path, answered: true });
+      return { ok: true, status: 200, data };
     } catch {
-      return { ok: false, status: 0, error: "gh returned non-JSON output" };
+      const error = "gh returned non-JSON output";
+      this.failures.push({ path, status: 0, error });
+      this.log.push({ path, answered: false });
+      return { ok: false, status: 0, error };
     }
+  }
+  async api(path, extra = []) {
+    const res = await this.request(path, extra);
+    if (!res.ok) return { ok: false, status: res.status, error: res.error };
+    return this.parse(path, res.data ?? "");
   }
   /**
    * Every page of a list endpoint, up to `maxPages`. `pick` extracts the list
-   * from an envelope (`workflow_runs`, `items`). `truncated` says the cap cut it.
+   * from an envelope (`workflow_runs`, `items`). `truncated` says the cap cut it,
+   * `partial` that a later page failed after the first ones were read.
    */
   async paged(path, opts = {}) {
     const all = [];
@@ -10658,11 +11881,47 @@ var Gh = class {
     for (let page = 1; page <= max; page++) {
       const sep3 = path.includes("?") ? "&" : "?";
       const res = await this.api(`${path}${sep3}per_page=100&page=${page}`);
-      if (!res.ok) return page === 1 ? { ok: false, status: res.status, error: res.error } : { ok: true, status: 200, data: all, truncated: true };
+      if (!res.ok) {
+        if (page === 1) return { ok: false, status: res.status, error: res.error };
+        return { ok: true, status: 200, data: all, truncated: true, partial: { page, error: res.error, rateLimited: isRateLimit(res.error) } };
+      }
       const list = opts.pick ? opts.pick(res.data) : res.data;
       all.push(...list);
       if (list.length < 100 || opts.stop?.(list)) return { ok: true, status: 200, data: all };
     }
+    this.truncated.push(path);
+    return { ok: true, status: 200, data: all, truncated: true };
+  }
+  /**
+   * A cursor-paginated list (the repository activity log ignores `page=`): follow
+   * the `rel="next"` URL of the Link header, up to `maxPages`.
+   */
+  async cursor(path, opts = {}) {
+    const all = [];
+    const max = opts.maxPages ?? 5;
+    let next = `${path}${path.includes("?") ? "&" : "?"}per_page=100`;
+    for (let page = 1; next && page <= max; page++) {
+      const res = await this.request(next, ["-i"]);
+      if (!res.ok) {
+        if (page === 1) return { ok: false, status: res.status, error: res.error };
+        return { ok: true, status: 200, data: all, truncated: true, partial: { page, error: res.error, rateLimited: isRateLimit(res.error) } };
+      }
+      const raw = res.data ?? "";
+      const cut = /\r?\n\r?\n/.exec(raw);
+      const head = cut ? raw.slice(0, cut.index) : "";
+      const body = cut ? raw.slice(cut.index + cut[0].length) : raw;
+      const parsed = this.parse(next, body);
+      if (!parsed.ok) {
+        if (page === 1) return { ok: false, status: 0, error: parsed.error };
+        return { ok: true, status: 200, data: all, truncated: true, partial: { page, error: parsed.error, rateLimited: false } };
+      }
+      const list = Array.isArray(parsed.data) ? parsed.data : [];
+      all.push(...list);
+      if (opts.stop?.(list)) return { ok: true, status: 200, data: all };
+      const link = /^link:(.*)$/im.exec(head)?.[1] ?? "";
+      next = /<([^>]+)>;\s*rel="next"/.exec(link)?.[1]?.replace(/^https?:\/\/[^/]+\/(api\/v3\/)?/, "");
+    }
+    if (!next) return { ok: true, status: 200, data: all };
     this.truncated.push(path);
     return { ok: true, status: 200, data: all, truncated: true };
   }
@@ -10720,6 +11979,21 @@ async function doctor(runner2, opts = {}) {
       fix: r.missing ? void 0 : ok ? void 0 : fix
     });
   }
+  const bash = await runner2("bash", ["-c", "echo $BASH_VERSINFO"], { timeoutMs: 1e4 });
+  const bashMajor = Number(bash.stdout.trim()) || 0;
+  out2.push({
+    check: "bash",
+    ok: !bash.missing && bashMajor >= 4,
+    detail: bash.missing ? "not installed (scan deps cannot run package-checker)" : `Bash ${bash.stdout.trim() || "?"}${bashMajor >= 4 ? "" : " (scan deps needs Bash 4 or newer for package-checker)"}`,
+    fix: !bash.missing && bashMajor >= 4 ? void 0 : process.platform === "darwin" ? "brew install bash" : "install Bash 4 or newer"
+  });
+  const curl = await runner2("curl", ["--version"], { timeoutMs: 1e4 });
+  out2.push({
+    check: "curl",
+    ok: !curl.missing,
+    detail: curl.missing ? "not installed (scan deps cannot download the advisory feeds)" : "available",
+    fix: curl.missing ? "install curl" : void 0
+  });
   const av = await detectAv(runner2);
   out2.push({
     check: "clamav",
@@ -10745,22 +12019,16 @@ async function doctor(runner2, opts = {}) {
     });
   }
   if (opts.probe) {
-    try {
-      const res = await httpJson(
-        "POST",
-        "https://api.osv.dev/v1/query",
-        { package: { ecosystem: "npm", name: "left-pad" }, version: "1.3.0" },
-        { timeoutMs: 2e4 }
-      );
-      out2.push({
-        check: "osv.dev",
-        ok: res.ok,
-        detail: res.ok ? "reachable" : res.error ?? `HTTP ${res.status}`,
-        fix: res.ok ? void 0 : "check the network; scan deps --no-osv works offline"
-      });
-    } catch (e) {
-      out2.push({ check: "osv.dev", ok: false, detail: e.message, fix: "check the network; scan deps --no-osv works offline" });
-    }
+    const url = "https://raw.githubusercontent.com/maxgfr/package-checker.sh/refs/heads/main/data/osv.purl";
+    const r = await runner2("curl", ["--head", "--silent", "--fail", "--connect-timeout", "10", "--max-time", "30", "--output", "/dev/null", url], {
+      timeoutMs: 4e4
+    });
+    out2.push({
+      check: "advisory feeds",
+      ok: r.ok,
+      detail: r.ok ? "raw.githubusercontent.com reachable (OSV and GHSA feeds for scan deps)" : r.missing ? "curl is not installed" : `raw.githubusercontent.com unreachable (curl exit ${r.status})`,
+      fix: r.ok ? void 0 : "check the network; scan deps --no-osv works offline"
+    });
   }
   return out2;
 }
@@ -10770,11 +12038,11 @@ function formatDoctor(lines) {
 }
 
 // src/intel.ts
-import { mkdirSync as mkdirSync3, readFileSync as readFileSync9 } from "fs";
+import { mkdirSync as mkdirSync3, readFileSync as readFileSync10 } from "fs";
 
 // src/ioc.ts
 var ISO_DATE = /^\d{4}-\d{2}-\d{2}(T[\d:.]+(Z|[+-]\d{2}:?\d{2})?)?$/;
-function validateIocs(raw, sources) {
+function validateIocs(raw, sources, now = /* @__PURE__ */ new Date()) {
   const problems = [];
   const usable = new Set(sources.filter((s) => !s.error).map((s) => s.id));
   const push = (path, message) => problems.push({ path, message });
@@ -10783,6 +12051,7 @@ function validateIocs(raw, sources) {
     return { problems };
   }
   const campaigns = raw.campaigns;
+  if (campaigns.length === 0) push("$.campaigns", "at least one campaign");
   const ids = /* @__PURE__ */ new Set();
   for (const [ci, c] of campaigns.entries()) {
     const at = `campaigns[${ci}]`;
@@ -10796,8 +12065,12 @@ function validateIocs(raw, sources) {
     else if (ids.has(c.id)) push(`${at}.id`, `duplicate campaign id "${c.id}"`);
     else ids.add(c.id);
     if (!c.title) push(`${at}.title`, "required string");
-    if (!c.since || !ISO_DATE.test(c.since) || Number.isNaN(Date.parse(c.since))) push(`${at}.since`, "required ISO date (YYYY-MM-DD or full timestamp)");
-    if (c.until && (!ISO_DATE.test(c.until) || Number.isNaN(Date.parse(c.until)))) push(`${at}.until`, "must be an ISO date");
+    const since = typeof c.since === "string" && ISO_DATE.test(c.since) ? Date.parse(c.since) : Number.NaN;
+    if (Number.isNaN(since)) push(`${at}.since`, "required ISO date (YYYY-MM-DD or full timestamp)");
+    else if (since > now.getTime() + 864e5) push(`${at}.since`, `${c.since} is in the future: the campaign would match nothing`);
+    if (c.until && (typeof c.until !== "string" || !ISO_DATE.test(c.until) || Number.isNaN(Date.parse(c.until)))) push(`${at}.until`, "must be an ISO date");
+    else if (c.until && !Number.isNaN(since) && Date.parse(c.until) < since)
+      push(`${at}.until`, `${c.until} is before since (${c.since}): no date fits the window`);
     if (!Array.isArray(c.sources) || c.sources.length === 0) push(`${at}.sources`, "cite at least one [S#]");
     else for (const s of c.sources) if (!usable.has(s)) push(`${at}.sources`, `${s} is not a fetched source of this run`);
     if (!Array.isArray(c.indicators) || c.indicators.length === 0) push(`${at}.indicators`, "at least one indicator");
@@ -10810,26 +12083,54 @@ function validateIocs(raw, sources) {
   }
   return problems.length ? { problems } : { iocs: raw, problems };
 }
+var CANARIES = ["", "main", "Update README.md", "Merge pull request #1 from a/b"];
+var NOT_A_BRANCH = /[\s*?[\\^~:]/;
+var LOOKS_LIKE_REGEX = /^\^|[^\\]\$$|\[[^\]]*\w-\w[^\]]*\]|\{\d+(,\d*)?\}|\)[?*+]|\(\?[:=!]|\\[dwsb.]|\.[*+]/;
 function validateIndicator(ind, at, usable, push) {
   if (!ind || typeof ind !== "object") {
     push(at, "expected an object");
     return;
   }
   if (!INDICATOR_TYPES.includes(ind.type)) push(`${at}.type`, `one of ${INDICATOR_TYPES.join(", ")}`);
-  if (typeof ind.value !== "string" || ind.value.trim() === "") push(`${at}.value`, "required non-empty string");
   if (!ind.source) push(`${at}.source`, "cite the [S#] that states this indicator");
   else if (!usable.has(ind.source)) push(`${at}.source`, `${ind.source} is not a fetched source of this run`);
-  if (ind.regex) {
+  if (ind.weak !== void 0 && typeof ind.weak !== "boolean") push(`${at}.weak`, "true or false");
+  if (ind.regex !== void 0 && typeof ind.regex !== "boolean") push(`${at}.regex`, "true or false");
+  if (typeof ind.value !== "string" || ind.value.trim() === "") {
+    push(`${at}.value`, "required non-empty string");
+    return;
+  }
+  const value = stripInvisible(ind.value);
+  if (/^\s*TODO\b/i.test(value)) push(`${at}.value`, "still the template's placeholder: replace it with an indicator the source states");
+  if (ind.regex === true) {
+    let re;
     try {
-      new RegExp(ind.value);
+      re = new RegExp(value, "i");
     } catch (e) {
       push(`${at}.value`, `invalid regex: ${e.message}`);
     }
+    if (re && CANARIES.some((c) => re.test(c)))
+      push(`${at}.value`, "this regex matches ordinary text (an empty string, main, Update README.md): anchor it (^...$) and remove empty alternatives");
+  } else if (ind.regex === void 0) {
+    if (ind.type === "branch" && NOT_A_BRANCH.test(value))
+      push(`${at}.value`, 'not a valid branch name: it looks like a pattern, add "regex": true and anchor it (^...$)');
+    if ((ind.type === "pr_title" || ind.type === "commit_message" || ind.type === "actor") && LOOKS_LIKE_REGEX.test(value))
+      push(`${at}.value`, 'looks like a regular expression: add "regex": true and anchor it (^...$), or "regex": false to match it literally');
   }
-  if (ind.weak !== void 0 && typeof ind.weak !== "boolean") push(`${at}.weak`, "true or false");
-  if (ind.type === "package" && !ind.ecosystem) push(`${at}.ecosystem`, "required for a package indicator");
-  if (ind.type === "sha256" && !/^[a-f0-9]{64}$/i.test(ind.value)) push(`${at}.value`, "a sha256 is 64 hex characters");
-  if (ind.type === "ip" && !/^[\d.]+$|^[a-f0-9:]+$/i.test(defang(ind.value))) push(`${at}.value`, "an IPv4 or IPv6 address");
+  if (ind.type === "package") {
+    if (typeof ind.ecosystem !== "string" || !ind.ecosystem.trim()) push(`${at}.ecosystem`, "required for a package indicator");
+    if (/.@v?\d|==/.test(value)) push(`${at}.value`, 'the package name only: put the version in "versions": ["1.2.3"]');
+    if (ind.versions !== void 0) {
+      if (!Array.isArray(ind.versions) || ind.versions.some((v) => typeof v !== "string" || !v.trim()))
+        push(`${at}.versions`, 'a list of version strings, e.g. ["1.2.3"]');
+      else
+        for (const v of ind.versions)
+          if (!/^v?\d[\w.+-]*$/.test(stripInvisible(v).trim()))
+            push(`${at}.versions`, `"${v}" is not an exact version: list them one by one, e.g. ["0.1.0", "0.1.1"]; ranges and wildcards never match`);
+    }
+  }
+  if (ind.type === "sha256" && !/^[a-f0-9]{64}$/i.test(value.trim())) push(`${at}.value`, "a sha256 is 64 hex characters");
+  if (ind.type === "ip" && !/^[\d.]+$|^[a-f0-9:]+$/i.test(defang(value).trim())) push(`${at}.value`, "an IPv4 or IPv6 address");
 }
 function defang(s) {
   return s.replace(/\[\.\]|\(\.\)|\{\.\}|\[dot\]|\(dot\)|\{dot\}/gi, ".").replace(/\[:\/\/\]|\[:\]\/\//g, "://").replace(/\[:\]/g, ":").replace(/\[\/\]/g, "/").replace(/\bhxxp(s?)/gi, "http$1");
@@ -10843,37 +12144,48 @@ function globRegex(glob) {
   }
   return new RegExp(`^${re}$`, "i");
 }
+var ARMED = /* @__PURE__ */ new Set(["ip", "domain", "url"]);
 function compile(c, ind) {
-  const value = defang(ind.value);
+  const raw = stripInvisible(ind.value);
+  const value = ind.regex || !ARMED.has(ind.type) ? raw : defang(raw);
   let test;
   if (ind.regex) {
     const re = new RegExp(value, "i");
-    test = ind.type === "file" || ind.type === "workflow_file" ? (s) => re.test(s) || re.test(s.split("/").pop() ?? s) : (s) => re.test(s);
+    const one = (s) => re.test(s) || s !== s.trim() && re.test(s.trim());
+    test = ind.type === "file" || ind.type === "workflow_file" ? (s) => one(s) || one(s.split("/").pop() ?? s) : one;
   } else if (ind.type === "ip") {
-    const re = new RegExp(`(?<![\\d.])${escapeRegExp(value)}(?![\\d])`);
+    const re = new RegExp(`(?<![\\d.])${escapeRegExp(value.trim())}(?![\\d])`, "i");
     test = (s) => re.test(s);
   } else if (ind.type === "domain") {
-    const re = new RegExp(`(?<![a-z0-9-])${escapeRegExp(value)}(?![a-z0-9-])`, "i");
+    const host = value.trim().replace(/^[a-z][a-z0-9+.-]*:\/\//i, "").replace(/[/?#].*$/, "").replace(/^\*\./, "");
+    const re = new RegExp(`(?<![a-z0-9-])${escapeRegExp(host)}(?![a-z0-9-])`, "i");
     test = (s) => re.test(s);
   } else if (ind.type === "file" || ind.type === "workflow_file") {
-    const re = globRegex(value);
-    const hasSlash = value.includes("/");
+    const glob = value.trim().replace(/^(~|\$HOME|\$\{HOME\}|%USERPROFILE%)[/\\]|^\/(Users|home)\/[^/]+\//i, "").replace(/\\/g, "/").replace(/\/+$/, "");
+    const re = globRegex(glob);
+    const hasSlash = glob.includes("/");
     test = (s) => {
       if (!hasSlash) return re.test(s.split("/").pop() ?? s);
       const parts = s.split("/");
-      const depth = value.split("/").length;
+      const depth = glob.split("/").length;
       return re.test(parts.slice(-depth).join("/"));
     };
-  } else if (ind.type === "branch" || ind.type === "actor" || ind.type === "commit_message" || ind.type === "pr_title") {
+  } else if (ind.type === "branch" || ind.type === "actor" || ind.type === "commit_message" || ind.type === "pr_title" || ind.type === "repo_name" || ind.type === "runner_name") {
     const want = value.trim().toLowerCase();
     test = (s) => s.trim().toLowerCase() === want;
   } else if (ind.type.endsWith("_prefix")) {
     test = (s) => s.toLowerCase().startsWith(value.toLowerCase());
+  } else if (ind.type === "string") {
+    const needles = [.../* @__PURE__ */ new Set([value.toLowerCase(), defang(value).toLowerCase()])];
+    test = (s) => {
+      const l = s.toLowerCase();
+      return needles.some((n) => l.includes(n));
+    };
   } else {
     const needle = value.toLowerCase();
     test = (s) => s.toLowerCase().includes(needle);
   }
-  return { campaign: c, indicator: { ...ind, value }, test };
+  return { campaign: c, indicator: { ...ind, value, ...ind.ecosystem ? { ecosystem: normEco(ind.ecosystem) } : {} }, test };
 }
 function matchers(iocs, ...types) {
   const out2 = [];
@@ -10897,21 +12209,33 @@ function inWindow(m, at) {
 function packageHit(ind, ecosystem, name, version) {
   if (ind.type !== "package") return false;
   if (normEco(ind.ecosystem ?? "") !== normEco(ecosystem)) return false;
-  const norm2 = (n) => normEco(ecosystem) === "pypi" ? n.toLowerCase().replace(/[-_.]+/g, "-") : n.toLowerCase();
+  const norm2 = (n) => {
+    const s = stripInvisible(n).trim().toLowerCase();
+    return normEco(ecosystem) === "pypi" ? s.replace(/[-_.]+/g, "-") : s;
+  };
   if (norm2(ind.value) !== norm2(name)) return false;
   if (!ind.versions || ind.versions.length === 0) return true;
-  const v = version.replace(/^v/, "");
-  return ind.versions.some((x) => x.replace(/^v/, "") === v);
+  if (version === "*") return false;
+  const ver = (v2) => stripInvisible(v2).trim().replace(/^v/, "").replace(/\+incompatible$/, "");
+  const v = ver(version);
+  return ind.versions.some((x) => typeof x === "string" && ver(x) === v);
 }
+var SUPPORTED_ECOSYSTEMS = ["npm", "pypi", "crates.io", "go", "packagist", "rubygems", "vscode", "chrome", "firefox"];
 function normEco(e) {
-  const s = e.toLowerCase();
-  if (s === "crates" || s === "cargo") return "crates.io";
+  const s = e.trim().toLowerCase();
+  if (s === "crates" || s === "cargo" || s === "rust") return "crates.io";
   if (s === "golang") return "go";
-  if (s === "composer") return "packagist";
-  if (s === "gem" || s === "gems") return "rubygems";
+  if (s === "composer" || s === "php") return "packagist";
+  if (s === "gem" || s === "gems" || s === "ruby") return "rubygems";
   if (s === "python" || s === "pip") return "pypi";
-  if (s === "openvsx" || s === "vscode-extension") return "vscode";
+  if (["node", "nodejs", "node.js", "js", "javascript", "npmjs", "yarn", "pnpm"].includes(s)) return "npm";
+  if (/^(vs|open[-_ ]?vsx|ovsx|cursor|windsurf)/.test(s)) return "vscode";
+  if (["chromium", "edge", "brave", "browser", "chrome-web-store", "chrome-extension"].includes(s)) return "chrome";
+  if (s === "amo" || s === "firefox-addon") return "firefox";
   return s;
+}
+function stripInvisible(s) {
+  return s.replace(/[\u200B-\u200D\u2060\uFEFF]/g, "");
 }
 function iocTemplate(sources) {
   const ok = sources.filter((s) => !s.error && s.origin === "web");
@@ -10928,25 +12252,45 @@ function iocTemplate(sources) {
 
 // src/intel.ts
 var defaultFetcher = (url) => fetchAndExtract(url, { stripConsent: true, format: "markdown" });
+var LIST_KEYS = ["results", "hits", "items", "data", "organic_results", "urls", "sources", "web"];
+var WEB_RESULTS_SHAPES = 'a list of URLs, a list of {"url", "title"} hits, or an object holding such a list under results, hits, items, data, organic_results, urls, sources or web.results';
+function hitList(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (!raw || typeof raw !== "object") return [];
+  const o = raw;
+  for (const k of LIST_KEYS) {
+    const v = o[k];
+    if (Array.isArray(v)) return v;
+    if (v && typeof v === "object" && Array.isArray(v.results)) return v.results;
+  }
+  return [];
+}
 function parseWebResults(raw) {
-  const list = Array.isArray(raw) ? raw : raw && typeof raw === "object" ? raw.results ?? raw.hits ?? raw.items ?? [] : [];
+  return readHits(raw).hits;
+}
+function readHits(raw) {
   const out2 = [];
-  for (const item of list) {
+  for (const item of hitList(raw)) {
     if (typeof item === "string") out2.push({ url: item });
     else if (item && typeof item === "object") {
-      const o = item;
+      const o = Object.fromEntries(Object.entries(item).map(([k, v]) => [k.toLowerCase(), v]));
       const url = o.url ?? o.link ?? o.href;
       if (typeof url === "string") out2.push({ url, title: typeof o.title === "string" ? o.title : void 0 });
     }
   }
   const seen = /* @__PURE__ */ new Set();
-  return out2.filter((h) => {
-    if (!/^https?:\/\//i.test(h.url)) return false;
+  let noScheme = 0;
+  const hits = out2.filter((h) => {
+    if (!/^https?:\/\//i.test(h.url)) {
+      if (!/^[a-z][a-z0-9+.-]*:/i.test(h.url)) noScheme++;
+      return false;
+    }
     const k = safeCanonical(h.url);
     if (seen.has(k)) return false;
     seen.add(k);
     return true;
   });
+  return { hits, noScheme };
 }
 function safeCanonical(url) {
   try {
@@ -10955,24 +12299,35 @@ function safeCanonical(url) {
     return url;
   }
 }
-function readWebResultsFile(path) {
-  return parseWebResults(JSON.parse(readFileSync9(path, "utf8")));
+function readWebResultsFile(path, warn = (s) => process.stderr.write(`${s}
+`)) {
+  let raw;
+  try {
+    raw = JSON.parse(readFileSync10(path, "utf8"));
+  } catch (e) {
+    throw new UsageError(`${path}: not valid JSON (${e.message})`);
+  }
+  const { hits, noScheme } = readHits(raw);
+  const nonEmpty = Array.isArray(raw) ? raw.length > 0 : !!raw && typeof raw === "object" && Object.values(raw).some((v) => Array.isArray(v) ? v.length > 0 : !!v && typeof v === "object");
+  if (!hits.length && nonEmpty) throw new UsageError(`${path}: no http(s) URL found. Expected ${WEB_RESULTS_SHAPES}`);
+  if (noScheme) warn(`${path}: ${noScheme} hit(s) without https:// were dropped: write the full URL`);
+  return hits;
 }
 async function intel(run, hits, fetcher = defaultFetcher, now = /* @__PURE__ */ new Date()) {
   mkdirSync3(run.path("sources"), { recursive: true });
   const out2 = [];
-  for (const hit2 of hits) {
+  for (const hit3 of hits) {
     let res;
     let error;
     try {
-      res = await fetcher(hit2.url);
+      res = await fetcher(hit3.url);
       if (res.status >= 400 || !res.text || res.text.trim().length < 200) error = `HTTP ${res.status}, ${res.text?.trim().length ?? 0} chars of text`;
     } catch (e) {
       error = e.message;
     }
     const src = run.addSource({
-      url: hit2.url,
-      title: res?.title ?? hit2.title,
+      url: hit3.url,
+      title: res?.title ?? hit3.title,
       fetchedAt: now.toISOString(),
       origin: "web",
       ...error ? { error } : {}
@@ -11012,6 +12367,12 @@ var SEV_ORDER = ["compromised", "exposed", "suspicious", "info"];
 function payloadRan(findings, repo) {
   return findings.some((f) => f.subject === repo && f.severity === "compromised" && f.ciRun === "attacker");
 }
+function probePr(findings, repo) {
+  return findings.some((f) => f.subject === repo && f.severity === "compromised" && (f.indicator?.type === "pr_title" || /\/pull\/\d+/.test(f.evidence.ref)));
+}
+function probeSeen(findings, repo) {
+  return probePr(findings, repo) || findings.some((f) => f.subject === repo && f.severity === "compromised" && f.ciRun === "probe");
+}
 function idList(ids, max = 8) {
   if (!ids.length) return "none";
   const shown = ids.slice(0, max).map((id) => `[${id}]`).join(" ");
@@ -11049,7 +12410,10 @@ function renderReport(run, now = /* @__PURE__ */ new Date()) {
         const own = fs.filter((f) => f.subject === r);
         const ran = payloadRan(fs, r);
         const hitRepo = own.some((f) => f.severity === "compromised");
-        out2.push(`### ${r}${hitRepo ? ran ? ": the attacker made CI run" : ": probe only, no attacker run seen" : ""}`, "");
+        out2.push(
+          `### ${r}${hitRepo ? ran ? ": the attacker made CI run" : probeSeen(fs, r) ? ": probe only, no attacker run seen" : ": attacker branch only, no run seen" : ""}`,
+          ""
+        );
         for (const sev of SEV_ORDER) for (const f of own.filter((x) => x.severity === sev)) out2.push(findingLine(f));
         out2.push("");
       }
@@ -11066,8 +12430,16 @@ function renderReport(run, now = /* @__PURE__ */ new Date()) {
     out2.push("");
   }
   out2.push("## Coverage", "", "Gaps are not absence: what was not looked at is not clean.", "");
+  const results = run.surfaces();
+  const unscanned = SURFACES.filter((x) => !results.find((r) => r.surface === x)?.scanned);
+  for (const x of unscanned) {
+    const r = results.find((y) => y.surface === x);
+    out2.push(
+      `- \`${x}\`: not scanned in this run${r?.notApplicable ? ` (${r.notApplicable})` : r ? "" : ": run `ultraguard scan` for it, or say it was left out"}`
+    );
+  }
   for (const g of gaps) out2.push(`- \`${g.surface}\`: ${g.what}: ${g.why}${g.fix ? ` (to close: ${g.fix})` : ""}`);
-  if (!gaps.length) out2.push("- no gap recorded");
+  if (!gaps.length && !unscanned.length) out2.push("- no gap recorded");
   out2.push("");
   out2.push("## Sources", "");
   for (const s of sources) out2.push(`- [${s.id}] ${s.title ?? s.url} <${s.url}>${s.error ? ` (fetch failed: ${s.error})` : ""}`);
@@ -11109,7 +12481,10 @@ function renderRemediation(findings, vs, _sources, gaps, inventory) {
     hitRepos.sort((a, b) => Number(payloadRan(findings, b)) - Number(payloadRan(findings, a)) || a.localeCompare(b));
     for (const r of hitRepos) {
       const ran = payloadRan(findings, r);
-      out2.push(`### ${r}${ran ? ": the attacker made CI run, rotate unless the run's code is provably yours" : ": probe PR only"}`, "");
+      out2.push(
+        `### ${r}${ran ? ": the attacker made CI run, rotate unless the run's code is provably yours" : probePr(findings, r) ? ": probe PR only" : probeSeen(findings, r) ? ": probe only" : ": attacker branch only, no run seen"}`,
+        ""
+      );
       if (!ran)
         out2.push(
           "The probe proves the attacker could write here. No attacker run was seen, but runs can be deleted: check the run list below for gaps, and rotate if any attacker run executed.",
@@ -11137,7 +12512,7 @@ function renderRemediation(findings, vs, _sources, gaps, inventory) {
   if (host.length) {
     h("This machine");
     if (host.some((f) => f.severity === "compromised")) {
-      out2.push("An IOC is on this machine. Treat every credential it holds as stolen, and rotate them from ANOTHER, clean machine:", "");
+      out2.push("An IOC is on this machine. Treat every credential it holds as stolen, and rotate them from another machine you trust:", "");
       const creds = inventory?.credentials ?? [];
       const envs = creds.filter((c) => c.kind.startsWith(".env"));
       for (const c of creds.filter((x) => !x.kind.startsWith(".env"))) out2.push(`- ${c.kind}: \`${c.path}\``);
@@ -11189,7 +12564,12 @@ function renderRemediation(findings, vs, _sources, gaps, inventory) {
     for (const g of gaps.filter((x) => x.fix)) out2.push(`- \`${g.surface}\` ${g.what}: ${g.fix}`);
     out2.push("");
   }
-  if (step === 0) out2.push("Nothing to do: no surface was hit.", "");
+  const unknown = vs.filter((x) => x.verdict === "UNKNOWN").map((x) => `\`${x.surface}\``);
+  if (step === 0)
+    out2.push(
+      unknown.length ? `Nothing to do on the surfaces that were scanned. Not scanned, so not known to be clean: ${unknown.join(", ")}.` : "Nothing to do: no surface was hit.",
+      ""
+    );
   return out2.join("\n");
 }
 
@@ -11273,8 +12653,8 @@ async function searchInto(run, query, opts = {}) {
 }
 
 // src/run.ts
-import { existsSync as existsSync8, mkdirSync as mkdirSync5, readFileSync as readFileSync10 } from "fs";
-import { join as join6, resolve } from "path";
+import { existsSync as existsSync9, mkdirSync as mkdirSync5, readFileSync as readFileSync11 } from "fs";
+import { join as join7, resolve } from "path";
 var Run = class {
   dir;
   constructor(dir) {
@@ -11282,12 +12662,16 @@ var Run = class {
     mkdirSync5(this.dir, { recursive: true });
   }
   path(name) {
-    return join6(this.dir, name);
+    return join7(this.dir, name);
   }
   read(name, fallback) {
     const p = this.path(name);
-    if (!existsSync8(p)) return fallback;
-    return JSON.parse(readFileSync10(p, "utf8"));
+    if (!existsSync9(p)) return fallback;
+    try {
+      return JSON.parse(readFileSync11(p, "utf8"));
+    } catch (e) {
+      throw new Error(`${p}: not valid JSON (${e.message})`);
+    }
   }
   write(name, value) {
     writeFileAtomic(this.path(name), `${JSON.stringify(value, null, 2)}
@@ -11339,16 +12723,19 @@ var Run = class {
   }
   /** Replace everything one surface reported: a re-scan supersedes the last one. */
   recordSurface(result, found, gaps) {
-    const kept = this.findings().filter((f) => f.surface !== result.surface && !found.some((n2) => n2.key === f.key));
-    let n = kept.reduce((max, f) => Math.max(max, Number(f.id.slice(1)) || 0), 0);
+    const previous = this.findings();
+    const kept = previous.filter((f) => f.surface !== result.surface && !found.some((n2) => n2.key === f.key));
+    let n = previous.reduce((max, f) => Math.max(max, Number(f.id.slice(1)) || 0), this.meta().lastFindingId ?? 0);
+    const idOf = new Map(previous.map((f) => [f.key, f.id]));
     const seen = /* @__PURE__ */ new Set();
     const added = [];
     for (const f of found) {
       if (seen.has(f.key)) continue;
       seen.add(f.key);
-      added.push({ id: `F${++n}`, ...f });
+      added.push({ id: idOf.get(f.key) ?? `F${++n}`, ...f });
     }
     this.write("findings.json", [...kept, ...added]);
+    this.setMeta({ lastFindingId: n });
     this.write("gaps.json", [...this.gaps().filter((g) => g.surface !== result.surface), ...gaps]);
     this.write("surfaces.json", [...this.surfaces().filter((s) => s.surface !== result.surface), result]);
     return added;
@@ -11392,6 +12779,35 @@ function wildcardTrust(doc) {
   }
   return void 0;
 }
+function openGithubOidc(doc) {
+  const stmts = Array.isArray(doc?.Statement) ? doc.Statement : doc?.Statement ? [doc.Statement] : [];
+  for (const s of stmts) {
+    if (s.Effect !== "Allow") continue;
+    const fed = s.Principal?.Federated;
+    const feds = Array.isArray(fed) ? fed : fed ? [fed] : [];
+    if (!feds.some((f) => String(f).includes("token.actions.githubusercontent.com"))) continue;
+    const subs = [];
+    for (const op of Object.values(s.Condition ?? {}))
+      for (const [k, v] of Object.entries(op ?? {})) if (/:sub$/.test(k)) subs.push(...(Array.isArray(v) ? v : [v]).map(String));
+    if (!subs.length) return { statement: s };
+    const open2 = subs.find((v) => /^(\*|repo:\*|repo:[^/]*\*)/.test(v));
+    if (open2) return { statement: s, sub: open2 };
+  }
+  return void 0;
+}
+function foreignAccounts(doc, account) {
+  const stmts = Array.isArray(doc?.Statement) ? doc.Statement : doc?.Statement ? [doc.Statement] : [];
+  const out2 = /* @__PURE__ */ new Set();
+  for (const s of stmts) {
+    if (s.Effect !== "Allow") continue;
+    const p = s.Principal?.AWS;
+    for (const a of Array.isArray(p) ? p : p ? [p] : []) {
+      const id = /^(\d{12})$/.exec(String(a))?.[1] ?? /^arn:aws:iam::(\d{12}):/.exec(String(a))?.[1];
+      if (id && id !== account) out2.add(id);
+    }
+  }
+  return [...out2];
+}
 async function scanCloud(iocs, runner2, opts = {}) {
   const since = reviewStart(iocs, opts.now);
   const result = { surface: "cloud", scanned: false, stats: {}, startedAt: (opts.now ?? /* @__PURE__ */ new Date()).toISOString() };
@@ -11409,18 +12825,50 @@ async function scanCloud(iocs, runner2, opts = {}) {
     return data;
   };
   const fedPrefix = matchers(iocs, "azure_fedcred_prefix");
+  const read_ok = [];
+  const blind2 = [];
   const who = await runner2("aws", ["sts", "get-caller-identity", "--output", "json"], { timeoutMs: T });
   if (who.missing) gaps.push({ surface: "cloud", what: "AWS", why: "the aws CLI is not installed", fix: "skip if you use no AWS account" });
-  else if (!who.ok)
+  else if (!who.ok) {
+    blind2.push("AWS (not logged in)");
     gaps.push({ surface: "cloud", what: "AWS", why: "the aws CLI is not logged in", fix: "aws sso login (or set a profile), then re-run scan cloud" });
-  else {
-    result.scanned = true;
+  } else {
     const account = parseJsonOutput(who)?.Account ?? "?";
-    const roles = (await read2("AWS IAM roles", "aws", ["iam", "list-roles", "--output", "json"]))?.Roles ?? [];
+    const rolesRes = await read2("AWS IAM roles", "aws", ["iam", "list-roles", "--output", "json"]);
+    const roles = rolesRes?.Roles ?? [];
     result.stats.awsRoles = roles.length;
     for (const role of roles) {
       let doc = role.AssumeRolePolicyDocument;
-      if (typeof doc === "string") doc = JSON.parse(decodeURIComponent(doc));
+      if (typeof doc === "string") {
+        try {
+          doc = JSON.parse(decodeURIComponent(doc));
+        } catch {
+          doc = void 0;
+        }
+      }
+      const created = typeof role.CreateDate === "string" && role.CreateDate >= since;
+      const oidc = openGithubOidc(doc);
+      if (oidc)
+        findings.push({
+          surface: "cloud",
+          severity: "suspicious",
+          subject: `aws:${account}:role/${role.RoleName}`,
+          title: `IAM role ${role.RoleName} trusts GitHub Actions OIDC ${oidc.sub ? `for any repository (sub "${oidc.sub}")` : "with no condition on the sub claim"}: any workflow on GitHub can assume it`,
+          evidence: { kind: "command", ref: `aws iam get-role --role-name ${role.RoleName}`, excerpt: JSON.stringify(oidc.statement).slice(0, 300) },
+          key: `cloud|aws|${account}|oidc|${role.RoleName}`
+        });
+      if (created) {
+        const foreign = foreignAccounts(doc, account);
+        findings.push({
+          surface: "cloud",
+          severity: "suspicious",
+          subject: `aws:${account}:role/${role.RoleName}`,
+          title: `IAM role ${role.RoleName} was created during the campaign window${foreign.length ? ` and trusts another AWS account (${foreign.join(", ")})` : ""}`,
+          at: role.CreateDate,
+          evidence: { kind: "command", ref: `aws iam get-role --role-name ${role.RoleName}` },
+          key: `cloud|aws|${account}|newrole|${role.RoleName}`
+        });
+      }
       const w = wildcardTrust(doc);
       if (!w) continue;
       findings.push({
@@ -11432,8 +12880,22 @@ async function scanCloud(iocs, runner2, opts = {}) {
         key: `cloud|aws|${account}|trust|${role.RoleName}`
       });
     }
-    const users = (await read2("AWS IAM users", "aws", ["iam", "list-users", "--output", "json"]))?.Users ?? [];
+    const usersRes = await read2("AWS IAM users", "aws", ["iam", "list-users", "--output", "json"]);
+    const users = usersRes?.Users ?? [];
     result.stats.awsUsers = users.length;
+    if (rolesRes || usersRes) read_ok.push(`AWS account ${account}`);
+    else blind2.push(`AWS account ${account} (every IAM listing refused)`);
+    for (const u of users)
+      if (typeof u.CreateDate === "string" && u.CreateDate >= since)
+        findings.push({
+          surface: "cloud",
+          severity: "suspicious",
+          subject: `aws:${account}:user/${u.UserName}`,
+          title: `IAM user ${u.UserName} was created during the campaign window`,
+          at: u.CreateDate,
+          evidence: { kind: "command", ref: `aws iam get-user --user-name ${u.UserName}` },
+          key: `cloud|aws|${account}|newuser|${u.UserName}`
+        });
     await mapPool(users, 4, async (u) => {
       const keys = (await read2("AWS access keys", "aws", ["iam", "list-access-keys", "--user-name", u.UserName, "--output", "json"]))?.AccessKeyMetadata ?? [];
       for (const k of keys) {
@@ -11459,11 +12921,14 @@ async function scanCloud(iocs, runner2, opts = {}) {
   const gacct = await runner2("gcloud", ["config", "get-value", "account"], { timeoutMs: T });
   const gproj = gacct.ok ? (await runner2("gcloud", ["config", "get-value", "project"], { timeoutMs: T })).stdout.trim() : "";
   if (gacct.missing) gaps.push({ surface: "cloud", what: "GCP", why: "the gcloud CLI is not installed", fix: "skip if you use no GCP project" });
-  else if (!gacct.ok || !gacct.stdout.trim() || !gproj)
+  else if (!gacct.ok || !gacct.stdout.trim() || !gproj) {
+    blind2.push("GCP (no account or project set)");
     gaps.push({ surface: "cloud", what: "GCP", why: "gcloud has no account or project set", fix: "gcloud auth login && gcloud config set project <id>" });
-  else {
-    result.scanned = true;
-    const sas = await read2("GCP service accounts", "gcloud", ["iam", "service-accounts", "list", "--format=json"]) ?? [];
+  } else {
+    const sasRes = await read2("GCP service accounts", "gcloud", ["iam", "service-accounts", "list", "--format=json"]);
+    if (sasRes) read_ok.push(`GCP project ${gproj}`);
+    else blind2.push(`GCP project ${gproj} (service accounts not listed)`);
+    const sas = sasRes ?? [];
     result.stats.gcpServiceAccounts = sas.length;
     await mapPool(sas, 4, async (sa) => {
       const keys = await read2("GCP service-account keys", "gcloud", [
@@ -11515,10 +12980,16 @@ async function scanCloud(iocs, runner2, opts = {}) {
   }
   const az = await runner2("az", ["account", "show", "--output", "json"], { timeoutMs: T });
   if (az.missing) gaps.push({ surface: "cloud", what: "Azure", why: "the az CLI is not installed", fix: "skip if you use no Azure tenant" });
-  else if (!az.ok) gaps.push({ surface: "cloud", what: "Azure", why: "the az CLI is not logged in", fix: "az login" });
-  else {
-    result.scanned = true;
-    const apps = await read2("Azure app registrations", "az", ["ad", "app", "list", "--show-mine", "--output", "json"]) ?? [];
+  else if (!az.ok) {
+    blind2.push("Azure (not logged in)");
+    gaps.push({ surface: "cloud", what: "Azure", why: "the az CLI is not logged in", fix: "az login" });
+  } else {
+    const sub = parseJsonOutput(az);
+    const appsRes = await read2("Azure app registrations", "az", ["ad", "app", "list", "--show-mine", "--output", "json"]);
+    const label = `Azure subscription ${sub?.name ?? sub?.id ?? "?"}`;
+    if (appsRes) read_ok.push(label);
+    else blind2.push(`${label} (app registrations not listed)`);
+    const apps = appsRes ?? [];
     result.stats.azureApps = apps.length;
     await mapPool(apps, 4, async (app) => {
       const creds = await read2("Azure federated credentials", "az", ["ad", "app", "federated-credential", "list", "--id", app.appId, "--output", "json"]) ?? [];
@@ -11537,6 +13008,22 @@ async function scanCloud(iocs, runner2, opts = {}) {
       }
     });
   }
+  result.scanned = read_ok.length > 0 && blind2.length === 0;
+  if (who.missing && gacct.missing && az.missing) result.notApplicable = "no cloud CLI installed (aws, gcloud, az)";
+  if (read_ok.length)
+    gaps.push({
+      surface: "cloud",
+      what: `every other cloud account than ${read_ok.join(", ")}`,
+      why: "only the active profile, project and subscription are read",
+      fix: "select each account your CI can reach, then re-run scan cloud"
+    });
+  if (read_ok.length && blind2.length)
+    gaps.push({
+      surface: "cloud",
+      what: blind2.join(", "),
+      why: "a provider in use could not be read, so the cloud surface stays UNKNOWN",
+      fix: "log in (or grant read access), then re-run scan cloud"
+    });
   for (const [what, d] of denied)
     gaps.push({
       surface: "cloud",
@@ -11549,17 +13036,21 @@ async function scanCloud(iocs, runner2, opts = {}) {
 }
 
 // src/scan/deps.ts
-import { existsSync as existsSync9, mkdirSync as mkdirSync6, readFileSync as readFileSync11, statSync as statSync8 } from "fs";
-import { tmpdir } from "os";
-import { dirname, isAbsolute as isAbsolute3, join as join7, relative, resolve as resolve2, sep as sep2 } from "path";
+import { copyFileSync, existsSync as existsSync11, mkdirSync as mkdirSync6, readFileSync as readFileSync13, rmSync as rmSync6, statSync as statSync10 } from "fs";
+import { tmpdir as tmpdir4 } from "os";
+import { basename as basename5, dirname, isAbsolute as isAbsolute3, join as join13, relative, resolve as resolve2, sep as sep2 } from "path";
 
 // src/vendor/package-checker-script.ts
 var PACKAGE_CHECKER_VERSION = "1.16.4";
 var PACKAGE_CHECKER_SHA256 = "de5ede80029422b7218c14d98f81954e956dfa9423f90bb8c89ee7af351dd269";
 var PACKAGE_CHECKER_SCRIPT = '#!/usr/bin/env bash\n# GENERATED FILE NOTICE: script.sh is built from src/ by ./build.sh \u2014 edit src/, not script.sh.\n\n# Package Vulnerability Checker\n# Analyzes package.json and lockfiles to detect vulnerable packages from custom data sources\n\n# Plain POSIX syntax up to the version check, so `sh script.sh` gets this\n# message instead of a parse error.\ncase "${BASH_VERSION:-}" in\n    ""|[0-3].*)\n        printf \'%s\\n\' \'Error: package-checker requires Bash 4 or newer (macOS: brew install bash).\' >&2\n        exit 2 ;;\nesac\nset -e\n\n# Exit codes: 0 = no vulnerable package, 1 = vulnerable packages found,\n# EXIT_ERROR = the scan could not run or complete (bad usage, unreadable or\n# empty data, unexpected failure). CI treats any non-zero code as a failure.\nEXIT_ERROR=2\n\n# Byte-wise string comparison and character classes: version ordering\n# ([[ a < b ]]), awk ranges and sort must not depend on the user\'s locale\n# (5.0.0-beta1 vs 5.0.0-RC1 orders differently under fr_FR and C).\nexport LC_ALL=C\n\n# Version - automatically updated by release workflow\n# Last release: https://github.com/maxgfr/package-checker.sh/releases\n# NOTE: this exact \'VERSION="..."\' format is sed-matched by .releaserc.json \u2014 do not reformat.\nVERSION="1.16.4"\n\n# Default configuration\nCONFIG_FILE=".package-checker.config.json"\n\nRED=\'\\033[0;31m\'\nGREEN=\'\\033[0;32m\'\nYELLOW=\'\\033[1;33m\'\nBLUE=\'\\033[0;34m\'\nNC=\'\\033[0m\' # No Color\n\n# Global variables\nLOADED_SOURCE_COUNT=0\nFOUND_VULNERABLE=0\nVULNERABLE_PACKAGES=()\n\n# Pre-built vulnerability lookup tables (for O(1) lookup)\ndeclare -A VULN_EXACT_LOOKUP      # VULN_EXACT_LOOKUP[package]="ver1|ver2|..."\ndeclare -A VULN_RANGE_LOOKUP      # VULN_RANGE_LOOKUP[package]="range1|range2|..."\n# Per finding (key "eco:package@version"): the most severe advisory\'s fields,\n# every matching advisory, and the version that fixes them all.\ndeclare -A VULN_METADATA_SEVERITY # ="critical|high|medium|low"\ndeclare -A VULN_METADATA_GHSA     # ="GHSA-xxxx-xxxx-xxxx"\ndeclare -A VULN_METADATA_CVE      # ="CVE-YYYY-NNNNN"\ndeclare -A VULN_METADATA_SOURCE   # ="ghsa|osv|custom" (merged: "ghsa, osv")\ndeclare -A VULN_ADVISORIES        # ="sev;ghsa;cve;src;fix;id||..." (all matching advisories)\ndeclare -A VULN_METADATA_FIX      # ="fix_version"\ndeclare -A VULN_RECORDS           # lookup key (eco:name@version or eco:name:range) -> advisory records\n\n# Configuration defaults (can be overridden by config file)\nCONFIG_IGNORE_PATHS=("node_modules" ".yarn" ".git" "vendor")\nCONFIG_DEPENDENCY_TYPES=("dependencies" "devDependencies" "optionalDependencies")\nCONFIG_ECOSYSTEMS=""  # optional feed-loading override from config (options.ecosystems)\nCONFIG_RUNTIME_CHECK=true  # options.runtime_check (--no-runtime-check overrides)\n\n# Project files that could not be read (an incomplete scan is never clean)\nUNREADABLE_FILE_COUNT=0\n\n# Ecosystem registry lookup tables \u2014 derived from ECOSYSTEM_REGISTRY by\n# build_ecosystem_tables() (see src/50-ecosystems/01-registry.sh)\ndeclare -A LOCKFILE_PARSER   # LOCKFILE_PARSER[basename]="analyze_fn"\ndeclare -A LOCKFILE_ECO      # LOCKFILE_ECO[basename]="purl-type"\nKNOWN_LOCKFILE_ALIASES=""    # space-separated unique alias list (validation + help)\n\n# Ecosystems detected in the scanned project (eco -> 1); drives default-feed loading\ndeclare -A DETECTED_ECOSYSTEMS\n\n# govulncheck call analysis of Go findings (--go-reachability)\ndeclare -A VULN_REACHABILITY      # VULN_REACHABILITY[dir|golang:module@version]="called|not called"\n\n# CycloneDX SBOMs given with --sbom (path -> 1), scanned as project inventories\ndeclare -A SBOM_FILES\ndeclare -A SBOM_COMPONENTS   # path -> "eco|name|version" lines (cyclonedx_components)\n# Syntax validation for JSON inputs; scan-time code must not require jq.\n# Stream tokens through a small grammar stack. Repeated indexing into a growing\n# whole-document string becomes quadratic with some awk implementations.\njson_is_valid() {\n    printf \'%s\\n\' "$1" | json_is_valid_file /dev/stdin\n}\n\n# Same check on a file, read directly by awk (no copy into a shell variable).\njson_is_valid_file() {\n    LC_ALL=C awk \'\n    function take_value() {\n        if (state[depth] != "value" && state[depth] != "value-or-end") return 0\n        state[depth] = depth ? "comma-or-end" : "done"\n        return 1\n    }\n    function finish_token() {\n        if (token == "") return 1\n        if (token !~ /^(true|false|null)$/ &&\n            token !~ /^-?(0|[1-9][0-9]*)(\\.[0-9]+)?([eE][+-]?[0-9]+)?$/) return 0\n        token = ""\n        return take_value()\n    }\n    function character(c) {\n        if (quoted) {\n            if (c ~ /[\\001-\\037]/) return 0\n            if (unicode) {\n                if (c !~ /^[0-9a-fA-F]$/) return 0\n                unicode--\n            } else if (escaped) {\n                escaped = 0\n                if (c == "u") unicode = 4\n                else if (c !~ /^["\\\\\\/bfnrt]$/) return 0\n            } else if (c == "\\\\") escaped = 1\n            else if (c == "\\"") {\n                quoted = 0\n                if (key_string) state[depth] = "colon"\n                else if (!take_value()) return 0\n            }\n            return 1\n        }\n        if (c !~ /^[ \\t\\r\\n{}\\[\\],:"]$/) { token = token c; return 1 }\n        if (!finish_token()) return 0\n        if (c ~ /^[ \\t\\r\\n]$/) return 1\n        if (c == "\\"") {\n            key_string = (state[depth] == "key" || state[depth] == "key-or-end")\n            if (!key_string && state[depth] != "value" && state[depth] != "value-or-end") return 0\n            quoted = 1\n        } else if (c == "{" || c == "[") {\n            if (!take_value() || depth >= 128) return 0\n            kind[++depth] = c\n            state[depth] = c == "{" ? "key-or-end" : "value-or-end"\n        } else if (c == "}" || c == "]") {\n            if (!depth || (c == "}" && kind[depth] != "{") ||\n                (c == "]" && kind[depth] != "[")) return 0\n            if (state[depth] != "comma-or-end" && state[depth] != "key-or-end" &&\n                state[depth] != "value-or-end") return 0\n            depth--\n        } else if (c == ":") {\n            if (state[depth] != "colon") return 0\n            state[depth] = "value"\n        } else if (c == ",") {\n            if (!depth || state[depth] != "comma-or-end") return 0\n            state[depth] = kind[depth] == "{" ? "key" : "value"\n        }\n        return 1\n    }\n    BEGIN { depth = 0; state[0] = "value" }\n    # A UTF-8 byte order mark is an encoding marker, not JSON.\n    NR == 1 && substr($0, 1, 3) == "\\357\\273\\277" { $0 = substr($0, 4) }\n    {\n        # Most pretty-printed lockfile records contain short, unescaped tokens.\n        # Consume whole strings/numbers there, keeping the bounded byte path for\n        # escapes and long compact records. Both paths use the same grammar.\n        if (length($0) < 4096 && $0 !~ /\\\\/) {\n            rest = $0\n            while (length(rest)) {\n                if (match(rest, /^[ \\t\\r]+/)) {\n                    rest = substr(rest, RLENGTH + 1)\n                } else if (match(rest, /^"[^"\\001-\\037]*"/)) {\n                    rest = substr(rest, RLENGTH + 1)\n                    if (state[depth] == "key" || state[depth] == "key-or-end") state[depth] = "colon"\n                    else if (!take_value()) { invalid = 1; exit }\n                } else if (match(rest, /^[^ \\t\\r{}\\[\\],:"]+/)) {\n                    token = substr(rest, 1, RLENGTH)\n                    rest = substr(rest, RLENGTH + 1)\n                    if (!finish_token()) { invalid = 1; exit }\n                } else {\n                    if (!character(substr(rest, 1, 1))) { invalid = 1; exit }\n                    rest = substr(rest, 2)\n                }\n            }\n            if (!character("\\n")) { invalid = 1; exit }\n            next\n        }\n        # Bound memory for compact single-line lockfiles as well.\n        for (offset = 1; offset <= length($0); offset += 4096) {\n            size = split(substr($0, offset, 4096), chars, "")\n            for (i = 1; i <= size; i++) {\n                if (!character(chars[i])) { invalid = 1; exit }\n            }\n        }\n        if (!character("\\n")) { invalid = 1; exit }\n    }\n    END { exit (invalid || quoted || depth || !finish_token() || state[0] != "done") }\n    \' "$1"\n}\n# ============================================================================\n# Minimal JSON accessors (awk, no jq dependency)\n# For configuration files, package.json / composer files and GitHub API answers.\n# ============================================================================\n\n# One scanner for every accessor, fed with json_structural_lines records (one\n# member per record, an opening { or [ at the end of its record, a closing }\n# or ] alone): layout, escapes and document size are handled there.\n#   mode=value  print the raw value of the top-level KEY of the root object\n#   mode=items  print each element of the root array on its own line\n# Only members of the root are considered, so a key name that appears as a\n# string value or inside a nested object is never mistaken for the key.\nAWK_JSON_SCAN=\'\nfunction trim(t) {\n    sub(/^[[:space:]]+/, "", t)\n    sub(/[[:space:]]+$/, "", t)\n    return t\n}\n# Split a member record into M_KEY ("" and M_HAS_KEY=0 for an array element)\n# and M_VAL, the rest of the record.\nfunction member(rec,   i, c, n, rest) {\n    M_KEY = ""; M_VAL = rec; M_HAS_KEY = 0\n    if (substr(rec, 1, 1) != "\\"") return\n    n = length(rec)\n    for (i = 2; i <= n; i++) {\n        c = substr(rec, i, 1)\n        if (c == "\\\\") i++\n        else if (c == "\\"") break\n    }\n    rest = trim(substr(rec, i + 1))\n    if (substr(rest, 1, 1) != ":") return\n    M_HAS_KEY = 1\n    M_KEY = substr(rec, 2, i - 2)\n    M_VAL = trim(substr(rest, 2))\n}\n{\n    rec = trim($0)\n    if (rec == "") next\n    closing = (rec == "}" || rec == "]")\n    last = substr(rec, length(rec))\n    opening = (!closing && (last == "{" || last == "["))\n    if (capturing) {\n        # Rebuild the nested value, restoring the commas between members.\n        if (closing) {\n            out = out rec\n            if (--cdepth == 0) {\n                print out\n                capturing = 0\n                if (mode == "value") exit\n            }\n            next\n        }\n        out = out (count[cdepth]++ ? "," : "") rec\n        if (opening) count[++cdepth] = 0\n        next\n    }\n    if (closing) { depth--; next }\n    if (depth == 0) {\n        if (rec != (mode == "value" ? "{" : "[")) exit\n        depth = 1\n        next\n    }\n    if (depth == 1) {\n        member(rec)\n        if (mode == "value") {\n            wanted = (M_HAS_KEY && M_KEY == key)\n            if (opening && wanted) { capturing = 1; out = M_VAL; cdepth = 1; count[1] = 0 }\n            else if (opening) depth++\n            else if (wanted) { print M_VAL; exit }\n        } else if (opening) {\n            capturing = 1; out = rec; cdepth = 1; count[1] = 0\n        } else {\n            print rec\n        }\n        next\n    }\n    if (opening) depth++\n}\n\'\n\n# Raw JSON value of a top-level key ("" when the key is absent).\n# Usage: json_get_raw "$json" "key"\njson_get_raw() {\n    printf \'%s\\n\' "$1" | json_structural_lines - | awk -v mode=value -v key="$2" "$AWK_JSON_SCAN"\n}\n\n# Scalar value of a top-level key: a string without its quotes (\\" \\/ and \\\\\n# unescaped), or a number / true / false / null as written. Objects, arrays\n# and absent keys print nothing.\n# Usage: json_get_value "$json" "key"\njson_get_value() {\n    local raw\n    raw=$(json_get_raw "$1" "$2")\n    case "$raw" in\n        \'"\'*\'"\')\n            raw="${raw#\\"}"; raw="${raw%\\"}"\n            raw="${raw//\\\\\\//\\/}"\n            raw="${raw//\\\\\\"/\\"}"\n            raw="${raw//\\\\\\\\/\\\\}"\n            printf \'%s\\n\' "$raw" ;;\n        \'\'|\'{\'*|\'[\'*) ;;\n        *) printf \'%s\\n\' "$raw" ;;\n    esac\n}\n\n# Object (or array) value of a top-level key; "{}" when absent or scalar.\n# Usage: json_get_object "$json" "key"\njson_get_object() {\n    local raw\n    raw=$(json_get_raw "$1" "$2")\n    case "$raw" in\n        \'{\'*|\'[\'*) printf \'%s\\n\' "$raw" ;;\n        *) echo "{}" ;;\n    esac\n}\n\n# Array value of a top-level key; "[]" when absent.\n# Usage: json_get_array "$json" "key"\njson_get_array() {\n    local result\n    result=$(json_get_object "$1" "$2")\n    [ "$result" != "{}" ] || result="[]"\n    printf \'%s\\n\' "$result"\n}\n\n# Elements of a JSON array, one per line (raw JSON).\n# Usage: json_array_items "$json_array"\njson_array_items() {\n    printf \'%s\\n\' "$1" | json_structural_lines - | awk -v mode=items "$AWK_JSON_SCAN"\n}\n\n# Non-empty string elements of a JSON array, unquoted, into JSON_STRINGS.\n# Usage: json_read_strings "$json_array"\njson_read_strings() {\n    JSON_STRINGS=()\n    local item\n    while IFS= read -r item; do\n        case "$item" in\n            \'"\'*\'"\') item="${item#\\"}"; item="${item%\\"}" ;;\n        esac\n        [ -z "$item" ] || JSON_STRINGS+=("$item")\n    done < <(json_array_items "$1")\n}\n# Put structural JSON delimiters on separate records without changing strings.\n# Line-oriented lockfile readers can then handle compact or pretty JSON alike.\njson_structural_lines() {\n    awk \'\n    # A UTF-8 byte order mark is an encoding marker, not JSON.\n    NR == 1 && substr($0, 1, 3) == "\\357\\273\\277" { $0 = substr($0, 4) }\n    function flush() {\n        if (buffer ~ /[^[:space:]]/) print buffer\n        buffer = ""\n    }\n    {\n        # Generated pretty JSON normally has one unescaped scalar per line.\n        # Preserve the existing record whitespace while skipping its byte loop.\n        if (!quoted && buffer !~ /[^[:space:]]/ &&\n            $0 ~ /^[[:space:]]*"[^"\\\\]*"[[:space:]]*:[[:space:]]*("[^"\\\\]*"|true|false|null|-?[0-9.]+),?$/) {\n            buffer = buffer $0\n            if (substr(buffer, length(buffer), 1) == ",") {\n                buffer = substr(buffer, 1, length(buffer) - 1)\n                flush()\n            }\n            buffer = buffer " "\n            next\n        }\n        # BSD awk scans to substr offsets in multibyte records. Bound the\n        # inner offsets even when the entire lockfile occupies one long line.\n        record_size = length($0)\n        for (offset = 1; offset <= record_size; offset += 4096) {\n            chunk = substr($0, offset, 4096)\n            chunk_size = length(chunk)\n            for (i = 1; i <= chunk_size; i++) {\n                c = substr(chunk, i, 1)\n            if (quoted) {\n                buffer = buffer c\n                if (escaped) escaped = 0\n                else if (c == "\\\\") escaped = 1\n                else if (c == "\\"") quoted = 0\n            } else if (c == "\\"") {\n                quoted = 1\n                buffer = buffer c\n            } else if (c == "{" || c == "[") {\n                buffer = buffer c\n                flush()\n            } else if (c == "}" || c == "]") {\n                flush()\n                print c\n            } else if (c == ",") {\n                flush()\n            } else {\n                buffer = buffer c\n            }\n            }\n        }\n        if (!quoted) buffer = buffer " "\n    }\n    END { flush() }\n    \' "$1"\n}\n\n# ============================================================================\n# End of JSON Parser Functions\n# ============================================================================\n\n# Show version information\nshow_version() {\n    echo "package-checker.sh version $VERSION"\n    echo ""\n    echo "Scan project dependencies (npm, PyPI, Go, Maven, Cargo, RubyGems, Composer, NuGet,"\n    echo "Pub, Hex, Swift, GitHub Actions) for known vulnerable versions."\n    echo "Repository: https://github.com/maxgfr/package-checker.sh"\n    exit 0\n}\n\n# Help message\nshow_help() {\n    cat << EOF\nUsage: $0 [PATH] [OPTIONS]\n\nScan project dependencies (npm, PyPI, Go, Maven, Cargo, RubyGems, Composer, NuGet,\nPub, Hex, Swift, GitHub Actions) for known vulnerable versions, using the built-in\nGHSA/OSV feeds or your own data sources. The Node.js and PHP versions the project\ntargets (.nvmrc, Docker base image, composer.json platform...) are checked too.\n\nARGUMENTS:\n    PATH                    Directory to scan (default: current directory)\n\nOPTIONS:\n    -h, --help              Show this help message\n    --help-ai               Show AI help menu\n    --help-ai prompt        Output the AI system prompt (prompt.md)\n    --help-ai doc           Output the full AI guide (docs/ai-guide.md)\n    -v, --version           Show version information\n    -s, --source SOURCE     Data source path or URL (can be used multiple times)\n    --default-source-ghsa   Use default GHSA source (script dir, brew, /app/data/, ./data/, then GitHub)\n    --default-source-osv    Use default OSV source (script dir, brew, /app/data/, ./data/, then GitHub)\n    --default-source-ghsa-osv        Use both default GHSA and OSV sources (recommended)\n    -f, --format FORMAT     Format of the preceding -s source: json, csv, purl, sarif,\n                            sbom-cyclonedx or trivy-json (default: auto-detected from\n                            the file extension, json when unknown)\n    -c, --config FILE       Path to configuration file (default: .package-checker.config.json);\n                            its options always apply, its sources only when no source\n                            is given on the command line\n    --no-config             Skip the default configuration file\n    --csv-columns COLS      CSV columns of the preceding -s source (e.g., "1,2" or "name,versions")\n    --package-name NAME     Check vulnerability for a specific package name\n    --package-version VER   Check specific version (requires --package-name)\n    --ecosystem ECO         Ecosystem for --package-name (default: npm). One of:\n                            npm, pypi, golang, maven, cargo, gem, composer, nuget, pub, hex, swift, githubactions,\n                            runtime (Node.js / PHP: --package-name node --ecosystem runtime)\n    --export-json [FILE]    Export results to JSON (FILE optional, default: vulnerabilities.json)\n    --export-csv [FILE]     Export results to CSV (FILE optional, default: vulnerabilities.csv)\n    --github-org ORG        GitHub organization to fetch package.json files and lockfiles from\n    --github-repo REPO      GitHub repository to fetch package.json files and lockfiles from (format: owner/repo)\n    --github-token TOKEN    GitHub personal access token (or use GITHUB_TOKEN env var)\n    --github-output DIR     Output directory for fetched packages (default: ./packages)\n    --github-only           Only fetch packages from GitHub, don\'t analyze local files\n    --create-multiple-issues Create one GitHub issue per vulnerable package (requires --github-token)\n    --create-single-issue   Create a single GitHub issue with all vulnerabilities (requires --github-token)\n    --fetch-all [DIR]       Fetch GHSA + OSV + runtime feeds for ALL ecosystems to DIR (default: data)\n    --fetch-osv [ECOS|DIR]  Fetch OSV feeds into data/; optional comma list of ecosystems\n                            (purl types or lockfile aliases: pypi,go,rust...; default: all),\n                            or an existing directory to write every feed to\n    --fetch-ghsa [ECOS|DIR] Fetch GHSA feeds (single clone); same argument as --fetch-osv\n    --fetch-runtime [DIR]   Fetch the Node.js / PHP runtime feed (OSV Bitnami) to\n                            DIR/osv-runtime.purl (default: data)\n    --only-package-json     Scan only package.json files (skip lockfiles)\n    --only-lockfiles        Scan only lockfiles (skip package.json files)\n    --lockfile-types TYPES  Comma-separated list of lockfile types to scan\n                            (npm, yarn, pnpm, bun, deno, rust, go, python, ruby, php,\n                            maven, nuget, dart, hex, swift, actions). "actions" scans\n                            GitHub Actions workflow files (.github/workflows/*.yml).\n                            Example: --lockfile-types yarn,npm\n    --ecosystems ECOS       Comma-separated ecosystems to load default feeds for,\n                            overriding auto-detection. Accepts lockfile-type aliases\n                            (npm, yarn, pnpm, bun, deno, rust, go, python, ruby, php,\n                            maven, nuget, dart, hex, swift, actions) or purl types\n                            (npm, pypi, golang, cargo, githubactions, ...).\n                            Example: --ecosystems npm\n    --sbom FILE             Also scan the components of a CycloneDX JSON SBOM, like a\n                            lockfile (can be used multiple times). Use it for Maven\n                            transitive dependencies, which pom.xml does not list:\n                            mvn org.cyclonedx:cyclonedx-maven-plugin:makeAggregateBom\n    --go-reachability       Annotate each Go finding "called" or "not called" with\n                            govulncheck, when it is installed (one run per go.mod).\n                            The exit code does not change.\n    --no-runtime-check      Do not check the Node.js / PHP versions the project targets\n                            (.nvmrc, .node-version, .php-version, .tool-versions,\n                            package.json engines/volta, composer.json/composer.lock\n                            platform, Dockerfile FROM node:/php:, workflow\n                            node-version:/php-version:). An exact version is a\n                            finding; a release line or a range only warns.\n    --include-gitignored    Also scan git-ignored lockfiles and manifests (skipped and\n                            listed by default)\n\nEXIT CODES:\n    0   No vulnerable package found\n    1   Vulnerable packages found\n    2   Error: invalid usage, unreadable or empty data source, failed scan\n\nEXAMPLES:\n    # Scan current directory with default sources (recommended)\n    $0 --default-source-ghsa-osv\n\n    # Scan specific directory\n    $0 ./my-project --default-source-osv\n    $0 /absolute/path/to/project --default-source-ghsa-osv\n\n    # Use configuration file\n    $0 --config .package-checker.config.json\n\n    # Use custom source (-f/--csv-columns qualify the -s right before them)\n    $0 --source https://example.com/vulns.json\n    $0 --source ./vulns.csv -f csv --csv-columns "name,versions"\n\n    # GitHub organization scan\n    $0 --github-org myorg --github-token ghp_xxxx --default-source-ghsa-osv\n\n    # Check specific package\n    $0 --package-name express --package-version 4.17.1\n\n    # Fetch vulnerability feeds (all ecosystems)\n    $0 --fetch-all data\n\n    # Fetch feeds for specific ecosystems only\n    $0 --fetch-osv pypi,golang\n    $0 --fetch-ghsa cargo\n\n    # Scan a Maven project with its transitive dependencies\n    $0 --sbom target/bom.json --default-source-ghsa-osv\n\n    # Scan only lockfiles in specific directory\n    $0 ./subfolder --only-lockfiles --lockfile-types yarn,npm\n\nFor configuration file format, use: $0 --help format\nEOF\n    exit 0\n}\n\n# Show configuration format help\nshow_format_help() {\n    cat << \'EOF\'\nCONFIGURATION FILE FORMAT (.package-checker.config.json):\n{\n  "sources": [\n    {\n      "source": "https://example.com/vulns.json",\n      "format": "json",\n      "name": "My Vulnerability List"\n    },\n    {\n      "source": "https://example.com/vulns.csv",\n      "format": "csv",\n      "columns": "name,versions",\n      "name": "CSV Vulnerabilities"\n    }\n  ],\n  "github": {\n    "org": "my-organization",\n    "repo": "owner/repo",\n    "token": "ghp_xxxx",\n    "output": "./packages"\n  },\n  "options": {\n    "ignore_paths": ["node_modules", ".yarn", ".git"],\n    "dependency_types": ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"],\n    "runtime_check": true\n  }\n}\n\nDATA FORMATS:\n\nJSON format (object with package names as keys):\n{\n  "package-name": {\n    "versions": ["1.0.0", "2.0.0"]\n  }\n}\n\nCSV format (default columns: package,version; the first line is a header\nunless its version field looks like a version or a range):\nname,versions\npackage-name,1.0.0\npackage-name,2.0.0\nanother-package,">=3.0.0 <3.2.1"\n\nCSV format with custom columns:\nname,versions,sources\nexpress,4.16.0,"datadog, helixguard"\nlodash,4.17.19,"koi, reversinglabs"\n\nUse --csv-columns to specify which columns to use:\n--csv-columns "1,2"     # Use columns 1 and 2 (name, versions)\n--csv-columns "name,versions"  # Use column names\nEOF\n    exit 0\n}\n\n# GitHub raw base URL for AI docs\nGITHUB_RAW_BASE="https://raw.githubusercontent.com/maxgfr/package-checker.sh/refs/heads/main"\n\n# Resolve an AI doc file: try local paths first, then fetch from GitHub\n# Usage: resolve_ai_doc <relative-path>\n# Output: file content to stdout\nresolve_ai_doc() {\n    local file_path="$1"\n\n    # 1. Local relative to script location (symlinks resolved)\n    resolve_script_home\n    if [ -n "$SCRIPT_HOME" ] && [ -f "$SCRIPT_HOME/$file_path" ]; then\n        cat "$SCRIPT_HOME/$file_path"\n        return 0\n    fi\n\n    # 2. Local relative to cwd\n    if [ -f "./$file_path" ]; then\n        cat "./$file_path"\n        return 0\n    fi\n\n    # 3. Homebrew prefix\n    resolve_brew_prefix\n    if [ -n "$BREW_PREFIX" ] && [ -f "$BREW_PREFIX/share/package-checker/$file_path" ]; then\n        cat "$BREW_PREFIX/share/package-checker/$file_path"\n        return 0\n    fi\n\n    # 4. Docker path\n    if [ -f "/app/$file_path" ]; then\n        cat "/app/$file_path"\n        return 0\n    fi\n\n    # 5. Fetch from GitHub\n    local url="${GITHUB_RAW_BASE}/${file_path}"\n    local content\n    if content=$(curl -fsSL "$url" 2>/dev/null) && [ -n "$content" ]; then\n        echo "$content"\n        return 0\n    fi\n\n    return 1\n}\n\n# Show AI help menu or subcommand\nshow_ai_help() {\n    local subcommand="${1:-}"\n\n    case "$subcommand" in\n        prompt)\n            echo -e "${BLUE}package-checker.sh \u2014 AI System Prompt${NC}"\n            echo -e "${BLUE}======================================${NC}"\n            echo ""\n            echo -e "${YELLOW}Source: ${GITHUB_RAW_BASE}/prompt.md${NC}"\n            echo ""\n            local content\n            if content=$(resolve_ai_doc "prompt.md"); then\n                echo "$content"\n            else\n                echo -e "${RED}\u274C Error: Could not load prompt.md${NC}"\n                echo ""\n                echo "Try one of:"\n                echo "  - Clone the repo and run locally"\n                echo "  - curl -fsSL ${GITHUB_RAW_BASE}/prompt.md"\n                exit "$EXIT_ERROR"\n            fi\n            ;;\n        doc)\n            echo -e "${BLUE}package-checker.sh \u2014 AI Guide (Full Reference)${NC}"\n            echo -e "${BLUE}================================================${NC}"\n            echo ""\n            echo -e "${YELLOW}Source: ${GITHUB_RAW_BASE}/docs/ai-guide.md${NC}"\n            echo ""\n            local content\n            if content=$(resolve_ai_doc "docs/ai-guide.md"); then\n                echo "$content"\n            else\n                echo -e "${RED}\u274C Error: Could not load docs/ai-guide.md${NC}"\n                echo ""\n                echo "Try one of:"\n                echo "  - Clone the repo and run locally"\n                echo "  - curl -fsSL ${GITHUB_RAW_BASE}/docs/ai-guide.md"\n                exit "$EXIT_ERROR"\n            fi\n            ;;\n        *)\n            cat << EOF\nAI-Assisted Usage for package-checker.sh\n=========================================\n\nUse these commands to get AI-ready documentation:\n\n  $(basename "$0") --help-ai prompt    Output the system prompt (prompt.md)\n                                  Paste this into any AI assistant as context.\n\n  $(basename "$0") --help-ai doc       Output the full AI guide (docs/ai-guide.md)\n                                  Complete schemas, validation rules, and recipes.\n\nOne-liner to inject into an AI conversation:\n\n  $(basename "$0") --help-ai prompt | pbcopy       # macOS: copy to clipboard\n  $(basename "$0") --help-ai prompt | xclip        # Linux: copy to clipboard\n  $(basename "$0") --help-ai prompt > context.md   # Save to file and attach\n\nGitHub URLs (always up-to-date):\n\n  Prompt:  ${GITHUB_RAW_BASE}/prompt.md\n  Guide:   ${GITHUB_RAW_BASE}/docs/ai-guide.md\n\nEOF\n            ;;\n    esac\n    exit 0\n}\n\n# Check that the required tools are installed (default: curl, used to\n# download remote sources). Feed generation also needs jq and friends.\ncheck_dependencies() {\n    local tool\n    [ $# -gt 0 ] || set -- curl\n    for tool in "$@"; do\n        if ! command -v "$tool" &> /dev/null; then\n            echo "\u274C Error: \'$tool\' must be installed to run this command"\n            exit "$EXIT_ERROR"\n        fi\n    done\n}\n\n# Caches of the two resolvers below: values inherited from the environment\n# must never stand in for them (they decide where the built-in feeds come from).\nunset SCRIPT_HOME BREW_PREFIX\n\n# Directory of the real script file, symlinks resolved (Homebrew and the\n# Docker images run it through /usr/local/bin/package-checker). Empty when the\n# script is piped (curl ... | bash). Sets SCRIPT_HOME once.\nresolve_script_home() {\n    [ -z "${SCRIPT_HOME+x}" ] || return 0\n    SCRIPT_HOME=""\n    local path="${BASH_SOURCE[0]:-}" link hops=0\n    [ -n "$path" ] && [ -f "$path" ] || return 0\n    while [ -L "$path" ] && [ "$hops" -lt 32 ]; do\n        link=$(readlink "$path") || break\n        case "$link" in\n            /*) path="$link" ;;\n            *) path="$(dirname "$path")/$link" ;;\n        esac\n        hops=$((hops + 1))\n    done\n    SCRIPT_HOME=$(cd "$(dirname "$path")" 2>/dev/null && pwd) || SCRIPT_HOME=""\n}\n\n# Homebrew prefix, computed once (brew --prefix takes ~0.1 s). Sets\n# BREW_PREFIX ("" without Homebrew).\nresolve_brew_prefix() {\n    [ -z "${BREW_PREFIX+x}" ] || return 0\n    BREW_PREFIX=""\n    if command -v brew &> /dev/null; then\n        BREW_PREFIX=$(brew --prefix 2>/dev/null) || BREW_PREFIX=""\n    fi\n}\n\n# Temporary files removed when the script exits, whatever the exit path.\nPC_TEMP_FILES=()\nPC_TEMP_DIRS=()\nPC_CLEANUP_TRAP=false\npc_cleanup_temp_files() {\n    [ ${#PC_TEMP_FILES[@]} -eq 0 ] || rm -f -- "${PC_TEMP_FILES[@]}"\n    [ ${#PC_TEMP_DIRS[@]} -eq 0 ] || rm -rf -- "${PC_TEMP_DIRS[@]}"\n}\n# Register a temporary directory (feed generation: clones, zips) for removal\n# when the script exits, including on Ctrl-C or a CI timeout.\nregister_temp_dir() {\n    [ -n "$1" ] && [ -d "$1" ] || return 1\n    PC_TEMP_DIRS+=("$1")\n    register_temp_file "$1/.package-checker-tmp"\n    trap \'exit 130\' INT\n    trap \'exit 143\' TERM\n}\n# Register a temp file for cleanup. The EXIT trap is installed once and keeps\n# any EXIT trap already set (it runs after the cleanup).\nregister_temp_file() {\n    PC_TEMP_FILES+=("$1")\n    [ "$PC_CLEANUP_TRAP" = true ] && return 0\n    PC_CLEANUP_TRAP=true\n    local previous\n    previous=$(trap -p EXIT)\n    if [ -n "$previous" ]; then\n        eval "set -- $previous"   # trap -- \'command\' EXIT\n        # shellcheck disable=SC2064 # the previous trap is expanded now, on purpose\n        trap "pc_cleanup_temp_files; $3" EXIT\n    else\n        trap pc_cleanup_temp_files EXIT\n    fi\n}\n\n# GitHub API functions\nGITHUB_TOKEN="${GITHUB_TOKEN:-}"\nGITHUB_ORG="${GITHUB_ORG:-}"\nGITHUB_REPO="${GITHUB_REPO:-}"\nGITHUB_OUTPUT_DIR="${GITHUB_OUTPUT_DIR:-./packages}"\nGITHUB_ONLY=false\nGITHUB_RATE_LIMIT_DELAY=2\nCREATE_GITHUB_ISSUE=false\nCREATE_SINGLE_ISSUE=false\nGITHUB_FAILED_REPOS=0   # organization repositories whose files could not be fetched\n\n# Make a GitHub API request with automatic retry on rate limit. A 403/429\n# rate-limit answer waits until the time GitHub gives (Retry-After or\n# x-ratelimit-reset), capped by GITHUB_RATE_LIMIT_MAX_WAIT seconds.\nGITHUB_RATE_LIMIT_MAX_WAIT="${GITHUB_RATE_LIMIT_MAX_WAIT:-900}"\ngithub_request() {\n    local url="$1"\n    local max_retries=3\n    local attempt=1\n    local response http_code headers wait_time value\n\n    while [ $attempt -le $max_retries ]; do\n        headers=$(mktemp) || return 1\n        register_temp_file "$headers"\n        if ! response=$(curl -sS --connect-timeout 10 --max-time 60 -D "$headers" -w "\\n%{http_code}" \\\n            ${GITHUB_TOKEN:+-H "Authorization: Bearer $GITHUB_TOKEN"} \\\n            -H "Accept: application/vnd.github.v3+json" \\\n            -H "User-Agent: package-checker-script" \\\n            "$url"); then\n            rm -f -- "$headers"\n            echo "Error: Unable to reach GitHub API" >&2\n            return 1\n        fi\n\n        http_code="${response##*$\'\\n\'}"\n        response="${response%$\'\\n\'*}"\n\n        if [ "$http_code" = "200" ]; then\n            rm -f -- "$headers"\n            echo "$response"\n            return 0\n        fi\n\n        # Handle rate limiting (403 or 429)\n        if { [ "$http_code" = 429 ] || { [ "$http_code" = 403 ] &&\n            { [[ "$response" == *"rate limit"* ]] || grep -qi \'^x-ratelimit-remaining:[[:space:]]*0\' "$headers"; }; }; } &&\n            [ $attempt -lt $max_retries ]; then\n            wait_time=60\n            value=$(awk \'tolower($1) == "retry-after:" { gsub(/\\r/, "", $2); print $2 }\' "$headers")\n            if [[ "$value" =~ ^[0-9]+$ ]]; then\n                wait_time=$value\n            else\n                value=$(awk \'tolower($1) == "x-ratelimit-reset:" { gsub(/\\r/, "", $2); print $2 }\' "$headers")\n                if [[ "$value" =~ ^[0-9]+$ ]]; then\n                    wait_time=$(( value - $(date +%s) + 1 ))\n                    [ "$wait_time" -ge 1 ] || wait_time=1\n                fi\n            fi\n            rm -f -- "$headers"\n            if [ "$wait_time" -gt "$GITHUB_RATE_LIMIT_MAX_WAIT" ]; then\n                echo -e "${RED}\u274C GitHub rate limit resets in ${wait_time}s (more than ${GITHUB_RATE_LIMIT_MAX_WAIT}s); giving up${NC}" >&2\n                return 1\n            fi\n            echo -e "${YELLOW}\u26A0\uFE0F  Rate limit hit, waiting ${wait_time}s before retry ($attempt/$max_retries)...${NC}" >&2\n            sleep "$wait_time"\n            attempt=$((attempt + 1))\n            continue\n        fi\n        rm -f -- "$headers"\n\n        # Non-retryable error or max retries reached\n        echo -e "${RED}\u274C GitHub API error ($http_code): $response${NC}" >&2\n        return 1\n    done\n\n    return 1\n}\n\n# Get all repositories from a GitHub organization\n# OPTIMIZED: Returns newline-separated list of "name|full_name" instead of JSON\nget_github_repositories() {\n    echo -e "${BLUE}\u{1F50D} Fetching repositories for organization: $GITHUB_ORG${NC}" >&2\n    \n    local all_repos=""\n    local page=1\n    local per_page=100\n    \n    while true; do\n        local url="https://api.github.com/orgs/${GITHUB_ORG}/repos?page=${page}&per_page=${per_page}"\n        local repos\n        \n        repos=$(github_request "$url") || return 1\n        \n        # FIXED: Use grep -o | wc -l to count occurrences correctly (grep -c counts lines, not occurrences)\n        local count=$(echo "$repos" | grep -o \'"full_name"\' | wc -l | tr -d \' \')\n        \n        if [ "$count" -eq 0 ]; then\n            break\n        fi\n        \n        # OPTIMIZED: Extract name and full_name pairs using grep/sed\n        # Format: name|full_name (one per line)\n        local repo_pairs\n        repo_pairs=$(echo "$repos" | tr \'\\n\' \' \' | grep -oE \'"name"[[:space:]]*:[[:space:]]*"[^"]*"[^}]*"full_name"[[:space:]]*:[[:space:]]*"[^"]*"\' | \\\n            sed \'s/"name"[[:space:]]*:[[:space:]]*"//;s/"[^}]*"full_name"[[:space:]]*:[[:space:]]*"/|/;s/"$//\')\n        \n        if [ -z "$all_repos" ]; then\n            all_repos="$repo_pairs"\n        else\n            all_repos="$all_repos"$\'\\n\'"$repo_pairs"\n        fi\n        echo "   Found $count repositories on page $page" >&2\n        \n        if [ "$count" -lt "$per_page" ]; then\n            break\n        fi\n        \n        page=$((page + 1))\n        sleep "$GITHUB_RATE_LIMIT_DELAY"\n    done\n    \n    local total=0\n    [ -z "$all_repos" ] || total=$(printf \'%s\\n\' "$all_repos" | wc -l | tr -d \' \')\n    echo -e "${GREEN}\u2705 Total repositories found: $total${NC}" >&2\n    echo "" >&2\n    \n    echo "$all_repos"\n}\n\n# Search for package.json and lockfiles in a repository using tree API (works without token for public repos)\nsearch_package_json_in_repo_tree() {\n    local repo_full_name="$1"\n    local repo_name="$2"\n    \n    echo -e "   ${BLUE}Fetching repository tree...${NC}"\n    \n    # Get the default branch first, then pin its current commit: the tree\n    # and every file then come from the same snapshot, even if the branch\n    # moves while files are downloaded.\n    local repo_info\n    repo_info=$(github_request "https://api.github.com/repos/${repo_full_name}") || return 1\n    local default_branch ref branch_info\n    default_branch=$(json_get_value "$repo_info" "default_branch")\n    ref="$default_branch"\n    if branch_info=$(github_request "https://api.github.com/repos/${repo_full_name}/branches/${default_branch}" 2>/dev/null); then\n        local commit_sha\n        commit_sha=$(json_get_value "$(json_get_object "$branch_info" "commit")" "sha")\n        [[ "$commit_sha" =~ ^[0-9a-f]{40}$ ]] && ref="$commit_sha"\n    elif [ "$(json_get_value "$repo_info" "size")" = 0 ]; then\n        # No default branch and no content: a repository without any commit\n        # (GitHub answers 409 for its tree). "size" alone is not enough: it\n        # is computed asynchronously and reads 0 on fresh repositories.\n        echo "   \u2717 Empty repository: nothing to scan"\n        return 0\n    fi\n\n    # Get the full tree recursively\n    local tree_url="https://api.github.com/repos/${repo_full_name}/git/trees/${ref}?recursive=1"\n    local tree_response\n    tree_response=$(github_request "$tree_url") || return 1\n    if [[ "$tree_response" =~ \\"truncated\\"[[:space:]]*:[[:space:]]*true ]]; then\n        echo "Error: GitHub returned a truncated tree for $repo_full_name" >&2\n        return 1\n    fi\n    \n    # OPTIMIZED: Use grep/sed to extract paths directly instead of slow JSON parsing\n    # Extract all "path" values from the tree response and filter for target files\n    # This is MUCH faster than iterating with json_array_get for large trees\n    # Build the filename match regex from the ecosystem registry (+ package.json)\n    local scan_regex="" _name\n    for _name in $(ecosystem_scan_filenames); do\n        scan_regex="${scan_regex:+$scan_regex|}${_name//./\\\\.}"\n    done\n\n    local target_files\n    target_files=$(echo "$tree_response" | \\\n        grep -oE \'"path"[[:space:]]*:[[:space:]]*"[^"]*"\' | \\\n        sed \'s/"path"[[:space:]]*:[[:space:]]*"//;s/"$//\' | \\\n        grep -v \'node_modules\' | \\\n        grep -E "(^|/)(${scan_regex})\\$" || true)\n    \n    if [ -z "$target_files" ]; then\n        echo "   \u2717 No package.json or lockfiles found"\n        return 0\n    fi\n    \n    # Count files by type\n    local pkg_count=$(echo "$target_files" | grep -c "package.json" || true)\n    local lock_count=$(echo "$target_files" | grep -v "package.json" | grep -c "." || true)\n    echo "   Found $pkg_count package.json file(s) and $lock_count lockfile(s)"\n    \n    # Start from an empty repo directory, so files deleted upstream since a\n    # previous fetch are not scanned again. Only a directory this tool\n    # created (it holds the marker file) is cleared: a pre-existing folder of\n    # the same name, such as a local workspace, is never deleted.\n    local repo_dir="${GITHUB_OUTPUT_DIR}/${repo_name}"\n    local marker=".package-checker-fetch"\n    if [ -n "$repo_name" ] && [ "$repo_name" != . ] && [ "$repo_name" != .. ] && [ -f "$repo_dir/$marker" ]; then\n        rm -rf -- "$repo_dir"\n    fi\n    mkdir -p "$repo_dir"\n    printf \'%s\\n\' "$repo_full_name" > "$repo_dir/$marker"\n\n    # Fetch each file\n    while IFS= read -r file_path; do\n        [ -z "$file_path" ] && continue\n\n        local raw_url="https://raw.githubusercontent.com/${repo_full_name}/${ref}/${file_path}"\n        local file_content\n        file_content=$(curl -fsSL --connect-timeout 10 --max-time 60 \\\n            ${GITHUB_TOKEN:+-H "Authorization: Bearer $GITHUB_TOKEN"} \\\n            -H "User-Agent: package-checker-script" \\\n            "${raw_url// /%20}") || return 1\n        \n        # Save the file\n        local full_path="${repo_dir}/${file_path}"\n        local dir="${full_path%/*}"\n        mkdir -p "$dir"\n        \n        printf \'%s\\n\' "$file_content" > "$full_path" || return 1\n        \n        local file_name="${file_path##*/}"\n        if [ "$file_name" = "package.json" ]; then\n            echo -e "   ${GREEN}\u2713 Saved: ${repo_name}/${file_path}${NC}"\n        else\n            echo -e "   ${BLUE}\u2713 Saved: ${repo_name}/${file_path}${NC}"\n        fi\n    done <<< "$target_files"\n}\n\n# Create a GitHub issue with proper JSON escaping using jq\n# Arguments:\n#   $1 - repo_full_name (owner/repo)\n#   $2 - issue_title\n#   $3 - issue_body (markdown content)\n#   $4 - labels (comma-separated, optional)\ncreate_github_issue() {\n    local repo_full_name="$1"\n    local issue_title="$2"\n    local issue_body="$3"\n    local labels="${4:-security,vulnerability}"\n\n    if [ -z "$GITHUB_TOKEN" ]; then\n        echo -e "${YELLOW}\u26A0\uFE0F  Cannot create issue: GitHub token is required${NC}"\n        return 1\n    fi\n\n    # Check if jq is available for proper JSON escaping\n    if ! command -v jq &> /dev/null; then\n        echo -e "${RED}\u274C jq is required for creating issues. Please install it.${NC}"\n        return 1\n    fi\n\n    # Convert labels string to JSON array\n    local labels_json\n    labels_json=$(echo "$labels" | tr \',\' \'\\n\' | jq -R . | jq -s .)\n\n    # Create JSON payload with proper escaping using jq. The body goes\n    # through stdin, never the command line: a consolidated report can\n    # exceed the per-argument limit (128 KiB on Linux).\n    local json_payload\n    json_payload=$(printf \'%s\' "$issue_body" | jq -Rs \\\n        --arg title "$issue_title" \\\n        --argjson labels "$labels_json" \\\n        \'{title: $title, body: ., labels: $labels}\') || return 1\n\n    echo -e "${BLUE}\u{1F4DD} Creating issue on ${repo_full_name}...${NC}"\n\n    # Make API request to create issue\n    local response\n    response=$(curl -sS --connect-timeout 10 --max-time 60 -w "\\n%{http_code}" -X POST \\\n        -H "Authorization: Bearer $GITHUB_TOKEN" \\\n        -H "Accept: application/vnd.github+json" \\\n        -H "X-GitHub-Api-Version: 2022-11-28" \\\n        --data-binary @- \\\n        "https://api.github.com/repos/${repo_full_name}/issues" <<< "$json_payload") || return 1\n    local http_code="${response##*$\'\\n\'}"\n    response="${response%$\'\\n\'*}"\n\n    # Check if issue was created successfully\n    if [ "$http_code" = 201 ] && echo "$response" | grep -q \'"html_url"\'; then\n        local issue_url\n        issue_url=$(echo "$response" | jq -r \'.html_url // empty\' 2>/dev/null || echo "$response" | grep -o \'"html_url":"[^"]*"\' | head -1 | cut -d\'"\' -f4)\n        echo -e "${GREEN}\u2705 Issue created: ${issue_url}${NC}"\n        return 0\n    else\n        echo -e "${RED}\u274C Failed to create issue${NC}"\n        if echo "$response" | grep -q \'"message"\'; then\n            local error_msg\n            error_msg=$(echo "$response" | jq -r \'.message // empty\' 2>/dev/null || echo "$response" | grep -o \'"message":"[^"]*"\' | cut -d\'"\' -f4)\n            echo -e "${RED}   Error: ${error_msg}${NC}"\n        fi\n        return 1\n    fi\n}\n\n# Fetch all packages from GitHub organization or single repo\nfetch_github_packages() {\n    if [ -z "$GITHUB_ORG" ] && [ -z "$GITHUB_REPO" ]; then\n        echo -e "${RED}\u274C Error: GitHub organization or repository is required${NC}"\n        echo "   Use --github-org for an organization or --github-repo for a single repository"\n        return 1\n    fi\n    \n    # Token is required for organization scanning (repository listing)\n    if [ -n "$GITHUB_ORG" ] && [ -z "$GITHUB_TOKEN" ]; then\n        echo -e "${RED}\u274C Error: GitHub token is required for organization scanning${NC}"\n        echo "   Set GITHUB_TOKEN environment variable or use --github-token option"\n        return 1\n    fi\n    \n    echo ""\n    echo "\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557"\n    echo "\u2551       Fetching Packages from GitHub                \u2551"\n    echo "\u255A\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255D"\n    echo ""\n    \n    if [ -z "$GITHUB_TOKEN" ]; then\n        echo -e "${YELLOW}\u26A0\uFE0F  No GitHub token provided - using unauthenticated requests (rate limited)${NC}"\n        echo ""\n    fi\n    \n    # Create output directory\n    mkdir -p "$GITHUB_OUTPUT_DIR"\n    \n    # Single repository mode\n    if [ -n "$GITHUB_REPO" ]; then\n        # Remove trailing slash if present\n        local repo_full_name="${GITHUB_REPO%/}"\n        local repo_name="${repo_full_name##*/}"\n        \n        echo -e "${BLUE}\u{1F50D} Fetching repository: $repo_full_name${NC}"\n        echo ""\n        echo -e "${BLUE}Processing: $repo_name${NC}"\n        \n        # Use tree API for single repo (works without token for public repos)\n        if ! search_package_json_in_repo_tree "$repo_full_name" "$repo_name"; then\n            echo -e "${RED}\u274C Failed to fetch repository: $repo_full_name${NC}"\n            return 1\n        fi\n    else\n        # Organization mode - use Tree API (less rate-limited than Search API)\n        local repos\n        repos=$(get_github_repositories) || return 1\n        \n        # OPTIMIZED: repos is now newline-separated "name|full_name" pairs\n        while IFS=\'|\' read -r repo_name repo_full_name; do\n            [ -z "$repo_name" ] && continue\n            \n            echo -e "${BLUE}Processing: $repo_name${NC}"\n            \n            # Use Tree API instead of Search API (much higher rate limit). An\n            # empty or unreadable repository must not stop the organization scan.\n            if ! search_package_json_in_repo_tree "$repo_full_name" "$repo_name"; then\n                echo -e "${YELLOW}\u26A0\uFE0F  Skipping $repo_full_name: unable to fetch its files${NC}"\n                GITHUB_FAILED_REPOS=$((GITHUB_FAILED_REPOS + 1))\n            fi\n            \n            sleep "$GITHUB_RATE_LIMIT_DELAY"\n        done <<< "$repos"\n    fi\n    \n    echo ""\n    echo "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"\n    echo -e "${GREEN}\u2705 GitHub packages fetched to: $(realpath "$GITHUB_OUTPUT_DIR")${NC}"\n    echo "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"\n    echo ""\n}\n\n# ============================================================================\n# GitHub issue reports (--create-multiple-issues / --create-single-issue)\n#\n# Findings (VULNERABLE_PACKAGES: "file|eco|name@version") are grouped by target\n# repository, then by "eco:name", then by version with the files using it.\n# Every advisory of a version comes from VULN_ADVISORIES (merged GHSA/OSV\n# records "severity;ghsa;cve;source;fix;id"). An issue whose exact title is\n# already open in the repository is not created again.\n# ============================================================================\nISSUE_REPO_LIST=()\ndeclare -A ISSUE_REPO_PKGS=()       # repo -> newline list of eco:name\ndeclare -A ISSUE_PKG_VERSIONS=()    # repo|eco:name -> newline list of versions\ndeclare -A ISSUE_VERSION_FILES=()   # repo|eco:name|version -> newline list of files\n\n# Repository (owner/repo) an issue about FILE belongs to: --github-repo, or in\n# organization mode the repository whose fetched copy holds the file\n# ($GITHUB_OUTPUT_DIR/<repo>/...). Sets ISSUE_REPO ("" when unknown).\nissue_repository_for() {\n    ISSUE_REPO=""\n    if [ -n "$GITHUB_REPO" ]; then\n        ISSUE_REPO="${GITHUB_REPO%/}"\n        return\n    fi\n    [ -n "$GITHUB_ORG" ] || return 0\n    local file="${1#./}" dir="${GITHUB_OUTPUT_DIR%/}/"\n    dir="${dir#./}"\n    [[ "$file" == "$dir"*/* ]] || return 0\n    file="${file#"$dir"}"\n    ISSUE_REPO="$GITHUB_ORG/${file%%/*}"\n}\n\ngroup_findings_for_issues() {\n    ISSUE_REPO_LIST=()\n    ISSUE_REPO_PKGS=()\n    ISSUE_PKG_VERSIONS=()\n    ISSUE_VERSION_FILES=()\n    local vuln file eco pv pkg ver pk vk unknown=0\n    for vuln in "${VULNERABLE_PACKAGES[@]}"; do\n        IFS=\'|\' read -r file eco pv <<< "$vuln"\n        issue_repository_for "$file"\n        if [ -z "$ISSUE_REPO" ]; then\n            unknown=$((unknown + 1))\n            continue\n        fi\n        pkg="$eco:${pv%@*}" ver="${pv##*@}"\n        pk="$ISSUE_REPO|$pkg" vk="$ISSUE_REPO|$pkg|$ver"\n        if [ -z "${ISSUE_REPO_PKGS[$ISSUE_REPO]+x}" ]; then\n            ISSUE_REPO_LIST+=("$ISSUE_REPO")\n            ISSUE_REPO_PKGS["$ISSUE_REPO"]=""\n        fi\n        if [ -z "${ISSUE_PKG_VERSIONS[$pk]+x}" ]; then\n            ISSUE_REPO_PKGS["$ISSUE_REPO"]+="$pkg"$\'\\n\'\n            ISSUE_PKG_VERSIONS["$pk"]=""\n        fi\n        if [ -z "${ISSUE_VERSION_FILES[$vk]+x}" ]; then\n            ISSUE_PKG_VERSIONS["$pk"]+="$ver"$\'\\n\'\n            ISSUE_VERSION_FILES["$vk"]="$file"\n        else\n            case $\'\\n\'"${ISSUE_VERSION_FILES[$vk]}"$\'\\n\' in\n                *$\'\\n\'"$file"$\'\\n\'*) ;;\n                *) ISSUE_VERSION_FILES["$vk"]+=$\'\\n\'"$file" ;;\n            esac\n        fi\n    done\n    if [ "$unknown" -gt 0 ]; then\n        echo -e "${YELLOW}\u26A0\uFE0F  ${unknown} finding(s) not attributable to a repository were left out (use --github-repo or --github-org)${NC}"\n    fi\n}\n\n# Distinct advisories of one package across its versions. Sets ADV_TOTAL,\n# ADV_MAX_RANK and ADV_SEV_COUNTS (index = severity rank, 0 = unknown).\npackage_advisory_stats() {\n    local pkg="$1" versions="$2" ver advisories advisory key\n    local severity ghsa cve source fix id\n    local -A seen=()\n    ADV_TOTAL=0 ADV_MAX_RANK=0\n    ADV_SEV_COUNTS=(0 0 0 0 0)\n    while IFS= read -r ver; do\n        [ -n "$ver" ] || continue\n        advisories="${VULN_ADVISORIES[$pkg@$ver]:-}"\n        while [ -n "$advisories" ]; do\n            advisory="${advisories%%||*}"\n            if [ "$advisory" = "$advisories" ]; then advisories=""; else advisories="${advisories#*||}"; fi\n            IFS=\';\' read -r severity ghsa cve source fix id <<< "$advisory"\n            key="${ghsa:-${cve:-${id:-$advisory}}}"\n            [ -z "${seen[$key]+x}" ] || continue\n            seen["$key"]=1\n            severity_rank "$severity"\n            ADV_SEV_COUNTS[SEV_RANK]=$(( ADV_SEV_COUNTS[SEV_RANK] + 1 ))\n            ADV_TOTAL=$((ADV_TOTAL + 1))\n            [ "$SEV_RANK" -le "$ADV_MAX_RANK" ] || ADV_MAX_RANK=$SEV_RANK\n        done\n    done <<< "$versions"\n}\n\n# Severity rank -> SEV_LABEL / SEV_EMOJI.\nseverity_label() {\n    case "$1" in\n        4) SEV_LABEL="CRITICAL" SEV_EMOJI="\u{1F534}" ;;\n        3) SEV_LABEL="HIGH" SEV_EMOJI="\u{1F7E0}" ;;\n        2) SEV_LABEL="MEDIUM" SEV_EMOJI="\u{1F7E1}" ;;\n        1) SEV_LABEL="LOW" SEV_EMOJI="\u{1F7E2}" ;;\n        *) SEV_LABEL="UNKNOWN" SEV_EMOJI="\u26AA" ;;\n    esac\n}\n\n# Markdown rows of the severity summary table.\nseverity_summary_rows() {\n    local rank rows=""\n    for rank in 4 3 2 1 0; do\n        [ "${ADV_SEV_COUNTS[$rank]}" -gt 0 ] || continue\n        severity_label "$rank"\n        rows+="| ${SEV_EMOJI} ${SEV_LABEL,,} | ${ADV_SEV_COUNTS[$rank]} |"$\'\\n\'\n    done\n    printf \'%s\' "$rows"\n}\n\n# Markdown table of the advisories of one package version.\nadvisory_table() {\n    local advisories="$1" advisory severity ghsa cve source fix id link\n    printf \'| Severity | Advisory | CVE | Source | Fixed in |\\n\'\n    printf \'|----------|----------|-----|--------|----------|\\n\'\n    while [ -n "$advisories" ]; do\n        advisory="${advisories%%||*}"\n        if [ "$advisory" = "$advisories" ]; then advisories=""; else advisories="${advisories#*||}"; fi\n        IFS=\';\' read -r severity ghsa cve source fix id <<< "$advisory"\n        severity_rank "$severity"\n        severity_label "$SEV_RANK"\n        link="-"\n        if [ -n "$ghsa" ]; then link="[${ghsa}](https://github.com/advisories/${ghsa})"\n        elif [ -n "$id" ]; then link="[${id}](https://osv.dev/vulnerability/${id})"\n        fi\n        printf \'| %s %s | %s | %s | %s | %s |\\n\' "$SEV_EMOJI" "${severity:-unknown}" "$link" \\\n            "${cve:+[${cve}](https://nvd.nist.gov/vuln/detail/${cve})}" "${source:--}" "${fix:--}"\n    done\n}\n\n# Titles of the open issues of a repository (one per line), so a run does not\n# file the same report twice. Empty when they cannot be listed.\nopen_issue_titles() {\n    local repo="$1" page response titles=""\n    for page in 1 2 3 4 5 6 7 8 9 10; do\n        response=$(github_request "https://api.github.com/repos/${repo}/issues?state=open&per_page=100&page=${page}" 2>/dev/null) || {\n            echo -e "${YELLOW}\u26A0\uFE0F  Unable to list open issues of $repo: duplicates are not checked${NC}" >&2\n            break\n        }\n        titles+=$(printf \'%s\' "$response" | jq -r \'.[] | select(.pull_request == null) | .title\' 2>/dev/null)$\'\\n\'\n        [ "$(printf \'%s\' "$response" | jq \'length\' 2>/dev/null)" = 100 ] || break\n    done\n    printf \'%s\' "$titles"\n}\n\n# Create an issue unless one with the same title is open (titles in $4).\ncreate_issue_once() {\n    local repo="$1" title="$2" body="$3" open_titles="$4"\n    if printf \'%s\\n\' "$open_titles" | grep -qxF -- "$title"; then\n        echo -e "${BLUE}\u2139\uFE0F  Already open on ${repo}: ${title}${NC}"\n        return 2\n    fi\n    create_github_issue "$repo" "$title" "$body" "security,vulnerability,dependencies"\n}\n\n# Body of the issue about one package (eco:name) in one repository.\npackage_issue_body() {\n    local repo="$1" pkg="$2" versions="$3"\n    local eco="${pkg%%:*}" name="${pkg#*:}" ver file body\n    body="## \u{1F512} Security Vulnerabilities in \\`${name}\\` (${eco})"$\'\\n\\n\'\n    body+="### \u{1F4CA} Summary"$\'\\n\\n\'"| Metric | Count |"$\'\\n\'"|--------|-------|"$\'\\n\'\n    body+="| **Total Vulnerabilities** | ${ADV_TOTAL} |"$\'\\n\'"$(severity_summary_rows)"$\'\\n\\n\'\n    body+="---"$\'\\n\\n\'"### \u{1F50D} Vulnerability Details"$\'\\n\\n\'\n    while IFS= read -r ver; do\n        [ -n "$ver" ] || continue\n        body+="#### Version \\`${ver}\\`"$\'\\n\\n\'\n        body+="$(advisory_table "${VULN_ADVISORIES[$pkg@$ver]:-}")"$\'\\n\\n\'\n        body+="<details>"$\'\\n\'"<summary>\u{1F4C1} Affected files</summary>"$\'\\n\\n\'\n        while IFS= read -r file; do\n            [ -n "$file" ] && body+="- \\`${file}\\`"$\'\\n\'\n        done <<< "${ISSUE_VERSION_FILES[$repo|$pkg|$ver]}"\n        body+=$\'\\n\'"</details>"$\'\\n\\n\'\n    done <<< "$versions"\n    body+="### \u2705 Recommendations"$\'\\n\\n\'\n    body+="1. **Update the package** to the latest patched version:"$\'\\n\'"   \\`\\`\\`bash"$\'\\n\'\n    body+="$(fix_commands_for_eco "$eco" "$name" "   ")"$\'\\n\'"   \\`\\`\\`"$\'\\n\\n\'\n    body+="2. **Check for breaking changes** before updating major versions"$\'\\n\\n\'\n    body+="3. **Run a security audit** after updating:"$\'\\n\'"   \\`\\`\\`bash"$\'\\n\'\n    body+="   $(verify_command_for_eco "$eco")"$\'\\n\'"   \\`\\`\\`"$\'\\n\\n\'\n    body+="4. **Review the advisories** linked above for specific remediation steps"$\'\\n\\n\'\n    body+="---"$\'\\n\\n\'"*\u{1F916} Generated by [package-checker.sh](https://github.com/maxgfr/package-checker.sh)*"\n    printf \'%s\' "$body"\n}\n\n# One issue per vulnerable package, in the repository that uses it.\ncreate_package_issues() {\n    local repo pkg versions title open_titles created=0 total=0 status\n    group_findings_for_issues\n    for repo in "${ISSUE_REPO_LIST[@]}"; do\n        open_titles=$(open_issue_titles "$repo")\n        while IFS= read -r pkg; do\n            [ -n "$pkg" ] || continue\n            total=$((total + 1))\n            versions="${ISSUE_PKG_VERSIONS[$repo|$pkg]}"\n            package_advisory_stats "$pkg" "$versions"\n            severity_label "$ADV_MAX_RANK"\n            title="${SEV_EMOJI} Security: ${ADV_TOTAL} vulnerabilit$([ "$ADV_TOTAL" -eq 1 ] && echo y || echo ies) in \\`${pkg#*:}\\`"\n            [ "${pkg%%:*}" = npm ] || title+=" (${pkg%%:*})"\n            [ "$ADV_MAX_RANK" -eq 0 ] || title+=" [${SEV_LABEL}]"\n            echo -e "${BLUE}\u{1F4E6} ${pkg#*:}${NC} (${ADV_TOTAL} vulnerability/ies) \u2192 ${repo}"\n            status=0\n            create_issue_once "$repo" "$title" "$(package_issue_body "$repo" "$pkg" "$versions")" "$open_titles" || status=$?\n            [ "$status" -ne 0 ] || created=$((created + 1))\n            sleep 1  # Rate limiting\n            echo ""\n        done <<< "${ISSUE_REPO_PKGS[$repo]}"\n    done\n    echo "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"\n    echo -e "${GREEN}\u2705 Created ${created} issue(s) for ${total} package(s)${NC}"\n    echo "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"\n}\n\n# One consolidated report per repository.\ncreate_consolidated_issues() {\n    local repo pkg versions ver file title body details ecos rank status\n    local total pkg_count open_titles\n    local -a counts\n    group_findings_for_issues\n    for repo in "${ISSUE_REPO_LIST[@]}"; do\n        total=0 pkg_count=0 details="" ecos=""\n        counts=(0 0 0 0 0)\n        local max_rank=0\n        while IFS= read -r pkg; do\n            [ -n "$pkg" ] || continue\n            pkg_count=$((pkg_count + 1))\n            versions="${ISSUE_PKG_VERSIONS[$repo|$pkg]}"\n            package_advisory_stats "$pkg" "$versions"\n            total=$((total + ADV_TOTAL))\n            for rank in 0 1 2 3 4; do counts[rank]=$(( counts[rank] + ADV_SEV_COUNTS[rank] )); done\n            [ "$ADV_MAX_RANK" -le "$max_rank" ] || max_rank=$ADV_MAX_RANK\n            case " $ecos " in *" ${pkg%%:*} "*) ;; *) ecos+=" ${pkg%%:*}" ;; esac\n            severity_label "$ADV_MAX_RANK"\n            details+="<details>"$\'\\n\'"<summary>${SEV_EMOJI} <strong>${pkg#*:}</strong> (${pkg%%:*}, ${ADV_TOTAL} vulnerabilities)</summary>"$\'\\n\\n\'\n            while IFS= read -r ver; do\n                [ -n "$ver" ] || continue\n                details+="**Version \\`${ver}\\`**"$\'\\n\\n\'"$(advisory_table "${VULN_ADVISORIES[$pkg@$ver]:-}")"$\'\\n\\n\'\n                while IFS= read -r file; do\n                    [ -n "$file" ] && details+="- \\`${file}\\`"$\'\\n\'\n                done <<< "${ISSUE_VERSION_FILES[$repo|$pkg|$ver]}"\n                details+=$\'\\n\'\n            done <<< "$versions"\n            details+="</details>"$\'\\n\\n\'\n        done <<< "${ISSUE_REPO_PKGS[$repo]}"\n\n        severity_label "$max_rank"\n        title="${SEV_EMOJI} Security Report: ${total} vulnerabilities in ${pkg_count} packages [${SEV_LABEL}]"\n        ADV_SEV_COUNTS=("${counts[@]}")\n        body="## \u{1F512} Security Vulnerability Report"$\'\\n\\n\'\n        body+="This issue contains a consolidated report of all security vulnerabilities detected in this repository."$\'\\n\\n\'\n        body+="### \u{1F4CA} Global Summary"$\'\\n\\n\'"| Metric | Count |"$\'\\n\'"|--------|-------|"$\'\\n\'\n        body+="| **Total Vulnerabilities** | ${total} |"$\'\\n\'"| **Affected Packages** | ${pkg_count} |"$\'\\n\'\n        body+="$(severity_summary_rows)"$\'\\n\\n\'"---"$\'\\n\\n\'"### \u{1F4E6} Vulnerable Packages"$\'\\n\\n\'"$details"\n        body+="---"$\'\\n\\n\'"### \u2705 Recommended Actions"$\'\\n\\n\'\n        body+="1. **Review each vulnerability** using the advisory links above."$\'\\n\'\n        body+="2. **Update the affected packages** to their latest patched versions. Commands per detected ecosystem:"$\'\\n\\n\'\n        local eco\n        for eco in $ecos; do\n            body+="#### $(eco_display_name "$eco")"$\'\\n\\n\'"\\`\\`\\`bash"$\'\\n\'\n            body+="$(fix_commands_for_eco "$eco" "<package-name>")"$\'\\n\'"\\`\\`\\`"$\'\\n\\n\'\n            body+="Verify: \\`$(verify_command_for_eco "$eco")\\`"$\'\\n\\n\'\n        done\n        body+="---"$\'\\n\\n\'"*\u{1F916} Generated by [package-checker.sh](https://github.com/maxgfr/package-checker.sh)*"\n\n        echo -e "${BLUE}Creating consolidated security report on ${repo}...${NC}"\n        open_titles=$(open_issue_titles "$repo")\n        status=0\n        create_issue_once "$repo" "$title" "$body" "$open_titles" || status=$?\n        echo "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"\n        case "$status" in\n            0) echo -e "${GREEN}\u2705 Created 1 consolidated issue with ${total} vulnerabilities${NC}" ;;\n            2) ;;\n            *) echo -e "${RED}\u274C Failed to create consolidated issue${NC}" ;;\n        esac\n        echo "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"\n    done\n}\n# CSV source parser: generates lookup-table eval statements in a single awk\n# pass. Handles quoted fields, multi-line quoted values, Windows line endings\n# and version ranges. Args: FILE [COLUMNS], COLUMNS being "pkg,version" as\n# 1-based indexes ("1,2") or header names ("name,versions").\n#\n# The first line is a header when columns are given by name, or when its\n# version field does not look like a version or a range; a headerless file\n# therefore keeps its first row.\nparse_csv_to_lookup_eval() {\n    local file="$1" columns="${2:-}"\n    local col1="${columns%%,*}" col2=""\n    [[ "$columns" == *,* ]] && col2="${columns#*,}" && col2="${col2%%,*}"\n    col1="${col1#"${col1%%[![:space:]]*}"}"; col1="${col1%"${col1##*[![:space:]]}"}"\n    col2="${col2#"${col2%%[![:space:]]*}"}"; col2="${col2%"${col2##*[![:space:]]}"}"\n\n    tr -d \'\\r\' < "$file" | awk -v col1="$col1" -v col2="$col2" "$AWK_FEED_LIB"\'\n    BEGIN {\n        pkg_col = 1\n        ver_col = 2\n        by_name = (col1 != "" && col2 != "" && !(col1 ~ /^[0-9]+$/ && col2 ~ /^[0-9]+$/))\n        if (col1 ~ /^[0-9]+$/ && col2 ~ /^[0-9]+$/) {\n            pkg_col = int(col1)\n            ver_col = int(col2)\n        }\n    }\n\n    function meta(name) {\n        return (name in meta_col) ? fields[meta_col[name]] : ""\n    }\n\n    function trim(s) {\n        gsub(/^[[:space:]"]+/, "", s)\n        gsub(/[[:space:]"]+$/, "", s)\n        return s\n    }\n\n    # RFC 4180: a quote opens a quoted field only at the start of a field\n    # (after optional spaces); elsewhere it is a literal character, so a stray\n    # quote such as 5" in a description cannot swallow the rest of the file.\n    function parse_csv_line(line, f,    i, n, in_quote, field, c, at_start) {\n        n = 1\n        field = ""\n        in_quote = 0\n        at_start = 1\n        for (i = 1; i <= length(line); i++) {\n            c = substr(line, i, 1)\n            if (in_quote) {\n                if (c == "\\"") {\n                    if (substr(line, i+1, 1) == "\\"") { field = field "\\""; i++ }\n                    else in_quote = 0\n                } else field = field c\n            } else if (c == "\\"" && at_start) {\n                in_quote = 1\n                at_start = 0\n            } else if (c == ",") {\n                f[n] = trim(field)\n                n++\n                field = ""\n                at_start = 1\n            } else {\n                field = field c\n                if (c !~ /[[:space:]]/) at_start = 0\n            }\n        }\n        f[n] = trim(field)\n        QUOTE_OPEN = in_quote\n        return n\n    }\n\n    # A UTF-8 byte order mark (Excel "CSV UTF-8") is not part of the header.\n    NR == 1 && substr($0, 1, 3) == "\\357\\273\\277" { $0 = substr($0, 4) }\n    {\n        if (pending_line != "") {\n            current_line = pending_line " " $0\n            pending_line = ""\n        } else {\n            current_line = $0\n        }\n\n        if (current_line == "") next\n\n        # A quoted field still open at the end of the line continues on the next.\n        field_count = parse_csv_line(current_line, fields)\n        if (QUOTE_OPEN) {\n            pending_line = current_line\n            next\n        }\n\n        if (!header_checked) {\n            header_checked = 1\n            if (by_name || (fields[ver_col] !~ /^([<>=~^*(]|[vV]?[0-9])/ && substr(fields[ver_col], 1, 1) != "[")) {\n                # Header row: locate the named columns, including the\n                # optional advisory metadata (severity, ghsa, cve, source).\n                for (i = 1; i <= field_count; i++) {\n                    lower_field = tolower(fields[i])\n                    if (by_name && lower_field == tolower(col1)) pkg_col = i\n                    if (by_name && lower_field == tolower(col2)) ver_col = i\n                    if (lower_field ~ /^(severity|ghsa|cve|source)$/) { meta_col[lower_field] = i; has_meta = 1 }\n                    if (lower_field == tolower(col1)) found1 = 1\n                    if (lower_field == tolower(col2)) found2 = 1\n                }\n                # Named columns that the header lacks would silently load\n                # other columns as package names and versions.\n                if (by_name && !(found1 && found2)) {\n                    printf "Error: CSV header has no column named %s\\n", (found1 ? col2 : col1) > "/dev/stderr"\n                    failed = 1\n                    exit 1\n                }\n                next\n            }\n        }\n\n        pkg = fields[pkg_col]\n        ver = fields[ver_col]\n        if (pkg == "" || ver == "") next\n\n        record = ""\n        if (has_meta) {\n            ranged = range_like(ver)\n            record = tolower(meta("severity")) ";" meta("ghsa") ";" meta("cve") ";" meta("source") ";" (ranged ? range_fix(ver) : "") ";"\n        }\n        # CSV carries no ecosystem info -> wildcard namespace "*:"\n        add_entry("*:" loose_name(pkg), ver, record, range_like(ver))\n    }\n\n    END {\n        if (failed) exit 1\n        if (pending_line != "") {\n            print "Error: unterminated quoted field in CSV source" > "/dev/stderr"\n            exit 1\n        }\n        emit_lookup()\n    }\n    \'\n}\n# Awk helpers shared by every feed parser (purl, SARIF, CycloneDX, Trivy).\n# Prepended to each awk program so canonicalization cannot drift between them.\n#   escape_sq(s)            quote s for a single-quoted bash eval string\n#   canon_purl_name(e, n)   canonical package name for purl type e; MUST match\n#                           the feed emission (src/60-feeds.sh) and the lockfile\n#                           parsers (src/50-ecosystems/)\n#   purl_split(p)           split "pkg:type/name@version?q" into PURL_TYPE,\n#                           PURL_NAME, PURL_VERSION (both percent-decoded) and\n#                           PURL_QUERY; returns 0 when p is not a versioned purl\n#   loose_name(n)           key of a name in the wildcard "*:" namespace\n#   add_entry / emit_lookup collect rows, then print the bash eval statements\nAWK_FEED_LIB=\'\nfunction escape_sq(s) {\n    gsub(/\'\\\'\'/, "\'\\\'\'\\\\\'\\\'\'\'\\\'\'", s)\n    return s\n}\nfunction canon_purl_name(eco, name,   lo, cnt, parts) {\n    if (eco == "pypi") {\n        # PEP 503: lowercase, collapse runs of - _ . to a single -\n        lo = tolower(name)\n        gsub(/[-_.]+/, "-", lo)\n        return lo\n    } else if (eco == "maven") {\n        # groupId/artifactId -> groupId:artifactId (last two path components)\n        if (index(name, ":") > 0) return name\n        cnt = split(name, parts, "/")\n        if (cnt >= 2) return parts[cnt-1] ":" parts[cnt]\n        return name\n    } else if (eco == "composer" || eco == "githubactions" || eco == "nuget") {\n        return tolower(name)\n    } else if (eco == "swift") {\n        lo = name\n        sub(/^[A-Za-z][A-Za-z0-9+.-]*:\\/\\//, "", lo)\n        sub(/\\/+$/, "", lo)\n        sub(/\\.git$/, "", lo)\n        return tolower(lo)\n    }\n    # npm, golang, cargo, gem, pub, hex and unknown types: name as-is\n    return name\n}\nfunction purl_split(p,   main_part, q, te, at) {\n    PURL_TYPE = PURL_NAME = PURL_VERSION = PURL_QUERY = ""\n    if (substr(p, 1, 4) != "pkg:") return 0\n    te = index(p, "/")\n    if (te <= 5) return 0\n    # A "#subpath" names a file inside the package, never part of its version.\n    q = index(p, "#")\n    if (q > 0) p = substr(p, 1, q - 1)\n    main_part = p\n    q = index(p, "?")\n    # The query string may itself contain "@": split it off first.\n    if (q > 0) { main_part = substr(p, 1, q - 1); PURL_QUERY = substr(p, q + 1) }\n    # The purl type is case-insensitive (pkg:NPM/x is pkg:npm/x).\n    PURL_TYPE = tolower(substr(main_part, 5, te - 5))\n    # Name/version split at the LAST "@": scoped names start with "@".\n    if (!match(main_part, /@[^@]*$/)) return 0\n    at = RSTART\n    if (at <= te + 1) return 0\n    PURL_NAME = substr(main_part, te + 1, at - te - 1)\n    PURL_VERSION = substr(main_part, at + 1)\n    if (index(main_part, "\\"")) {\n        gsub(/"/, "", PURL_NAME)\n        gsub(/"/, "", PURL_VERSION)\n    }\n    PURL_NAME = pct_decode(PURL_NAME)\n    PURL_VERSION = pct_decode(PURL_VERSION)\n    return PURL_NAME != "" && PURL_VERSION != ""\n}\n# Decode %XX escapes (%40 "@", %2F "/", %2B "+" in v1.2.3%2Bincompatible).\nfunction pct_decode(s,   out, i, c, hex) {\n    if (!index(s, "%")) return s\n    out = ""\n    for (i = 1; i <= length(s); i++) {\n        c = substr(s, i, 1)\n        hex = tolower(substr(s, i + 1, 2))\n        if (c == "%" && hex ~ /^[0-9a-f][0-9a-f]$/) {\n            out = out sprintf("%c", (index("0123456789abcdef", substr(hex, 1, 1)) - 1) * 16 + index("0123456789abcdef", substr(hex, 2, 1)) - 1)\n            i += 2\n        } else out = out c\n    }\n    return out\n}\n# Loose form of a name without ecosystem (wildcard "*:" keys of CSV, JSON and\n# report sources): lowercase, runs of - _ . collapsed to "-". Must match the\n# probe in check_vulnerability.\nfunction loose_name(n) {\n    n = tolower(n)\n    gsub(/[-_.]+/, "-", n)\n    return n\n}\n# Register one advisory row. key = "eco:name", version = exact version or\n# range, record = "severity;ghsa;cve;source;fix;id" (id: the advisory id when\n# it is neither a GHSA nor a CVE, e.g. PYSEC-, GO-, RUSTSEC-, MAL-). Ranges are newline-separated\n# (they may contain "||"), exact versions "|"-separated. Every distinct record\n# is kept, even when two advisories share the same range.\nfunction add_entry(key, version, record, is_range,   meta_key, rk, vk) {\n    meta_key = key (is_range ? ":" : "@") version\n    rk = meta_key SUBSEP record\n    # A record without any metadata adds nothing to the default one.\n    if (record !~ /^;*$/ && !(rk in seen_records)) {\n        seen_records[rk] = 1\n        records[meta_key] = records[meta_key] record "\\n"\n    }\n    vk = key SUBSEP version\n    if (vk in seen_versions) return\n    seen_versions[vk] = 1\n    if (!(key in seen_keys)) { seen_keys[key] = 1; key_count++ }\n    if (is_range) {\n        # Explicit if/else: mawk creates the assignment target before the\n        # "in" test of a ternary, which then always holds (leading "|").\n        if (key in pkg_ranges) pkg_ranges[key] = pkg_ranges[key] "\\n" version\n        else pkg_ranges[key] = version\n    } else {\n        if (key in pkg_versions) pkg_versions[key] = pkg_versions[key] "|" version\n        else pkg_versions[key] = version\n    }\n}\n# True when a version string is a range: operators, spaces, wildcards\n# (*, 1.x), OR-alternatives (| and ||) or Maven/NuGet intervals ([1.0,2.0)).\nfunction range_like(v) {\n    return (v ~ /[[:space:]<>=,^~*|]/ || index(v, "[") || index(v, "]") || v ~ /\\.[xX](\\.|$)/ || v ~ /^\\(/)\n}\n# Known fixed version of a single range: its exclusive upper bound. An\n# inclusive upper bound (<=) is still affected, and an OR-range (or an\n# interval list) is ambiguous.\nfunction range_fix(version) {\n    if (version !~ /\\||\\[|\\(/ && match(version, /<[0-9][^[:space:],]*/))\n        return substr(version, RSTART + 1, RLENGTH - 1)\n    return ""\n}\n# Print the counts first (FEED_PKG_COUNT: packages kept, FEED_RAW_COUNT:\n# entries read before pre-filtering), then the eval statements. Appends ("+=")\n# merge with tables filled by earlier sources; single quotes keep the data\n# literal through eval.\nfunction emit_lookup(   pkg, key) {\n    printf "FEED_PKG_COUNT=%d\\nFEED_RAW_COUNT=%d\\n", key_count, (raw_count != "" ? raw_count : key_count)\n    for (pkg in pkg_versions)\n        printf "VULN_EXACT_LOOKUP[\'\\\'\'%s\'\\\'\']+=\'\\\'\'|%s\'\\\'\'\\n", escape_sq(pkg), escape_sq(pkg_versions[pkg])\n    for (pkg in pkg_ranges)\n        printf "VULN_RANGE_LOOKUP[\'\\\'\'%s\'\\\'\']+=\'\\\'\'%s\\n\'\\\'\'\\n", escape_sq(pkg), escape_sq(pkg_ranges[pkg])\n    for (key in records)\n        printf "VULN_RECORDS[\'\\\'\'%s\'\\\'\']+=\'\\\'\'%s\'\\\'\'\\n", escape_sq(key), escape_sq(records[key])\n}\n\'\n\n# Parse a PURL feed file into lookup-table eval statements.\n# Line format: pkg:type/namespace/name@version-or-range?severity=..&ghsa=..\n# Example: pkg:npm/lodash@4.17.21\n# Example with version range: pkg:npm/express@>=4.0.0 <4.17.0\n#\n# Pre-filtering: with PREFILTER_TOKENS_FILE set (see build_project_tokens), an\n# entry is kept only when the last segment of its name (after the last "/" or\n# ":"), lowercased with runs of - _ . collapsed to "-", is one of the project\n# tokens. That segment is part of every way a package is written in a\n# lockfile (npm scope/name, PEP 503 names, Maven group:artifact, Go module\n# paths, Swift repository URLs, NuGet ids...), so no relevant entry is lost\n# while a 300k-line feed shrinks to the few entries the project can match.\nparse_purl_to_lookup_eval() {\n    local file="$1"\n    awk -v tokens_file="${PREFILTER_TOKENS_FILE:-}" "$AWK_FEED_LIB"\'\n    BEGIN {\n        raw_count = 0\n        filtering = (tokens_file != "")\n        if (filtering) while ((getline t < tokens_file) > 0) wanted[t] = 1\n    }\n    function parse_query_params(query_string, params,   n, i, pairs, eq, value) {\n        delete params\n        if (query_string == "") return\n        n = split(query_string, pairs, "&")\n        for (i = 1; i <= n; i++) {\n            eq = index(pairs[i], "=")\n            # Values are percent-decoded; ";" separates the fields of an\n            # advisory record, so it cannot survive inside one.\n            if (eq > 0) {\n                value = pct_decode(substr(pairs[i], eq + 1))\n                gsub(/;/, ",", value)\n                params[tolower(substr(pairs[i], 1, eq - 1))] = value\n            }\n        }\n    }\n\n    {\n        # Fast path for generated feeds: one bare purl per line. Anything else\n        # (indentation, CRLF, comments, blank lines) goes through a trim.\n        line = $0\n        last = substr(line, length(line))\n        if (substr(line, 1, 4) != "pkg:" || last == "\\r" || last == " " || last == "\\t") {\n            gsub(/^[[:space:]]+|[[:space:]\\r]+$/, "", line)\n            if (substr(line, 1, 4) != "pkg:") next\n        }\n        raw_count++\n        if (filtering) {\n            # Last segment of the name, without decoding the whole purl.\n            q = index(line, "?")\n            segment = q ? substr(line, 1, q - 1) : line\n            sub(/@[^@]*$/, "", segment)\n            segment = pct_decode(segment)\n            sub(/\\/+$/, "", segment)\n            sub(/^.*[\\/:]/, "", segment)\n            segment = tolower(segment)\n            gsub(/[-_.]+/, "-", segment)\n            if (!(segment in wanted)) next\n        }\n        if (!purl_split(line)) next\n        canon_key = PURL_TYPE ":" canon_purl_name(PURL_TYPE, PURL_NAME)\n        version = PURL_VERSION\n        parse_query_params(PURL_QUERY, params)\n\n        # Ranges contain operators, spaces, wildcards or OR-alternatives.\n        is_range = range_like(version)\n\n        fix = is_range ? range_fix(version) : ""\n        if ("fixed" in params) fix = params["fixed"]\n        record = params["severity"] ";" params["ghsa"] ";" params["cve"] ";" params["source"] ";" fix ";" params["id"]\n        add_entry(canon_key, version, record, is_range)\n    }\n\n    END { emit_lookup() }\n    \' "$file"\n}\n# JSON-shaped source importers: SARIF, CycloneDX SBOM, Trivy JSON and the\n# native JSON source format.\n#\n# Every importer reads json_structural_lines output (one JSON token group per\n# record), so pretty-printed and minified reports parse identically, and walks\n# it with the path tracker below. Each finding becomes an exact-version entry\n# plus an advisory record, through the same add_entry/emit_lookup helpers as\n# the purl parser (AWK_FEED_LIB in src/31-parsers-purl.sh).\n\n# Awk JSON path tracker over json_structural_lines records. jp_step(line)\n# classifies the record (JP_EVENT = open | close | scalar), keeps a stack of\n# container names ("#" for an array element) and exposes JP_PATH, e.g.\n# "/#/runs/#/results/#" inside a SARIF result. For a scalar, JP_KEY/JP_VAL hold\n# the key and the unquoted value (escapes such as \\n stay literal, except "\\/"\n# which is read as "/"). On close, JP_PATH is the path of the container that\n# just closed and jp_depth + 1 its depth.\nAWK_JSON_PATH=\'\nfunction jp_step(line,   k, rest) {\n    gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)\n    JP_KEY = JP_VAL = ""\n    if (line == "}" || line == "]") {\n        JP_EVENT = "close"\n        JP_PATH = jp_path()\n        if (jp_depth > 0) jp_depth--\n        return\n    }\n    k = "#"\n    rest = line\n    if (match(line, /^"([^"\\\\]|\\\\.)*"[[:space:]]*:[[:space:]]*/)) {\n        k = substr(line, 1, RLENGTH)\n        sub(/"[[:space:]]*:[[:space:]]*$/, "", k)\n        k = substr(k, 2)\n        rest = substr(line, RLENGTH + 1)\n        # "\\/" is an optional JSON escape of "/" (purls, scoped names).\n        if (index(k, "\\\\/")) gsub(/\\\\\\//, "/", k)\n    }\n    if (rest == "{" || rest == "[") {\n        JP_EVENT = "open"\n        jp_stack[++jp_depth] = k\n        JP_PATH = jp_path()\n        return\n    }\n    JP_EVENT = "scalar"\n    JP_PATH = jp_path()\n    JP_KEY = k\n    if (rest ~ /^".*"$/) {\n        rest = substr(rest, 2, length(rest) - 2)\n        if (index(rest, "\\\\/")) gsub(/\\\\\\//, "/", rest)\n    }\n    JP_VAL = rest\n}\nfunction jp_path(   i, p) {\n    p = ""\n    for (i = 1; i <= jp_depth; i++) p = p "/" jp_stack[i]\n    return p\n}\n# Advisory identifier -> ghsa/cve fields of a record.\nfunction id_fields(id) {\n    ID_GHSA = ID_CVE = ID_OTHER = ""\n    if (id ~ /^GHSA-/) ID_GHSA = id\n    else if (id ~ /^CVE-/) ID_CVE = id\n    else ID_OTHER = id\n}\n# Register a finding: namespaced key from a purl when available, else the\n# wildcard namespace "*:" (the report carries no ecosystem).\nfunction add_finding(purl, name, version, severity, id, source,   key) {\n    key = ""\n    if (purl != "" && purl_split(purl)) {\n        key = PURL_TYPE ":" canon_purl_name(PURL_TYPE, PURL_NAME)\n        if (version == "") version = PURL_VERSION\n    } else if (name != "") {\n        key = "*:" loose_name(name)\n    }\n    if (key == "" || version == "") return\n    id_fields(id)\n    add_entry(key, version, tolower(severity) ";" ID_GHSA ";" ID_CVE ";" source ";;" ID_OTHER, 0)\n}\n\'\n\n# Parse a SARIF report (Trivy, Grype, ...). Each runs[].results[] entry is one\n# finding. The package comes from the Trivy-style message\n# ("Package: next\\nInstalled Version: 16.0.3\\n...") or, failing that, from a\n# location message "path: name@version" (split at the LAST "@" so scoped names\n# survive). ruleId carries the advisory identifier.\nparse_sarif_to_lookup_eval() {\n    json_structural_lines "$1" | awk "$AWK_FEED_LIB$AWK_JSON_PATH"\'\n    function reset() { rule = level = pkg = ver = loc_pkg = loc_ver = sev = "" }\n    function field(text, label,   s) {\n        s = index(text, label)\n        if (s == 0) return ""\n        text = substr(text, s + length(label))\n        sub(/\\\\n.*/, "", text)\n        gsub(/^[[:space:]]+|[[:space:]]+$/, "", text)\n        return text\n    }\n    BEGIN { reset() }\n    {\n        jp_step($0)\n        if (JP_EVENT == "scalar") {\n            if (JP_PATH ~ /\\/results\\/#$/ && JP_KEY == "ruleId") rule = JP_VAL\n            else if (JP_PATH ~ /\\/results\\/#$/ && JP_KEY == "level") level = JP_VAL\n            else if (JP_PATH ~ /\\/results\\/#\\/message$/ && JP_KEY == "text") {\n                pkg = field(JP_VAL, "Package: ")\n                ver = field(JP_VAL, "Installed Version: ")\n                sev = field(JP_VAL, "Severity: ")\n            } else if (JP_PATH ~ /\\/locations\\/#\\/(physicalLocation\\/)?message$/ && JP_KEY == "text" && loc_pkg == "") {\n                t = JP_VAL\n                sub(/^.*:[[:space:]]+/, "", t)\n                at = 0\n                for (i = length(t); i > 1; i--) if (substr(t, i, 1) == "@") { at = i; break }\n                if (at > 1) { loc_pkg = substr(t, 1, at - 1); loc_ver = substr(t, at + 1) }\n            }\n        } else if (JP_EVENT == "close" && JP_PATH ~ /\\/results\\/#$/) {\n            if (pkg == "" || ver == "") { pkg = loc_pkg; ver = loc_ver }\n            if (sev == "") sev = (level == "error" ? "high" : (level == "warning" ? "medium" : ""))\n            add_finding("", pkg, ver, sev, rule, "sarif")\n            reset()\n        }\n    }\n    END { emit_lookup() }\n    \'\n}\n\n# Parse a CycloneDX SBOM. Each vulnerabilities[] entry lists affects[].ref,\n# which is either a purl or a bom-ref resolved through components[] (at any\n# nesting depth). Explicit affects[].versions[] with status "affected" are\n# added too. References are resolved at the end, since components may follow\n# the vulnerabilities.\nparse_sbom_to_lookup_eval() {\n    json_structural_lines "$1" | awk "$AWK_FEED_LIB$AWK_JSON_PATH"\'\n    {\n        jp_step($0)\n        if (JP_EVENT == "scalar") {\n            if (JP_PATH ~ /\\/components\\/#$/) {\n                # Kept per depth: a component may hold nested components,\n                # whose fields must not replace (or reset) its own.\n                if (JP_KEY == "bom-ref") comp_ref[jp_depth] = JP_VAL\n                else if (JP_KEY == "purl") comp_purl[jp_depth] = JP_VAL\n            } else if (JP_PATH ~ /\\/vulnerabilities\\/#$/ && JP_KEY == "id") {\n                vid = JP_VAL\n            } else if (JP_PATH ~ /\\/vulnerabilities\\/#\\/ratings\\/#$/ && JP_KEY == "severity" && vsev == "") {\n                vsev = JP_VAL\n            } else if (JP_PATH ~ /\\/vulnerabilities\\/#\\/affects\\/#$/ && JP_KEY == "ref") {\n                aref = JP_VAL\n            } else if (JP_PATH ~ /\\/vulnerabilities\\/#\\/affects\\/#\\/versions\\/#$/) {\n                if (JP_KEY == "version") aver = JP_VAL\n                else if (JP_KEY == "status") astatus = JP_VAL\n            }\n        } else if (JP_EVENT == "close") {\n            if (JP_PATH ~ /\\/components\\/#$/) {\n                d = jp_depth + 1\n                if (comp_ref[d] != "" && comp_purl[d] != "") purl_of[comp_ref[d]] = comp_purl[d]\n                delete comp_ref[d]; delete comp_purl[d]\n            } else if (JP_PATH ~ /\\/vulnerabilities\\/#\\/affects\\/#\\/versions\\/#$/) {\n                if (aver != "" && (astatus == "" || astatus == "affected")) aextra = aextra " " aver\n                aver = astatus = ""\n            } else if (JP_PATH ~ /\\/vulnerabilities\\/#\\/affects\\/#$/) {\n                # The entry is complete: its keys may come in any order.\n                if (aref != "") { refs[++nrefs] = aref; extra[nrefs] = aextra }\n                aref = aextra = ""\n            } else if (JP_PATH ~ /\\/vulnerabilities\\/#$/) {\n                for (r = 1; r <= nrefs; r++) {\n                    n = ++nfind\n                    find_ref[n] = refs[r]; find_id[n] = vid; find_sev[n] = vsev\n                    find_extra[n] = extra[r]\n                }\n                delete refs; delete extra\n                nrefs = 0; vid = vsev = ""\n            }\n        }\n    }\n    END {\n        for (n = 1; n <= nfind; n++) {\n            p = find_ref[n]\n            if (p !~ /^pkg:/ && (p in purl_of)) p = purl_of[p]\n            if (p !~ /^pkg:/) continue\n            add_finding(p, "", "", find_sev[n], find_id[n], "cyclonedx")\n            cnt = split(find_extra[n], vers, " ")\n            for (v = 1; v <= cnt; v++) if (vers[v] != "") add_finding(p, "", vers[v], find_sev[n], find_id[n], "cyclonedx")\n        }\n        emit_lookup()\n    }\n    \'\n}\n\n# Print "eco|name|version" for every component of a CycloneDX SBOM (--sbom),\n# at any nesting depth, from its purl. metadata.component is the project\n# itself and metadata.tools lists the generators: neither is a dependency.\n# Go purls carry a "v" prefix that go.sum parsing strips too.\ncyclonedx_components() {\n    json_structural_lines "$1" | awk "$AWK_FEED_LIB$AWK_JSON_PATH"\'\n    {\n        jp_step($0)\n        if (JP_EVENT != "scalar" || JP_KEY != "purl" || JP_PATH !~ /\\/components\\/#$/ || JP_PATH ~ /^\\/#\\/metadata\\//) next\n        if (!purl_split(JP_VAL)) next\n        if (PURL_TYPE == "golang") sub(/^v/, "", PURL_VERSION)\n        print PURL_TYPE "|" canon_purl_name(PURL_TYPE, PURL_NAME) "|" PURL_VERSION\n    }\n    \' | sort -u\n}\n\n# Check the components of a CycloneDX SBOM given with --sbom, like a lockfile.\n# A Maven build lists its transitive dependencies only there (pom.xml does not).\nanalyze_cyclonedx_inventory() {\n    local lockfile="$1"\n    local vuln_count_before=${#VULNERABLE_PACKAGES[@]}\n    local packages eco pkg_name version\n    if [ -n "${SBOM_COMPONENTS[$lockfile]+x}" ]; then\n        packages="${SBOM_COMPONENTS[$lockfile]}"\n    else\n        packages=$(cyclonedx_components "$lockfile")\n    fi\n    while IFS=\'|\' read -r eco pkg_name version; do\n        [ -z "$pkg_name" ] || [ -z "$version" ] && continue\n        check_vulnerability "$eco" "$pkg_name" "$version" "$lockfile" || true\n    done <<< "$packages"\n\n    local vuln_count_after=${#VULNERABLE_PACKAGES[@]}\n    if [ "$vuln_count_after" -eq "$vuln_count_before" ]; then\n        echo -e "${GREEN}\u2713 [$lockfile] No vulnerabilities found${NC}"\n    fi\n}\n\n# Parse a Trivy JSON report (trivy fs/image --format json). Each\n# Results[].Vulnerabilities[] entry is one finding; PkgIdentifier.PURL gives the\n# ecosystem when present, otherwise the wildcard namespace is used.\nparse_trivy_to_lookup_eval() {\n    json_structural_lines "$1" | awk "$AWK_FEED_LIB$AWK_JSON_PATH"\'\n    {\n        jp_step($0)\n        if (JP_EVENT == "scalar") {\n            if (JP_PATH ~ /\\/Results\\/#\\/Vulnerabilities\\/#$/) {\n                if (JP_KEY == "PkgName") pkg = JP_VAL\n                else if (JP_KEY == "InstalledVersion") ver = JP_VAL\n                else if (JP_KEY == "VulnerabilityID") vid = JP_VAL\n                else if (JP_KEY == "Severity") sev = JP_VAL\n            } else if (JP_PATH ~ /\\/Results\\/#\\/Vulnerabilities\\/#\\/PkgIdentifier$/ && JP_KEY == "PURL") {\n                purl = JP_VAL\n            }\n        } else if (JP_EVENT == "close" && JP_PATH ~ /\\/Results\\/#\\/Vulnerabilities\\/#$/) {\n            add_finding(purl, pkg, ver, sev, vid, "trivy")\n            pkg = ver = vid = sev = purl = ""\n        }\n    }\n    END { emit_lookup() }\n    \'\n}\n\n# Parse the JSON source format: { "<package>": { "versions": [...],\n# "versions_range": [...], "severity", "ghsa", "cve", "source" } }. JSON\n# sources carry no ecosystem, so entries land in the wildcard namespace "*:".\n# Package objects sit at depth 2 (their names may contain "/", so depth is\n# used rather than JP_PATH patterns).\nparse_json_to_lookup_eval() {\n    json_structural_lines "$1" | awk "$AWK_FEED_LIB$AWK_JSON_PATH"\'\n    {\n        jp_step($0)\n        if (JP_EVENT == "open" && jp_depth == 2) {\n            pkg = jp_stack[2]; nv = 0; sev = ghsa = cve = src = ""\n        } else if (JP_EVENT == "scalar" && jp_depth == 2 && pkg != "") {\n            if (JP_KEY == "severity") sev = JP_VAL\n            else if (JP_KEY == "ghsa") ghsa = JP_VAL\n            else if (JP_KEY == "cve") cve = JP_VAL\n            else if (JP_KEY == "source") src = JP_VAL\n            else if ((JP_KEY == "versions" || JP_KEY == "versions_range") && JP_VAL != "" && JP_VAL != "null") {\n                # A single version written as a string instead of a list.\n                vals[++nv] = JP_VAL\n                ranged[nv] = (JP_KEY == "versions_range")\n            }\n        } else if (JP_EVENT == "scalar" && jp_depth == 3 && pkg != "" && JP_VAL != "" &&\n                   (jp_stack[3] == "versions" || jp_stack[3] == "versions_range")) {\n            vals[++nv] = JP_VAL\n            ranged[nv] = (jp_stack[3] == "versions_range")\n        } else if (JP_EVENT == "close" && jp_depth == 1 && pkg != "") {\n            # jp_depth is already popped: the package object just closed.\n            for (i = 1; i <= nv; i++) {\n                record = tolower(sev) ";" ghsa ";" cve ";" src ";" (ranged[i] ? range_fix(vals[i]) : "") ";"\n                add_entry("*:" loose_name(pkg), vals[i], record, ranged[i])\n            }\n            pkg = ""\n        }\n    }\n    END { emit_lookup() }\n    \'\n}\ndetect_format_from_url() {\n    local url="$1"\n\n    # Remove query parameters and fragments first\n    local clean_url="${url%%\\?*}"\n    clean_url="${clean_url%%\\#*}"\n\n    # Check for compound extensions first (e.g., .sarif, .sbom.cdx.json, .trivy.json)\n    if [[ "$clean_url" =~ \\.sarif\\.json$ ]] || [[ "$clean_url" =~ \\.sarif$ ]]; then\n        echo "sarif"\n        return\n    elif [[ "$clean_url" =~ \\.sbom\\.cdx\\.json$ ]] || [[ "$clean_url" =~ \\.sbom\\.json$ ]] || [[ "$clean_url" =~ \\.cdx\\.json$ ]]; then\n        echo "sbom-cyclonedx"\n        return\n    elif [[ "$clean_url" =~ \\.trivy\\.json$ ]]; then\n        echo "trivy-json"\n        return\n    fi\n\n    # Fall back to simple extension detection\n    local extension="${clean_url##*.}"\n\n    case "$extension" in\n        json)\n            # Generic JSON format\n            echo "json"\n            ;;\n        csv)\n            echo "csv"\n            ;;\n        purl|txt)\n            echo "purl"\n            ;;\n        sarif)\n            echo "sarif"\n            ;;\n        sbom)\n            echo "sbom-cyclonedx"\n            ;;\n        trivy)\n            echo "trivy-json"\n            ;;\n        cdx)\n            echo "sbom-cyclonedx"\n            ;;\n        *)\n            # Default to json if unknown\n            echo "json"\n            ;;\n    esac\n}\n\n# Load data source\nload_data_source() {\n    local url="$1"\n    local format="${2:-}"\n    local name="${3:-$url}"\n    local csv_columns="${4:-}"\n\n    # Auto-detect format if not provided\n    if [ -z "$format" ]; then\n        format=$(detect_format_from_url "$url")\n        echo -e "${BLUE}\u{1F50D} Loading: $name (auto-detected format: $format)${NC}"\n    else\n        echo -e "${BLUE}\u{1F50D} Loading: $name${NC}"\n    fi\n\n    echo "   URL: $url"\n    echo "   Format: $format"\n\n    local parser\n    case "$format" in\n        json) parser=parse_json_to_lookup_eval ;;\n        csv) parser=parse_csv_to_lookup_eval ;;\n        purl) parser=parse_purl_to_lookup_eval ;;\n        sarif) parser=parse_sarif_to_lookup_eval ;;\n        sbom|sbom-cyclonedx) parser=parse_sbom_to_lookup_eval ;;\n        trivy|trivy-json) parser=parse_trivy_to_lookup_eval ;;\n        *)\n            echo -e "${RED}\u274C Error: Unsupported format \'$format\'${NC}"\n            return 1\n            ;;\n    esac\n\n    # Parsers read a local file: download remote sources to a temp file first.\n    local file="$url" downloaded=""\n    if [[ "$url" =~ ^(https?|ftp):// ]]; then\n        if ! downloaded=$(mktemp); then\n            echo -e "${RED}\u274C Error: Unable to create a temporary file${NC}"\n            return 1\n        fi\n        register_temp_file "$downloaded"\n        if ! curl -fsSL --connect-timeout 10 --max-time 120 -o "$downloaded" "$url"; then\n            rm -f -- "$downloaded"\n            echo -e "${RED}\u274C Error: Unable to download from $url${NC}"\n            return 1\n        fi\n        file="$downloaded"\n    elif [ ! -f "$url" ]; then\n        echo -e "${RED}\u274C Error: Local file not found: $url${NC}"\n        return 1\n    fi\n\n    local status=0 eval_commands=""\n    case "$format" in\n        json|sarif|sbom|sbom-cyclonedx|trivy|trivy-json)\n            if ! json_is_valid_file "$file"; then\n                echo "Error: Invalid JSON in $name"\n                status=1\n            fi\n            ;;\n    esac\n    if [ "$status" = 0 ]; then\n        [ -z "$csv_columns" ] || echo "   CSV Columns: $csv_columns"\n        if ! eval_commands=$("$parser" "$file" "$csv_columns"); then\n            echo -e "${RED}\u274C Error: Unable to parse $name${NC}"\n            status=1\n        fi\n    fi\n    [ -z "$downloaded" ] || rm -f -- "$downloaded"\n    [ "$status" = 0 ] || return 1\n\n    # Sets FEED_PKG_COUNT / FEED_RAW_COUNT, then fills the lookup tables,\n    # merging with every source loaded before.\n    FEED_PKG_COUNT=0 FEED_RAW_COUNT=0\n    eval "$eval_commands"\n\n    LAST_SOURCE_ENTRY_COUNT="$FEED_RAW_COUNT"\n    TOTAL_SOURCE_ENTRIES=$(( ${TOTAL_SOURCE_ENTRIES:-0} + FEED_RAW_COUNT ))\n    if [ "$format" = purl ] && [ -n "${PREFILTER_TOKENS_FILE:-}" ]; then\n        echo -e "${GREEN}\u2705 Loaded ${FEED_PKG_COUNT} packages from $name (${FEED_RAW_COUNT} entries before pre-filtering)${NC}"\n    else\n        echo -e "${GREEN}\u2705 Loaded ${FEED_PKG_COUNT} packages from $name${NC}"\n    fi\n    echo ""\n    LOADED_SOURCE_COUNT=$((LOADED_SOURCE_COUNT + 1))\n\n    return 0\n}\n\n# Load configuration file\nload_config_file() {\n    local config_path="$1"\n    local load_sources="${2:-true}"\n\n    if [ ! -f "$config_path" ]; then\n        return 1\n    fi\n    \n    echo -e "${BLUE}\u{1F4CB} Loading configuration from: $config_path${NC}"\n    echo ""\n    \n    # Read config file content (a UTF-8 BOM is not part of the JSON)\n    local config_content\n    config_content=$(cat "$config_path")\n    config_content="${config_content#$\'\\xef\\xbb\\xbf\'}"\n    if ! json_is_valid "$config_content"; then\n        echo "Error: Invalid JSON in configuration: $config_path"\n        return 1\n    fi\n    \n    # Parse github settings if present\n    local github_obj=$(json_get_object "$config_content" "github")\n    if [ -n "$github_obj" ] && [ "$github_obj" != "{}" ]; then\n        local cfg_github_org=$(json_get_value "$github_obj" "org")\n        local cfg_github_repo=$(json_get_value "$github_obj" "repo")\n        local cfg_github_token=$(json_get_value "$github_obj" "token")\n        local cfg_github_output=$(json_get_value "$github_obj" "output")\n        \n        # Apply github settings if not already set via command line\n        if [ -z "$GITHUB_ORG" ] && [ -n "$cfg_github_org" ] && [ "$cfg_github_org" != "null" ] && [ "$cfg_github_org" != "" ]; then\n            GITHUB_ORG="$cfg_github_org"\n        fi\n        if [ -z "$GITHUB_REPO" ] && [ -n "$cfg_github_repo" ] && [ "$cfg_github_repo" != "null" ] && [ "$cfg_github_repo" != "" ]; then\n            GITHUB_REPO="$cfg_github_repo"\n        fi\n        if [ -z "$GITHUB_TOKEN" ] && [ -n "$cfg_github_token" ] && [ "$cfg_github_token" != "null" ] && [ "$cfg_github_token" != "" ]; then\n            GITHUB_TOKEN="$cfg_github_token"\n        fi\n        if [ -n "$cfg_github_output" ] && [ "$cfg_github_output" != "null" ] && [ "$cfg_github_output" != "" ]; then\n            # Only override if it\'s still the default value\n            if [ "$GITHUB_OUTPUT_DIR" = "./packages" ]; then\n                GITHUB_OUTPUT_DIR="$cfg_github_output"\n            fi\n        fi\n    fi\n    \n    # Parse options settings if present\n    local options_obj=$(json_get_object "$config_content" "options")\n    if [ -n "$options_obj" ] && [ "$options_obj" != "{}" ]; then\n        # An array without any non-empty entry keeps the built-in defaults.\n        json_read_strings "$(json_get_array "$options_obj" "ignore_paths")"\n        [ ${#JSON_STRINGS[@]} -eq 0 ] || CONFIG_IGNORE_PATHS=("${JSON_STRINGS[@]}")\n\n        json_read_strings "$(json_get_array "$options_obj" "dependency_types")"\n        [ ${#JSON_STRINGS[@]} -eq 0 ] || CONFIG_DEPENDENCY_TYPES=("${JSON_STRINGS[@]}")\n\n        # Default-feed loading override; the CLI --ecosystems flag takes\n        # precedence over this when both are set.\n        json_read_strings "$(json_get_array "$options_obj" "ecosystems")"\n        [ ${#JSON_STRINGS[@]} -eq 0 ] || CONFIG_ECOSYSTEMS="${JSON_STRINGS[*]}"\n\n        # Runtime version check (Node.js, PHP): on unless "runtime_check": false\n        local runtime_check_val=$(json_get_value "$options_obj" "runtime_check")\n        [ "$runtime_check_val" != false ] || CONFIG_RUNTIME_CHECK=false\n    fi\n    \n    # Parse config file and extract sources array\n    local -a source_objs=()\n    local source_obj\n    while IFS= read -r source_obj; do\n        source_objs+=("$source_obj")\n    done < <(json_array_items "$(json_get_array "$config_content" "sources")")\n    local sources_count=${#source_objs[@]}\n\n    if [ "$load_sources" != true ]; then\n        [ "$sources_count" -eq 0 ] || echo -e "${BLUE}\u2139\uFE0F  Configuration sources ignored: sources given on the command line take precedence${NC}"\n    elif [ "$sources_count" -eq 0 ]; then\n        echo -e "${YELLOW}\u26A0\uFE0F  Warning: No sources found in configuration file${NC}"\n        # Don\'t return 1 here - config may still have github settings\n    else\n        local i url format name columns\n        for ((i = 0; i < sources_count; i++)); do\n            source_obj="${source_objs[$i]}"\n\n            # Try to get url from "source" or "url" field\n            url=$(json_get_value "$source_obj" "source")\n            if [ -z "$url" ] || [ "$url" = "null" ]; then\n                url=$(json_get_value "$source_obj" "url")\n            fi\n            if [ -z "$url" ] || [ "$url" = "null" ]; then\n                echo -e "${RED}\u274C Error: source $((i + 1)) of $config_path has no \\"source\\" or \\"url\\"${NC}"\n                return 1\n            fi\n\n            format=$(json_get_value "$source_obj" "format")\n            name=$(json_get_value "$source_obj" "name")\n            columns=$(json_get_value "$source_obj" "columns")\n\n            # Set default name if not provided\n            if [ -z "$name" ] || [ "$name" = "null" ]; then\n                name="Source $((i+1))"\n            fi\n\n            # Handle null/empty values\n            [ "$format" != "null" ] || format=""\n            [ "$columns" != "null" ] || columns=""\n\n            load_data_source "$url" "$format" "$name" "$columns" || return 1\n        done\n    fi\n\n    return 0\n}\n# Order two decimal strings of any length without shell integer overflow\n# (a version part may exceed 2^63). An operand that is not all digits is\n# compared as text; an empty one counts as 0. Sets DIGITS_CMP (-1/0/1).\ncompare_digits() {\n    local a="${1:-0}" b="${2:-0}"\n    if [[ "$a" == *[!0-9]* || "$b" == *[!0-9]* ]]; then\n        if [[ "$a" < "$b" ]]; then DIGITS_CMP=-1\n        elif [[ "$a" > "$b" ]]; then DIGITS_CMP=1\n        else DIGITS_CMP=0; fi\n        return\n    fi\n    while [[ "$a" == 0?* ]]; do a="${a#0}"; done\n    while [[ "$b" == 0?* ]]; do b="${b#0}"; done\n    if (( ${#a} != ${#b} )); then\n        (( ${#a} < ${#b} )) && DIGITS_CMP=-1 || DIGITS_CMP=1\n    elif [[ "$a" < "$b" ]]; then DIGITS_CMP=-1\n    elif [[ "$a" > "$b" ]]; then DIGITS_CMP=1\n    else DIGITS_CMP=0; fi\n}\n\n# Compare two semver versions\n# Returns: -1 if v1 < v2, 0 if v1 == v2, 1 if v1 > v2\n# OPTIMIZED: Sets COMPARE_RESULT global instead of echo (avoids subshell when called)\ncompare_versions() {\n    # Build metadata never changes version precedence.\n    local v1="$1"\n    local v2="$2"\n    v1="${v1%%+*}"\n    v2="${v2%%+*}"\n    # Tags such as v1.2.3 (cargo git deps, actions, swift) carry a cosmetic \'v\'.\n    [[ "$v1" == [vV][0-9]* ]] && v1="${v1:1}"\n    [[ "$v2" == [vV][0-9]* ]] && v2="${v2:1}"\n\n    # Split base (x.y.z[.w...]) from the pre-release tail (first \'-\' onward).\n    local base1="${v1%%-*}"\n    local base2="${v2%%-*}"\n\n    # --- Compare every numeric base part (missing parts count as 0) ---\n    local -a parts1 parts2\n    IFS=\'.\' read -ra parts1 <<< "$base1"\n    IFS=\'.\' read -ra parts2 <<< "$base2"\n    local i n1 n2 nparts=${#parts1[@]}\n    [ "${#parts2[@]}" -gt "$nparts" ] && nparts=${#parts2[@]}\n    [ "$nparts" -lt 3 ] && nparts=3\n    for (( i = 0; i < nparts; i++ )); do\n        n1="${parts1[$i]:-0}"\n        n2="${parts2[$i]:-0}"\n        # Decimal identifiers have no size limit in SemVer. Comparing lengths\n        # then ASCII digits avoids shell integer overflow.\n        while [[ "$n1" == 0* && ${#n1} -gt 1 ]]; do n1="${n1#0}"; done\n        while [[ "$n2" == 0* && ${#n2} -gt 1 ]]; do n2="${n2#0}"; done\n        if (( ${#n1} < ${#n2} )); then COMPARE_RESULT="-1"; return; fi\n        if (( ${#n1} > ${#n2} )); then COMPARE_RESULT="1"; return; fi\n        if [[ "$n1" < "$n2" ]]; then COMPARE_RESULT="-1"; return; fi\n        if [[ "$n1" > "$n2" ]]; then COMPARE_RESULT="1"; return; fi\n    done\n\n    # --- Pre-release comparison (base versions are equal) ---\n    local pre1="" pre2=""\n    [ "$v1" != "$base1" ] && pre1="${v1#*-}"\n    [ "$v2" != "$base2" ] && pre2="${v2#*-}"\n\n    # A version with a pre-release has LOWER precedence than one without.\n    if [ -z "$pre1" ] && [ -z "$pre2" ]; then COMPARE_RESULT="0"; return; fi\n    if [ -z "$pre1" ]; then COMPARE_RESULT="1"; return; fi\n    if [ -z "$pre2" ]; then COMPARE_RESULT="-1"; return; fi\n\n    # Both have pre-release: compare dot-split identifiers left to right.\n    local ids1 ids2\n    IFS=\'.\' read -ra ids1 <<< "$pre1"\n    IFS=\'.\' read -ra ids2 <<< "$pre2"\n    local len1=${#ids1[@]}\n    local len2=${#ids2[@]}\n    local maxlen=$len1\n    [ "$len2" -gt "$maxlen" ] && maxlen=$len2\n\n    local j id1 id2 isnum1 isnum2\n    for (( j = 0; j < maxlen; j++ )); do\n        # A larger set of pre-release fields (prefix-superset) wins.\n        if [ "$j" -ge "$len1" ]; then COMPARE_RESULT="-1"; return; fi\n        if [ "$j" -ge "$len2" ]; then COMPARE_RESULT="1"; return; fi\n\n        id1="${ids1[$j]}"\n        id2="${ids2[$j]}"\n        [ "$id1" = "$id2" ] && continue\n\n        # Numeric identifiers rank below alphanumeric ones; two numerics\n        # compare numerically; two alphanumerics compare lexically (ASCII).\n        case "$id1" in \'\'|*[!0-9]*) isnum1=0 ;; *) isnum1=1 ;; esac\n        case "$id2" in \'\'|*[!0-9]*) isnum2=0 ;; *) isnum2=1 ;; esac\n\n        if [ "$isnum1" = 1 ] && [ "$isnum2" = 1 ]; then\n            while [[ "$id1" == 0* && ${#id1} -gt 1 ]]; do id1="${id1#0}"; done\n            while [[ "$id2" == 0* && ${#id2} -gt 1 ]]; do id2="${id2#0}"; done\n            if (( ${#id1} < ${#id2} )); then COMPARE_RESULT="-1"; return; fi\n            if (( ${#id1} > ${#id2} )); then COMPARE_RESULT="1"; return; fi\n            if [[ "$id1" < "$id2" ]]; then COMPARE_RESULT="-1"; return; fi\n            if [[ "$id1" > "$id2" ]]; then COMPARE_RESULT="1"; return; fi\n        elif [ "$isnum1" = 1 ]; then\n            COMPARE_RESULT="-1"; return\n        elif [ "$isnum2" = 1 ]; then\n            COMPARE_RESULT="1"; return\n        else\n            if [[ "$id1" < "$id2" ]]; then COMPARE_RESULT="-1"; return; fi\n            if [[ "$id1" > "$id2" ]]; then COMPARE_RESULT="1"; return; fi\n        fi\n    done\n\n    COMPARE_RESULT="0"\n}\n\n# Convert one semver shorthand token (~ and ^, full or partial) into its\n# comparator pair. Sets EXPANDED_RANGE (no subshell: called per distinct range).\n# ~1.2.3 -> >=1.2.3 <1.3.0     ~1.2 -> >=1.2.0 <1.3.0     ~1 -> >=1.0.0 <2.0.0\n# ^1.2.3 -> >=1.2.3 <2.0.0     ^0.2 -> >=0.2.0 <0.3.0     ^1 -> >=1.0.0 <2.0.0\n# Anything else is returned unchanged.\nexpand_semver_range() {\n    local range="$1"\n    EXPANDED_RANGE="$range"\n    [[ "$range" =~ ^([~^])([0-9]+)(\\.([0-9]+))?(\\.([0-9]+))?(.*)$ ]] || return 0\n    local op="${BASH_REMATCH[1]}" major="${BASH_REMATCH[2]}"\n    local minor="${BASH_REMATCH[4]}" patch="${BASH_REMATCH[6]}" tail="${BASH_REMATCH[7]}"\n    # A partial version cannot carry a pre-release tail (~1.2-beta is not semver).\n    if [ -n "$tail" ] && [ -z "$patch" ]; then return 0; fi\n    local lower="$major.${minor:-0}.${patch:-0}$tail"\n\n    if [ "$op" = "~" ]; then\n        if [ -z "$minor" ]; then\n            EXPANDED_RANGE=">=$lower <$((major + 1)).0.0"\n        else\n            EXPANDED_RANGE=">=$lower <$major.$((minor + 1)).0"\n        fi\n    elif [ "$major" != 0 ] || [ -z "$minor" ]; then\n        EXPANDED_RANGE=">=$lower <$((major + 1)).0.0"\n    elif [ "$minor" != 0 ] || [ -z "$patch" ]; then\n        EXPANDED_RANGE=">=$lower <0.$((minor + 1)).0"\n    else\n        EXPANDED_RANGE=">=$lower <0.0.$((patch + 1))"\n    fi\n}\n\n# Pessimistic constraint (Ruby ~>, PEP 440 ~=, Composer ~): the last given\n# part may grow. ~>2.2 -> >=2.2 <3   ~>2.2.3 -> >=2.2.3 <2.3   ~>2 -> >=2 <3\n# Sets EXPANDED_RANGE ("!" when the version has no numeric part).\nexpand_pessimistic_range() {\n    local ver="$1"\n    [[ "$ver" =~ ^[vV]?([0-9]+(\\.[0-9]+)*) ]] || { EXPANDED_RANGE="!"; return 0; }\n    local -a parts\n    IFS=\'.\' read -ra parts <<< "${BASH_REMATCH[1]}"\n    local last=$(( ${#parts[@]} - 1 ))\n    [ "$last" -eq 0 ] || { unset \'parts[last]\'; last=$((last - 1)); }\n    parts[last]=$(( 10#${parts[last]} + 1 ))\n    local IFS=\'.\'\n    EXPANDED_RANGE=">=$ver <${parts[*]}${RANGE_BOUND_SUFFIX:-}"\n}\n\n# X-range token: an operator and a version ending in a wildcard (1.x, 1.2.*,\n# ==1.*, >=2.x). $1 operator ("" = "=" = "=="), $2 the numeric prefix (1, 1.2).\n# 1.x -> >=1 <2   1.2.* -> >=1.2 <1.3   >1.x -> >=2   <=1.x -> <2\n# !=1.2.* -> "!x1.2:1.3" (outside [1.2, 1.3), see RANGE_EXCLUDES).\n# RANGE_BOUND_SUFFIX (".dev0" for PyPI, set by _prepare_range) makes the\n# generated bounds include the pre-releases of the prefix and exclude those of\n# the next release, as PEP 440 prefix matching does (==1.0.* has 1.0rc1).\n# Sets EXPANDED_RANGE ("!" when it cannot be expressed as one AND list).\nexpand_x_range() {\n    local op="$1" base="$2" next\n    local -a parts\n    IFS=\'.\' read -ra parts <<< "$base"\n    local last=$(( ${#parts[@]} - 1 ))\n    parts[last]=$(( 10#${parts[last]} + 1 ))\n    next="${parts[*]}"\n    next="${next// /.}"\n    local sfx="${RANGE_BOUND_SUFFIX:-}"\n    case "$op" in\n        ""|=|==) EXPANDED_RANGE=">=$base$sfx <$next$sfx" ;;\n        "!=") EXPANDED_RANGE="!x$base$sfx:$next$sfx" ;;\n        ">=") EXPANDED_RANGE=">=$base$sfx" ;;\n        ">") EXPANDED_RANGE=">=$next$sfx" ;;\n        "<") EXPANDED_RANGE="<$base$sfx" ;;\n        "<=") EXPANDED_RANGE="<$next$sfx" ;;\n        *) EXPANDED_RANGE="!" ;;\n    esac\n}\n\n# Maven / NuGet interval notation -> comparator alternatives. Sets\n# INTERVAL_RANGE (unchanged input when it is not an interval list).\n# [1.0,2.0) -> >=1.0 <2.0   (,1.0] -> <=1.0   [1.0] -> =1.0   [1.0,) -> >=1.0\n# [1.0,1.5),[2.0,2.5) -> >=1.0 <1.5 || >=2.0 <2.5\n_prepare_interval() {\n    local rest="$1" out="" alt low high\n    local re=\'^[[:space:]]*([[(])([^],()]*)(,([^],()]*))?([])])[[:space:]]*(,(.*))?$\'\n    INTERVAL_RANGE="$1"\n    while [ -n "$rest" ]; do\n        [[ "$rest" =~ $re ]] || return 0\n        low="${BASH_REMATCH[2]// /}" high="${BASH_REMATCH[4]// /}"\n        if [ -z "${BASH_REMATCH[3]}" ]; then\n            [ -n "$low" ] || return 0\n            alt="=$low"\n        else\n            alt=""\n            if [ -n "$low" ]; then\n                if [ "${BASH_REMATCH[1]}" = "[" ]; then alt=">=$low"; else alt=">$low"; fi\n            fi\n            if [ -n "$high" ]; then\n                if [ "${BASH_REMATCH[5]}" = "]" ]; then alt+="${alt:+ }<=$high"; else alt+="${alt:+ }<$high"; fi\n            fi\n            [ -n "$alt" ] || alt="*"\n        fi\n        out+="${out:+ || }$alt"\n        rest="${BASH_REMATCH[7]}"\n    done\n    INTERVAL_RANGE="$out"\n}\n\n# Parsed form of every distinct range string seen so far: "op ver op ver ..."\n# ("*" matches everything, "!" never matches), keyed "eco|range" since an\n# operator may depend on the ecosystem (Composer ~1.2 is >=1.2 <2.0). Ranges\n# repeat across thousands of lockfile entries, so normalization runs once per\n# distinct string.\ndeclare -A RANGE_CACHE=()\ndeclare -A INTERVAL_CACHE=()\n# Excluded intervals of a range ("LOW:HIGH ...", from PEP 440 !=1.3.*), kept\n# out of RANGE_CACHE so the common case pays nothing for them.\ndeclare -A RANGE_EXCLUDES=()\n\n# Normalize one range (no "|" alternatives) into RANGE_CACHE[$2]. Custom\n# sources write ranges in many dialects: ">=1.0,<2.0", ">= 1.0", "==1.0",\n# "=1.0", "^1", "~1.2", "~>2.2", "~=2.2", "!=1.5", "1.x", "1.2.*",\n# "1.2.3 - 2.3.4".\n_prepare_range() {\n    local raw="$1" key="$2" r="$1" token op ver parsed="" bad="" bare=0 count=0\n    local RANGE_BOUND_SUFFIX=""\n    [ "${key%%|*}" != pypi ] || RANGE_BOUND_SUFFIX=".dev0"\n    r="${r//,/ }"\n    # Hyphen range: "1.2.3 - 2.3.4" -> >=1.2.3 <=2.3.4; a partial upper bound\n    # admits its whole line ("1.2 - 2" -> >=1.2 <3).\n    if [[ "$r" =~ ^[[:space:]]*[vV]?([0-9][^[:space:]]*)[[:space:]]+-[[:space:]]+[vV]?([0-9][^[:space:]]*)[[:space:]]*$ ]]; then\n        local lower="${BASH_REMATCH[1]}" upper="${BASH_REMATCH[2]}"\n        if [[ "$upper" =~ ^[0-9]+(\\.[0-9]+)?$ ]]; then\n            expand_x_range "<=" "$upper"\n            r=">=$lower $EXPANDED_RANGE"\n        else\n            r=">=$lower <=$upper"\n        fi\n    fi\n    # Glue a detached operator to its version: ">= 1.0" -> ">=1.0".\n    while [[ "$r" =~ ^(.*)(===|\\>=|\\<=|==|!=|~\\>|~=|\\>|\\<|=|\\^|~)[[:space:]]+(.*)$ ]]; do\n        r="${BASH_REMATCH[1]}${BASH_REMATCH[2]}${BASH_REMATCH[3]}"\n    done\n    local -a tokens\n    read -ra tokens <<< "$r"\n    local expanded=""\n    for token in "${tokens[@]}"; do\n        case "$token" in\n            # A lone wildcard admits everything: it adds no constraint.\n            "*"|x|X) continue ;;\n        esac\n        if [[ "$token" =~ ^(\\>=|\\<=|==|!=|\\>|\\<|=|\\^|~)?[vV]?([0-9]+(\\.[0-9]+)*)\\.[xX*](\\.[xX*])*$ ]]; then\n            op="${BASH_REMATCH[1]}" ver="${BASH_REMATCH[2]}"\n            case "$op" in\n                "^"|"~") expand_semver_range "$op$ver" ;;\n                *) expand_x_range "$op" "$ver" ;;\n            esac\n            expanded+="$EXPANDED_RANGE "\n            continue\n        fi\n        case "$token" in\n            "~>"*|"~="*) expand_pessimistic_range "${token:2}"; expanded+="$EXPANDED_RANGE " ;;\n            "~"*)\n                if [ "${key%%|*}" = composer ]; then\n                    expand_pessimistic_range "${token:1}"\n                else\n                    expand_semver_range "$token"\n                fi\n                expanded+="$EXPANDED_RANGE " ;;\n            "^"*) expand_semver_range "$token"; expanded+="$EXPANDED_RANGE " ;;\n            *) expanded+="$token " ;;\n        esac\n    done\n    if [ -z "$expanded" ]; then\n        RANGE_CACHE["$key"]="*"\n        return\n    fi\n    read -ra tokens <<< "$expanded"\n    for token in "${tokens[@]}"; do\n        count=$((count + 1))\n        if [[ "$token" =~ ^(===|\\>=|\\<=|==|!=|\\>|\\<|=)(.+)$ ]]; then\n            op="${BASH_REMATCH[1]}" ver="${BASH_REMATCH[2]}"\n            # PEP 440 arbitrary equality (===) is a string match: equality.\n            [ "$op" != "==" ] && [ "$op" != "===" ] || op="="\n        elif [[ "$token" =~ ^!x(.+:.+)$ ]]; then\n            RANGE_EXCLUDES["$key"]+="${RANGE_EXCLUDES[$key]:+ }${BASH_REMATCH[1]}"\n            continue\n        elif [[ "$token" =~ ^[vV]?[0-9] ]]; then\n            op="=" ver="$token"     # a bare version is an exact constraint\n            bare=$((bare + 1))\n        else\n            bad="$token"; break\n        fi\n        parsed+="$op $ver "\n    done\n    # Only exclusions ("!=1.3.*"): every other version matches.\n    [ -n "$parsed" ] || [ -z "${RANGE_EXCLUDES[$key]+x}" ] || [ -n "$bad" ] || parsed="* "\n    if [ -n "$bad" ] || [ -z "$parsed" ]; then\n        RANGE_CACHE["$key"]="!"\n        [ -n "$raw" ] && echo -e "${YELLOW}\u26A0\uFE0F  Warning: unsupported version range \'$raw\' (token \'$bad\'); it never matches${NC}" >&2\n        return\n    fi\n    # A list of bare versions ("1.0.0, 1.0.1") names each affected version:\n    # one of them must match (AND-ed exact versions could never match).\n    if [ "$bare" -gt 1 ] && [ "$bare" -eq "$count" ]; then\n        parsed="${parsed//= /}"\n        RANGE_CACHE["$key"]="anyof ${parsed% }"\n        return\n    fi\n    RANGE_CACHE["$key"]="${parsed% }"\n}\n\n# Check if a version is within a range\n# Range format: ">1.0.0 <=2.0.0" or ">=1.0.0 <2.0.0" etc.\n# Pre-release versions are included if their base version is within the range\nversion_in_range() {\n    local version="$1"\n    local range="$2"\n\n    # Maven / NuGet intervals become "||" alternatives first: their commas\n    # separate bounds, not AND-ed constraints.\n    local interval_re=\'^[[:space:]]*[[(]\'\n    if [[ "$range" =~ $interval_re ]]; then\n        [ -n "${INTERVAL_CACHE[$range]+x}" ] || { _prepare_interval "$range"; INTERVAL_CACHE["$range"]="$INTERVAL_RANGE"; }\n        range="${INTERVAL_CACHE[$range]}"\n    fi\n\n    # Split alternatives ("||", and Composer\'s single "|") before expanding\n    # shorthand; otherwise the upper bound generated for the first caret\n    # branch is attached to the last branch.\n    if [[ "$range" == *"|"* ]]; then\n        local rest="${range#*|}"\n        version_in_range "$version" "${range%%|*}" && return 0\n        version_in_range "$version" "${rest#|}"\n        return $?\n    fi\n    range="${range#"${range%%[![:space:]]*}"}"\n    range="${range%"${range##*[![:space:]]}"}"\n\n    # Guard against empty range (should not match any version)\n    if [ -z "$range" ]; then\n        return 1\n    fi\n    [ "$range" = "*" ] && return 0\n    local cache_key="${CHECK_ECO:-npm}|$range"\n    [ -n "${RANGE_CACHE[$cache_key]+x}" ] || _prepare_range "$range" "$cache_key"\n    local parsed="${RANGE_CACHE[$cache_key]}"\n    [ "$parsed" = "!" ] && return 1\n    local range_version\n    if [ -n "${RANGE_EXCLUDES[$cache_key]+x}" ]; then\n        local excluded\n        for excluded in ${RANGE_EXCLUDES[$cache_key]}; do\n            compare_versions_eco "${CHECK_ECO:-npm}" "$version" "${excluded%%:*}"\n            [ "$COMPARE_RESULT" = "-1" ] && continue\n            compare_versions_eco "${CHECK_ECO:-npm}" "$version" "${excluded#*:}"\n            [ "$COMPARE_RESULT" != "-1" ] || return 1\n        done\n    fi\n    [ "$parsed" = "*" ] && return 0\n    if [[ "$parsed" == "anyof "* ]]; then\n        local -a listed\n        read -ra listed <<< "${parsed#anyof }"\n        for range_version in "${listed[@]}"; do\n            version_matches_vulnerable "$version" "$range_version" && return 0\n        done\n        return 1\n    fi\n\n    # Get base version for pre-release handling\n    local base_version="${version%%-*}"\n    base_version="${base_version%%+*}"\n    local is_prerelease=false\n    if [ "$version" != "$base_version" ]; then\n        is_prerelease=true\n    fi\n\n    local -a conditions\n    read -ra conditions <<< "$parsed"\n    local idx operator\n\n    for (( idx = 0; idx < ${#conditions[@]}; idx += 2 )); do\n        operator="${conditions[$idx]}"\n        range_version="${conditions[$((idx + 1))]}"\n\n        # ">=0" admits every version, including pre-releases of 0.0.0 such as\n        # Go pseudo-versions (0.0.0-2021...) and npm 0.0.0-experimental builds.\n        if [ "$operator" = ">=" ] && [[ "$range_version" =~ ^[vV]?0(\\.0)*$ ]]; then\n            continue\n        fi\n        # Identical strings compare equal under every ecosystem comparator.\n        if [ "$version" = "$range_version" ]; then\n            COMPARE_RESULT=0\n        # For pre-release versions, use base version for comparison\n        # This allows 19.0.0-rc.1 to be considered as within >=19.0.0\n        # OPTIMIZED: dispatch on CHECK_ECO and use COMPARE_RESULT (avoids subshell).\n        # npm/everything-else routes to the shared semver comparator; only\n        # ecosystems with their own comparator (e.g. golang) diverge.\n        elif [ "$is_prerelease" = true ] && [ "${CHECK_ECO:-npm}" = npm ]; then\n            # Special handling for >= operator with pre-release\n            # 19.0.0-rc is considered >= 19.0.0 (it\'s a pre-release OF 19.0.0)\n            if [ "$operator" = ">=" ] && [ "$base_version" = "$range_version" ]; then\n                COMPARE_RESULT="0"  # Consider it equal for >= comparison\n            else\n                compare_versions_eco "${CHECK_ECO:-npm}" "$version" "$range_version"\n            fi\n        else\n            compare_versions_eco "${CHECK_ECO:-npm}" "$version" "$range_version"\n        fi\n\n        case "$operator" in\n            "=")\n                [ "$COMPARE_RESULT" = "0" ] || return 1\n                ;;\n            "!=")\n                [ "$COMPARE_RESULT" != "0" ] || return 1\n                ;;\n            ">")\n                if [ "$COMPARE_RESULT" != "1" ]; then\n                    return 1  # version is not > range_version\n                fi\n                ;;\n            ">=")\n                if [ "$COMPARE_RESULT" = "-1" ]; then\n                    return 1  # version is < range_version\n                fi\n                ;;\n            "<")\n                if [ "$COMPARE_RESULT" != "-1" ]; then\n                    return 1  # version is not < range_version\n                fi\n                ;;\n            "<=")\n                if [ "$COMPARE_RESULT" = "1" ]; then\n                    return 1  # version is > range_version\n                fi\n                ;;\n        esac\n    done\n    return 0\n}\n\n# Check if a version matches a vulnerable version (exact or pre-release of it)\nversion_matches_vulnerable() {\n    local installed_version="$1"\n    local versions="$2"\n    \n    # Exact match\n    if [ "$installed_version" = "$versions" ]; then\n        return 0\n    fi\n\n    # Other ecosystems use their own version equality. npm retains the\n    # historical conservative prerelease-of-exact matching policy below.\n    if [ "${CHECK_ECO:-npm}" != npm ]; then\n        compare_versions_eco "$CHECK_ECO" "$installed_version" "$versions"\n        [ "$COMPARE_RESULT" = 0 ]\n        return $?\n    fi\n    \n    # Check if installed version is a pre-release of the vulnerable version\n    # For example: "19.0.0-rc-xxx" should match "19.0.0"\n    local installed_base="${installed_version%%-*}"\n    installed_base="${installed_base%%+*}"\n    \n    if [ "$installed_base" = "$versions" ] && [ "$installed_version" != "$installed_base" ]; then\n        # It\'s a pre-release version (has suffix) and base matches\n        return 0\n    fi\n    \n    return 1\n}\n# Comparator dispatch \u2014 routes a candidate/range version comparison to the\n# ecosystem-appropriate comparator. Matching code passes CHECK_ECO (set by\n# check_vulnerability); everything that is not a special-cased ecosystem falls\n# through to the shared semver compare_versions (runtime included: Node.js and\n# PHP versions are plain x.y.z).\n#\n# Contract mirrors compare_versions: sets the global COMPARE_RESULT (-1/0/1),\n# no stdout, no subshell.\ncompare_versions_eco() {\n    case "$1" in\n        golang) compare_versions_go "$2" "$3" ;;\n        pypi)   compare_versions_pep440 "$2" "$3" ;;\n        gem)    compare_versions_gem "$2" "$3" ;;\n        maven)  compare_versions_maven "$2" "$3" ;;\n        nuget)  compare_versions_nuget "$2" "$3" ;;\n        composer) compare_versions_composer "$2" "$3" ;;\n        pub)    compare_versions_pub "$2" "$3" ;;\n        *)      compare_versions "$2" "$3" ;;\n    esac\n}\n# PEP 440 version comparator (Python / PyPI ordering).\n#\n# Routed to from compare_versions_eco when CHECK_ECO=pypi. A wrong ordering in a\n# security tool silently produces false negatives, so this follows the reference\n# `packaging` sort-key algorithm (epoch, release, pre, post, dev, local) exactly:\n#\n#   version := [N!]release[{a|b|rc}N][.postN][.devN][+local]\n#\n#   * epoch   (N!)     compares first, numerically (default 0).\n#   * release (x.y.z)  numeric, dot-split, zero-padded (1.0 == 1.0.0,\n#                      1.0.10 > 1.0.2).\n#   * ordering within a release:\n#         dev  <  pre(a<b<rc)  <  final  <  post\n#     Precisely, mirroring packaging\'s _cmpkey:\n#       - a version with ONLY a .devN (no pre, no post) ranks BELOW every\n#         pre-release of that release   (1.0.dev1 < 1.0a1);\n#       - a version with no pre-release ranks ABOVE all pre-releases\n#         (1.0rc1 < 1.0), and a post-release ranks above the final\n#         (1.0 < 1.0.post1);\n#       - a trailing .devN drops a version just below its non-dev sibling\n#         (1.0rc1.dev1 < 1.0rc1, 1.0.post1.dev1 < 1.0.post1);\n#       - pre/post/dev NUMBERS compare numerically.\n#   * local (+...) is IGNORED for ordering/range matching (1.0+local == 1.0).\n#\n# Normalization before comparing (case-insensitive):\n#   alpha->a  beta->b  c|pre|preview->rc ; post|rev|r and a bare -N suffix\n#   -> .postN ; optional . / - / _ separators between parts (1.0-a1 == 1.0a1) ;\n#   a leading `v` is stripped (V1.0 == 1.0) ; implicit numbers default to 0\n#   (1.0a == 1.0a0).\n#\n# Contract mirrors compare_versions: sets COMPARE_RESULT (-1/0/1), no stdout,\n# no subshell in the hot path.\n\n# Parse one normalized PEP 440 version into the _PEP_* globals:\n#   _PEP_EPOCH                       epoch integer\n#   _PEP_REL                         array of release segments (integers)\n#   _PEP_PRERANK  _PEP_PRELET  _PEP_PRENUM\n#         PRERANK: 0 = dev-only (below pre-releases), 1 = has pre-release,\n#                  2 = no pre-release (final/post). PRELET: a=0 b=1 rc=2.\n#   _PEP_POSTRANK _PEP_POSTNUM       POSTRANK 0 = no post, 1 = has post.\n#   _PEP_DEVRANK  _PEP_DEVNUM        DEVRANK  0 = has dev,  1 = no dev.\n_pep440_parse() {\n    local v="$1"\n\n    # Trim surrounding whitespace, lowercase, strip a leading `v`, drop local.\n    v="${v#"${v%%[![:space:]]*}"}"\n    v="${v%"${v##*[![:space:]]}"}"\n    v="${v,,}"\n    v="${v#v}"\n    v="${v%%+*}"\n\n    # Epoch: leading "N!".\n    local epoch=0\n    case "$v" in\n        *\'!\'*) epoch="${v%%!*}"; v="${v#*!}" ;;\n    esac\n    _PEP_EPOCH="$epoch"\n\n    # One regex splits release / pre / post / dev. Group map:\n    #   1 release   4 pre-letter   5 pre-num\n    #   6 post-any  7 implicit -N post   10 explicit post-num\n    #   11 dev-any  13 dev-num\n    local re=\'^([0-9]+(\\.[0-9]+)*)([-_.]?(a|b|c|rc|alpha|beta|pre|preview)[-_.]?([0-9]+)?)?((-[0-9]+)|([-_.]?(post|rev|r)[-_.]?([0-9]+)?))?([-_.]?(dev)[-_.]?([0-9]+)?)?$\'\n\n    if [[ "$v" =~ $re ]]; then\n        # Release segments.\n        local rel="${BASH_REMATCH[1]}"\n        local IFS=\'.\'\n        # SC2206: intentional word-split of the dotted release on IFS=\'.\' into\n        # the release-segment array (values are digits only \u2014 no globbing risk).\n        # shellcheck disable=SC2206\n        _PEP_REL=($rel)\n        unset IFS\n\n        # Pre-release.\n        local prelet="${BASH_REMATCH[4]}"\n        if [ -n "$prelet" ]; then\n            _PEP_PRENUM="${BASH_REMATCH[5]:-0}"\n            case "$prelet" in\n                a|alpha)          _PEP_PRELET=0 ;;\n                b|beta)           _PEP_PRELET=1 ;;\n                c|rc|pre|preview) _PEP_PRELET=2 ;;\n                *)                _PEP_PRELET=0 ;;\n            esac\n        else\n            _PEP_PRENUM=0\n            _PEP_PRELET=0\n        fi\n\n        # Post-release (implicit "-N" or explicit post/rev/r[N]).\n        local has_post=0 postnum=0\n        if [ -n "${BASH_REMATCH[6]}" ]; then\n            has_post=1\n            if [ -n "${BASH_REMATCH[7]}" ]; then\n                postnum="${BASH_REMATCH[7]#-}"\n            else\n                postnum="${BASH_REMATCH[10]:-0}"\n            fi\n        fi\n        _PEP_POSTRANK="$has_post"\n        _PEP_POSTNUM="$postnum"\n\n        # Dev-release.\n        local has_dev=0 devnum=0\n        if [ -n "${BASH_REMATCH[11]}" ]; then\n            has_dev=1\n            devnum="${BASH_REMATCH[13]:-0}"\n        fi\n        _PEP_DEVNUM="$devnum"\n        # DEVRANK: present sorts first (0), absent sorts last (1 == +inf).\n        if [ "$has_dev" = 1 ]; then _PEP_DEVRANK=0; else _PEP_DEVRANK=1; fi\n\n        # PRERANK: dev-only (no pre, no post, has dev) sinks below pre-releases.\n        if [ -n "$prelet" ]; then\n            _PEP_PRERANK=1\n        elif [ "$has_post" = 0 ] && [ "$has_dev" = 1 ]; then\n            _PEP_PRERANK=0\n        else\n            _PEP_PRERANK=2\n        fi\n    else\n        # Unparseable tail: treat the whole thing as a bare release so ordering\n        # stays deterministic rather than crashing the scan.\n        local IFS=\'.\'\n        # SC2206: intentional word-split of the leading numeric-dotted run on\n        # IFS=\'.\' into the release-segment array (digits only \u2014 no globbing risk).\n        # shellcheck disable=SC2206\n        _PEP_REL=(${v%%[!0-9.]*})\n        unset IFS\n        [ "${#_PEP_REL[@]}" -eq 0 ] && _PEP_REL=(0)\n        _PEP_PRERANK=2; _PEP_PRELET=0; _PEP_PRENUM=0\n        _PEP_POSTRANK=0; _PEP_POSTNUM=0\n        _PEP_DEVRANK=1;  _PEP_DEVNUM=0\n    fi\n}\n\ncompare_versions_pep440() {\n    _pep440_parse "$1"\n    local e1="$_PEP_EPOCH"\n    local rel1=("${_PEP_REL[@]}")\n    local prerank1="$_PEP_PRERANK" prelet1="$_PEP_PRELET" prenum1="$_PEP_PRENUM"\n    local postrank1="$_PEP_POSTRANK" postnum1="$_PEP_POSTNUM"\n    local devrank1="$_PEP_DEVRANK" devnum1="$_PEP_DEVNUM"\n\n    _pep440_parse "$2"\n    local e2="$_PEP_EPOCH"\n    local rel2=("${_PEP_REL[@]}")\n    local prerank2="$_PEP_PRERANK" prelet2="$_PEP_PRELET" prenum2="$_PEP_PRENUM"\n    local postrank2="$_PEP_POSTRANK" postnum2="$_PEP_POSTNUM"\n    local devrank2="$_PEP_DEVRANK" devnum2="$_PEP_DEVNUM"\n\n    # 1. Epoch (numeric, any length).\n    compare_digits "$e1" "$e2"\n    [ "$DIGITS_CMP" = 0 ] || { COMPARE_RESULT="$DIGITS_CMP"; return; }\n\n    # 2. Release, segment by segment, zero-padded (missing segment == 0).\n    local len1=${#rel1[@]} len2=${#rel2[@]}\n    local maxlen=$len1\n    [ "$len2" -gt "$maxlen" ] && maxlen=$len2\n    local i s1 s2\n    for (( i = 0; i < maxlen; i++ )); do\n        s1="${rel1[$i]:-0}"; s2="${rel2[$i]:-0}"\n        compare_digits "$s1" "$s2"\n        [ "$DIGITS_CMP" = 0 ] || { COMPARE_RESULT="$DIGITS_CMP"; return; }\n    done\n\n    # 3. Pre-release group (dev-only < pre < final/post).\n    if [ "$prerank1" -lt "$prerank2" ]; then COMPARE_RESULT="-1"; return; fi\n    if [ "$prerank1" -gt "$prerank2" ]; then COMPARE_RESULT="1";  return; fi\n    if [ "$prerank1" = 1 ]; then\n        if [ "$prelet1" -lt "$prelet2" ]; then COMPARE_RESULT="-1"; return; fi\n        if [ "$prelet1" -gt "$prelet2" ]; then COMPARE_RESULT="1";  return; fi\n        compare_digits "$prenum1" "$prenum2"\n        [ "$DIGITS_CMP" = 0 ] || { COMPARE_RESULT="$DIGITS_CMP"; return; }\n    fi\n\n    # 4. Post-release (no post < post; then post number).\n    if [ "$postrank1" -lt "$postrank2" ]; then COMPARE_RESULT="-1"; return; fi\n    if [ "$postrank1" -gt "$postrank2" ]; then COMPARE_RESULT="1";  return; fi\n    if [ "$postrank1" = 1 ]; then\n        compare_digits "$postnum1" "$postnum2"\n        [ "$DIGITS_CMP" = 0 ] || { COMPARE_RESULT="$DIGITS_CMP"; return; }\n    fi\n\n    # 5. Dev-release (has dev < no dev; then dev number).\n    if [ "$devrank1" -lt "$devrank2" ]; then COMPARE_RESULT="-1"; return; fi\n    if [ "$devrank1" -gt "$devrank2" ]; then COMPARE_RESULT="1";  return; fi\n    if [ "$devrank1" = 0 ]; then\n        compare_digits "$devnum1" "$devnum2"\n        [ "$DIGITS_CMP" = 0 ] || { COMPARE_RESULT="$DIGITS_CMP"; return; }\n    fi\n\n    COMPARE_RESULT="0"\n}\n# Go module versions use the shared semver comparator after removing the\n# module-specific leading v. Pseudo-versions follow prerelease ordering.\ncompare_versions_go() {\n    compare_versions "${1#v}" "${2#v}"\n}\n# RubyGems version comparator (Gem::Version ordering). Routed to from\n# compare_versions_eco when CHECK_ECO=gem.\n#\n# RubyGems ordering, verified segment-by-segment against real `Gem::Version`\n# (ruby -rrubygems):\n#   * a literal `-` is canonicalized to `.pre.` BEFORE splitting, so\n#     `1.0-1` and `1.0.pre.1` parse to identical segments (and compare equal);\n#   * the (dash-canonicalized) string is tokenized into segments by BOTH the\n#     literal dots AND every digit/letter boundary \u2014 `2a1` -> `2`, `a`, `1`\n#     (same as the explicit `2.a.1`), `1.0.b1` -> `1`, `0`, `b`, `1`;\n#   * segments are compared left to right; a missing trailing segment on the\n#     shorter side defaults to `0` (`1.0 == 1.0.0`);\n#   * two numeric segments compare numerically (`1.0.10 > 1.0.2`);\n#   * two string segments compare lexically (ASCII, `1.0.a < 1.0.b`);\n#   * a string segment ALWAYS ranks below a numeric segment at the same\n#     position \u2014 including a numeric segment that only exists because the\n#     other side ran out (padded to `0`) \u2014 which is exactly what makes any\n#     version with a trailing string segment a prerelease of its release\n#     (`1.0.0.pre.1 < 1.0.0`, `3.0.0.beta1 < 3.0.0`).\n#\n# Contract mirrors compare_versions: sets COMPARE_RESULT (-1/0/1), no stdout,\n# no subshell in the hot path (tokenizing is a pure bash regex/slice loop,\n# same style as the go/pep440 comparators\' identifier loops).\n\n# Tokenize a (dash-canonicalized) version string into the global array\n# _GEM_SEGS: every maximal digit-run or letter-run becomes one segment; dots\n# and any other stray character are pure separators and are dropped.\n_gem_tokenize() {\n    local s="$1"\n    _GEM_SEGS=()\n    local tok\n    while [ -n "$s" ]; do\n        if [[ "$s" =~ ^[0-9]+ ]]; then\n            tok="${BASH_REMATCH[0]}"\n            _GEM_SEGS+=("$tok")\n            s="${s:${#tok}}"\n        elif [[ "$s" =~ ^[A-Za-z]+ ]]; then\n            tok="${BASH_REMATCH[0]}"\n            _GEM_SEGS+=("$tok")\n            s="${s:${#tok}}"\n        else\n            # \'.\' separator (or any other stray char, e.g. a leftover \'+\'):\n            # skip exactly one character and keep scanning.\n            s="${s:1}"\n        fi\n    done\n}\n\n# Gem::Version#canonical_segments: drop trailing zeros from the release part\n# (numeric segments before the first string) and from the prerelease part, so\n# 1.0.0.pre.1 == 1.0.pre.1 and 1.0.0 == 1.\n_gem_canonical() {\n    local -a release=() pre=()\n    local seg in_pre=0\n    for seg in "${_GEM_SEGS[@]}"; do\n        if [ "$in_pre" = 0 ] && [[ "$seg" == *[!0-9]* ]]; then in_pre=1; fi\n        if [ "$in_pre" = 1 ]; then pre+=("$seg"); else release+=("$seg"); fi\n    done\n    while [ "${#release[@]}" -gt 0 ] && [[ "${release[-1]}" =~ ^0+$ ]]; do unset "release[$(( ${#release[@]} - 1 ))]"; done\n    while [ "${#pre[@]}" -gt 0 ] && [[ "${pre[-1]}" =~ ^0+$ ]]; do unset "pre[$(( ${#pre[@]} - 1 ))]"; done\n    _GEM_SEGS=("${release[@]}" "${pre[@]}")\n}\n\ncompare_versions_gem() {\n    # Canonicalize: \'-\' introduces a prerelease, identically to \'.pre.\'.\n    local v1="${1//-/.pre.}"\n    local v2="${2//-/.pre.}"\n\n    _gem_tokenize "$v1"\n    _gem_canonical\n    local -a segs1=("${_GEM_SEGS[@]}")\n    _gem_tokenize "$v2"\n    _gem_canonical\n    local -a segs2=("${_GEM_SEGS[@]}")\n\n    local len1=${#segs1[@]} len2=${#segs2[@]}\n    local maxlen=$len1\n    [ "$len2" -gt "$maxlen" ] && maxlen=$len2\n\n    local i s1 s2 isnum1 isnum2\n    for (( i = 0; i < maxlen; i++ )); do\n        s1="${segs1[$i]:-0}"\n        s2="${segs2[$i]:-0}"\n        [ "$s1" = "$s2" ] && continue\n\n        case "$s1" in \'\'|*[!0-9]*) isnum1=0 ;; *) isnum1=1 ;; esac\n        case "$s2" in \'\'|*[!0-9]*) isnum2=0 ;; *) isnum2=1 ;; esac\n\n        if [ "$isnum1" = 1 ] && [ "$isnum2" = 1 ]; then\n            compare_digits "$s1" "$s2"\n            [ "$DIGITS_CMP" = 0 ] || { COMPARE_RESULT="$DIGITS_CMP"; return; }\n        elif [ "$isnum1" = 0 ] && [ "$isnum2" = 1 ]; then\n            COMPARE_RESULT="-1"; return   # string segment < numeric segment\n        elif [ "$isnum1" = 1 ] && [ "$isnum2" = 0 ]; then\n            COMPARE_RESULT="1"; return    # numeric segment > string segment\n        else\n            if [[ "$s1" < "$s2" ]]; then COMPARE_RESULT="-1"; return; fi\n            if [[ "$s1" > "$s2" ]]; then COMPARE_RESULT="1"; return; fi\n        fi\n    done\n\n    COMPARE_RESULT="0"\n}\n# Maven version comparator (Apache Maven ComparableVersion ordering). Routed to\n# from compare_versions_eco when CHECK_ECO=maven.\n#\n# This is a faithful port of org.apache.maven.artifact.versioning.ComparableVersion\n# (verified against apache/maven maven-3.9.x). A wrong ordering in a security tool\n# silently produces false negatives, so the algorithm is reproduced exactly rather\n# than approximated:\n#\n# PARSING (parseVersion): the lowercased string is tokenized into a tree of Items\n# (INT / STRING / nested LIST). Separators are \'.\' and \'-\', AND every digit<->letter\n# transition also splits a token. A \'-\' (and each digit/letter transition) opens a\n# new nested sub-list, so "1.0alpha1" and "1.0-alpha-1" parse to the identical tree\n# [1, [alpha, [1]]]. An empty token at a separator inserts an integer 0.\n#\n# QUALIFIER RANKING (comparableQualifier): known qualifiers map to their index in\n#   alpha(0) < beta(1) < milestone(2) < rc(3) < snapshot(4) < ""(5, release) < sp(6)\n# and unknown qualifiers map to the string "7-<qualifier>". Qualifiers are compared\n# as STRINGS (byte order), so an unknown qualifier ("7-xyz") sorts lexically AFTER\n# sp and the release ("5"/"6") \u2014 e.g. 1.0-xyz > 1.0. Aliases (case-insensitive):\n# ga/final/release -> "" ; cr -> rc ; and a single letter a/b/m -> alpha/beta/\n# milestone but ONLY when immediately followed by a digit (a1 == alpha-1, while a\n# trailing bare "a" stays the unknown qualifier "a").\n#\n# ITEM COMPARISON:\n#   * INT vs INT      : numeric (arbitrary precision \u2014 length then byte compare).\n#   * INT vs STRING   : INT wins (1.1 > 1-sp, so a numeric item outranks a qualifier).\n#   * INT vs LIST     : INT wins.\n#   * STRING vs STRING: comparableQualifier byte compare.\n#   * STRING vs LIST  : STRING loses (-1).\n#   * LIST vs LIST    : element-wise; a shorter list pads with a "null" item and the\n#                       missing side\'s compare is inverted (x.compareTo(null)).\n#   * X vs null       : INT 0 == null; STRING vs null == comparableQualifier vs "5"\n#                       (release); LIST vs null == firstChild vs null (empty == null).\n#\n# NORMALIZATION trims trailing "null" items (integer 0, release/empty qualifier,\n# empty list) from each list, so 1.0 == 1.0.0 == 1-0 == 1.0-0. This is why a\n# trailing 0 (1.0) equals a missing segment (1) yet 2.0.1 > 2.0.\n#\n# Contract mirrors compare_versions: sets COMPARE_RESULT (-1/0/1), no stdout, no\n# subshell in the hot path (the tree is built in flat bash arrays and walked with\n# plain recursion \u2014 no command substitution, no external processes).\n\n# Allocate one tree node. $1=type (0=int,1=string,2=list) $2=value. The node id\n# is returned in _MV_RET; per-comparison state lives in dynamically-scoped locals\n# declared by compare_versions_maven (_MV_TYPE / _MV_VAL / _MV_KIDS / _MV_N).\n_mv_new() {\n    _MV_TYPE[$_MV_N]="$1"\n    _MV_VAL[$_MV_N]="$2"\n    _MV_KIDS[$_MV_N]=""\n    _MV_RET=$_MV_N\n    _MV_N=$((_MV_N + 1))\n}\n\n# Append child node $2 to list node $1.\n_mv_addkid() {\n    if [ -z "${_MV_KIDS[$1]}" ]; then\n        _MV_KIDS[$1]="$2"\n    else\n        _MV_KIDS[$1]="${_MV_KIDS[$1]} $2"\n    fi\n}\n\n# Build a StringItem node from a raw (already-lowercased) qualifier token.\n# $2=followedByDigit (1/0) enables the single-letter a/b/m aliases; ga/final/\n# release/cr aliases always apply. Result id in _MV_RET.\n_mv_new_string() {\n    local val="$1"\n    if [ "$2" = 1 ] && [ "${#val}" -eq 1 ]; then\n        case "$val" in\n            a) val="alpha" ;;\n            b) val="beta" ;;\n            m) val="milestone" ;;\n        esac\n    fi\n    case "$val" in\n        ga|final|release) val="" ;;\n        cr) val="rc" ;;\n    esac\n    _mv_new 1 "$val"\n}\n\n# parseItem: a digit token becomes an INT node (leading zeros stripped, but at\n# least one digit kept); anything else becomes a StringItem (followedByDigit=0).\n_mv_parseitem() {\n    if [ "$1" = 1 ]; then\n        local v="$2"\n        while [ "${#v}" -gt 1 ] && [ "${v:0:1}" = "0" ]; do v="${v:1}"; done\n        _mv_new 0 "$v"\n    else\n        _mv_new_string "$2" 0\n    fi\n}\n\n# comparableQualifier -> _MV_CQ. Known qualifiers map to their single-digit index;\n# unknown qualifiers map to "7-<qualifier>" (so they byte-sort above sp/release).\n_mv_cq() {\n    case "$1" in\n        alpha)     _MV_CQ="0" ;;\n        beta)      _MV_CQ="1" ;;\n        milestone) _MV_CQ="2" ;;\n        rc)        _MV_CQ="3" ;;\n        snapshot)  _MV_CQ="4" ;;\n        "")        _MV_CQ="5" ;;\n        sp)        _MV_CQ="6" ;;\n        *)         _MV_CQ="7-$1" ;;\n    esac\n}\n\n# Byte-order string compare -> _MV_CMP (LC_ALL=C is set by the entrypoint so this\n# is a true code-point comparison, matching Java String.compareTo for this charset).\n_mv_strcmp() {\n    if [[ "$1" < "$2" ]]; then _MV_CMP=-1\n    elif [[ "$1" > "$2" ]]; then _MV_CMP=1\n    else _MV_CMP=0\n    fi\n}\n\n# Arbitrary-precision numeric compare of two leading-zero-stripped digit strings\n# -> _MV_CMP (shorter string is the smaller number; equal length falls back to\n# byte compare, which equals numeric order for equal-length digit strings).\n_mv_numcmp() {\n    if [ "${#1}" -lt "${#2}" ]; then _MV_CMP=-1; return; fi\n    if [ "${#1}" -gt "${#2}" ]; then _MV_CMP=1; return; fi\n    _mv_strcmp "$1" "$2"\n}\n\n# isNull: integer 0, release/empty qualifier, or empty list. Returns 0 (true) when\n# the node contributes nothing (subject to trailing trimming in normalize).\n_mv_isnull() {\n    case "${_MV_TYPE[$1]}" in\n        0) [ "${_MV_VAL[$1]}" = "0" ] ;;\n        1) [ -z "${_MV_VAL[$1]}" ] ;;\n        2) [ -z "${_MV_KIDS[$1]}" ] ;;\n    esac\n}\n\n# ListItem.normalize: drop trailing null items, continuing past non-null nested\n# lists (matching Maven\'s `else if (!(lastItem instanceof ListItem)) break`).\n_mv_normalize() {\n    # shellcheck disable=SC2206 # node ids: digits only, split on purpose (no here-string in this hot path)\n    local -a kids=(${_MV_KIDS[$1]})\n    local i cid\n    for (( i = ${#kids[@]} - 1; i >= 0; i-- )); do\n        cid="${kids[$i]}"\n        if _mv_isnull "$cid"; then\n            unset \'kids[$i]\'\n        elif [ "${_MV_TYPE[$cid]}" != 2 ]; then\n            break\n        fi\n    done\n    _MV_KIDS[$1]="${kids[*]}"\n}\n\n# parseVersion: tokenize $1 into a normalized Item tree; root list id -> _MV_RET.\n_mv_parse() {\n    local version="${1,,}"\n    _mv_new 2 ""\n    local root=$_MV_RET\n    local -a stack=("$root")\n    local list=$root\n    local isDigit=0 startIndex=0\n    local n=${#version} i c\n    for (( i = 0; i < n; i++ )); do\n        c="${version:i:1}"\n        if [ "$c" = "." ]; then\n            if [ "$i" -eq "$startIndex" ]; then\n                _mv_new 0 "0"; _mv_addkid "$list" "$_MV_RET"\n            else\n                _mv_parseitem "$isDigit" "${version:startIndex:i-startIndex}"; _mv_addkid "$list" "$_MV_RET"\n            fi\n            startIndex=$((i + 1))\n        elif [ "$c" = "-" ]; then\n            if [ "$i" -eq "$startIndex" ]; then\n                _mv_new 0 "0"; _mv_addkid "$list" "$_MV_RET"\n            else\n                _mv_parseitem "$isDigit" "${version:startIndex:i-startIndex}"; _mv_addkid "$list" "$_MV_RET"\n            fi\n            startIndex=$((i + 1))\n            _mv_new 2 ""; _mv_addkid "$list" "$_MV_RET"; list=$_MV_RET; stack+=("$list")\n        elif [[ "$c" == [0-9] ]]; then\n            if [ "$isDigit" = 0 ] && [ "$i" -gt "$startIndex" ]; then\n                if [ -n "${_MV_KIDS[$list]}" ]; then\n                    _mv_new 2 ""; _mv_addkid "$list" "$_MV_RET"; list=$_MV_RET; stack+=("$list")\n                fi\n                _mv_new_string "${version:startIndex:i-startIndex}" 1; _mv_addkid "$list" "$_MV_RET"\n                startIndex=$i\n                _mv_new 2 ""; _mv_addkid "$list" "$_MV_RET"; list=$_MV_RET; stack+=("$list")\n            fi\n            isDigit=1\n        else\n            if [ "$isDigit" = 1 ] && [ "$i" -gt "$startIndex" ]; then\n                _mv_parseitem 1 "${version:startIndex:i-startIndex}"; _mv_addkid "$list" "$_MV_RET"\n                startIndex=$i\n                _mv_new 2 ""; _mv_addkid "$list" "$_MV_RET"; list=$_MV_RET; stack+=("$list")\n            fi\n            isDigit=0\n        fi\n    done\n    if [ "$n" -gt "$startIndex" ]; then\n        if [ "$isDigit" = 0 ] && [ -n "${_MV_KIDS[$list]}" ]; then\n            _mv_new 2 ""; _mv_addkid "$list" "$_MV_RET"; list=$_MV_RET; stack+=("$list")\n        fi\n        _mv_parseitem "$isDigit" "${version:startIndex}"; _mv_addkid "$list" "$_MV_RET"\n    fi\n    # Normalize deepest-first (Maven pops the creation stack LIFO).\n    for (( i = ${#stack[@]} - 1; i >= 0; i-- )); do\n        _mv_normalize "${stack[$i]}"\n    done\n    _MV_RET=$root\n}\n\n# Compare item $1 (always concrete) against item $2 (a node id, or "" for null).\n# Result -> _MV_CMP (-1/0/1). Recurses for nested lists.\n_mv_compare() {\n    local l="$1" r="$2"\n    local lt="${_MV_TYPE[$l]}"\n    if [ -z "$r" ]; then\n        case "$lt" in\n            0) if [ "${_MV_VAL[$l]}" = "0" ]; then _MV_CMP=0; else _MV_CMP=1; fi ;;\n            1) _mv_cq "${_MV_VAL[$l]}"; _mv_strcmp "$_MV_CQ" "5" ;;\n            2) if [ -z "${_MV_KIDS[$l]}" ]; then\n                   _MV_CMP=0\n               else\n                   # shellcheck disable=SC2206 # node ids: digits only\n                   local -a lk=(${_MV_KIDS[$l]}); _mv_compare "${lk[0]}" ""\n               fi ;;\n        esac\n        return\n    fi\n    local rt="${_MV_TYPE[$r]}"\n    case "$lt" in\n        0) case "$rt" in\n               0) _mv_numcmp "${_MV_VAL[$l]}" "${_MV_VAL[$r]}" ;;\n               *) _MV_CMP=1 ;;\n           esac ;;\n        1) case "$rt" in\n               0) _MV_CMP=-1 ;;\n               1) _mv_cq "${_MV_VAL[$l]}"; local cl="$_MV_CQ"; _mv_cq "${_MV_VAL[$r]}"; _mv_strcmp "$cl" "$_MV_CQ" ;;\n               2) _MV_CMP=-1 ;;\n           esac ;;\n        2) case "$rt" in\n               0) _MV_CMP=-1 ;;\n               1) _MV_CMP=1 ;;\n               2) _mv_listcmp "$l" "$r" ;;\n           esac ;;\n    esac\n}\n\n# ListItem vs ListItem: walk children in lock-step, padding the shorter side with\n# a null item and inverting that side\'s comparison (Maven\'s -1 * r.compareTo(l)).\n_mv_listcmp() {\n    # shellcheck disable=SC2206 # node ids: digits only, split on purpose (no here-string in this hot path)\n    local -a lk=(${_MV_KIDS[$1]}) rk=(${_MV_KIDS[$2]})\n    local nl=${#lk[@]} nr=${#rk[@]}\n    local max=$nl\n    [ "$nr" -gt "$max" ] && max=$nr\n    local i lc rc\n    for (( i = 0; i < max; i++ )); do\n        if [ "$i" -lt "$nl" ]; then lc="${lk[$i]}"; else lc=""; fi\n        if [ "$i" -lt "$nr" ]; then rc="${rk[$i]}"; else rc=""; fi\n        if [ -z "$lc" ]; then\n            _mv_compare "$rc" ""\n            _MV_CMP=$(( -1 * _MV_CMP ))\n        else\n            _mv_compare "$lc" "$rc"\n        fi\n        [ "$_MV_CMP" -ne 0 ] && return\n    done\n    _MV_CMP=0\n}\n\ncompare_versions_maven() {\n    # Byte-order collation for all qualifier/string compares (C locale == Java\'s\n    # code-point order for the ASCII charset Maven versions use); standard IFS for\n    # the array split/join the tree walk relies on. Both are function-local.\n    local LC_ALL=C IFS=$\' \\t\\n\'\n    local -a _MV_TYPE=() _MV_VAL=() _MV_KIDS=()\n    local _MV_N=0 _MV_RET="" _MV_CMP=0 _MV_CQ=""\n\n    _mv_parse "$1"; local r1=$_MV_RET\n    _mv_parse "$2"; local r2=$_MV_RET\n    _mv_compare "$r1" "$r2"\n    COMPARE_RESULT="$_MV_CMP"\n}\n# NuGet version comparator (NuGet.Versioning ordering). Routed to from\n# compare_versions_eco when CHECK_ECO=nuget.\n#\n# NuGet versions are SemVer 2.0.0 PLUS an optional 4th numeric Revision\n# component: Major.Minor.Patch[.Revision][-prerelease][+metadata]. This is a\n# separate comparator because compare_versions only knows Major.Minor.Patch \u2014 it has no\n# concept of a 4th part, so it cannot be reused as-is:\n#   - build metadata (+meta) is stripped before comparison (SemVer 2.0.0:\n#     MUST be ignored for precedence), same as the go comparator strips\n#     +incompatible/+meta;\n#   - the Major.Minor.Patch.Revision QUAD is compared here directly, numeric\n#     part by numeric part; a missing Revision defaults to 0 (1.0.0 ==\n#     1.0.0.0), same rule the base compare_versions applies to a missing\n#     Patch;\n#   - once the quad is equal, the pre-release tail is compared using full\n#     SemVer-2 rules: dot-split identifiers, numeric identifiers compare\n#     numerically and rank below alphanumeric ones, and a longer identifier\n#     list that is a prefix-superset of the shorter one wins \u2014 the exact same\n#     dot-split ordering as the shared semver comparator, adapted to the\n#     case-insensitive rule below;\n#   - NuGet pre-release labels are compared CASE-INSENSITIVELY (this is where\n#     NuGet actually diverges from strict SemVer 2.0.0, which is\n#     case-sensitive): "1.0.0-BETA" == "1.0.0-beta". Both pre-release tails\n#     are lowercased before the dot-split comparison; the numeric quad itself\n#     has no case to normalize.\n#\n# Contract mirrors compare_versions: sets COMPARE_RESULT (-1/0/1), no stdout,\n# no subshell in the hot path.\ncompare_versions_nuget() {\n    # Strip build metadata (+meta) \u2014 ignored for precedence per SemVer 2.0.0.\n    local v1="${1%%+*}"\n    local v2="${2%%+*}"\n\n    # Split base (Major.Minor.Patch[.Revision]) from the pre-release tail.\n    local base1="${v1%%-*}"\n    local base2="${v2%%-*}"\n\n    # --- Compare the Major.Minor.Patch.Revision quad numerically ---\n    local -a parts1 parts2\n    IFS=\'.\' read -ra parts1 <<< "$base1"\n    IFS=\'.\' read -ra parts2 <<< "$base2"\n    local i\n    for i in 0 1 2 3; do\n        compare_digits "${parts1[$i]:-0}" "${parts2[$i]:-0}"\n        [ "$DIGITS_CMP" = 0 ] || { COMPARE_RESULT="$DIGITS_CMP"; return; }\n    done\n\n    # --- Pre-release comparison (quads are equal) ---\n    local pre1="" pre2=""\n    [ "$v1" != "$base1" ] && pre1="${v1#*-}"\n    [ "$v2" != "$base2" ] && pre2="${v2#*-}"\n\n    # A version with a pre-release has LOWER precedence than one without.\n    if [ -z "$pre1" ] && [ -z "$pre2" ]; then COMPARE_RESULT="0"; return; fi\n    if [ -z "$pre1" ]; then COMPARE_RESULT="1"; return; fi\n    if [ -z "$pre2" ]; then COMPARE_RESULT="-1"; return; fi\n\n    # NuGet pre-release labels are case-insensitive: normalize before compare.\n    pre1="${pre1,,}"\n    pre2="${pre2,,}"\n\n    # Both have a pre-release: compare dot-split identifiers left to right\n    # (identical shape to compare_versions_go\'s pre-release loop).\n    local ids1 ids2\n    IFS=\'.\' read -ra ids1 <<< "$pre1"\n    IFS=\'.\' read -ra ids2 <<< "$pre2"\n    local len1=${#ids1[@]}\n    local len2=${#ids2[@]}\n    local maxlen=$len1\n    [ "$len2" -gt "$maxlen" ] && maxlen=$len2\n\n    local j id1 id2 isnum1 isnum2\n    for (( j = 0; j < maxlen; j++ )); do\n        # A larger set of pre-release fields (prefix-superset) wins.\n        if [ "$j" -ge "$len1" ]; then COMPARE_RESULT="-1"; return; fi\n        if [ "$j" -ge "$len2" ]; then COMPARE_RESULT="1"; return; fi\n\n        id1="${ids1[$j]}"\n        id2="${ids2[$j]}"\n        [ "$id1" = "$id2" ] && continue\n\n        # Numeric identifiers rank below alphanumeric ones; two numerics\n        # compare numerically; two alphanumerics compare lexically (ASCII).\n        case "$id1" in \'\'|*[!0-9]*) isnum1=0 ;; *) isnum1=1 ;; esac\n        case "$id2" in \'\'|*[!0-9]*) isnum2=0 ;; *) isnum2=1 ;; esac\n\n        if [ "$isnum1" = 1 ] && [ "$isnum2" = 1 ]; then\n            compare_digits "$id1" "$id2"\n            [ "$DIGITS_CMP" = 0 ] || { COMPARE_RESULT="$DIGITS_CMP"; return; }\n        elif [ "$isnum1" = 1 ]; then\n            COMPARE_RESULT="-1"; return\n        elif [ "$isnum2" = 1 ]; then\n            COMPARE_RESULT="1"; return\n        else\n            if [[ "$id1" < "$id2" ]]; then COMPARE_RESULT="-1"; return; fi\n            if [[ "$id1" > "$id2" ]]; then COMPARE_RESULT="1"; return; fi\n        fi\n    done\n\n    COMPARE_RESULT="0"\n}\n# Composer (Packagist) version comparator. Routed to from compare_versions_eco\n# when CHECK_ECO=composer.\n#\n# Composer\'s VersionParser normalizes before comparing, and its ordering is not\n# semver\'s:\n#   * a leading "v" is cosmetic (v2.4.0 == 2.4.0);\n#   * the numeric part has any number of components (1.2.3.4), missing ones\n#     count as 0;\n#   * the stability suffix may be glued to the number (9.4.0RC1 == 9.4.0-RC1)\n#     and orders dev < alpha (a) < beta (b) < RC < stable < patch (pl, p);\n#   * "-pN" is a post-release patch (Magento 2.4.7-p4 > 2.4.7), not a\n#     pre-release;\n#   * the stability number compares numerically (beta10 > beta9).\n#\n# Contract mirrors compare_versions: sets COMPARE_RESULT (-1/0/1), no stdout,\n# no subshell.\n\n# Split a composer version into the globals _CV_NUMS (array of numeric parts),\n# _CV_RANK (stability rank), _CV_NUM (stability number) and _CV_TAIL (anything\n# left, compared lexically).\n_composer_parse() {\n    local v="${1,,}"\n    v="${v%%+*}"\n    [[ "$v" == v[0-9]* ]] && v="${v:1}"\n    local nums="" rest=""\n    if [[ "$v" =~ ^([0-9]+(\\.[0-9]+)*)(.*)$ ]]; then\n        nums="${BASH_REMATCH[1]}"\n        rest="${BASH_REMATCH[3]}"\n    else\n        rest="$v"\n    fi\n    IFS=\'.\' read -ra _CV_NUMS <<< "$nums"\n    _CV_RANK=4 _CV_NUM=0 _CV_TAIL=""\n    rest="${rest#[-._]}"\n    [ -z "$rest" ] && return\n    # The stability word must end the suffix or be followed by a separator:\n    # "preview" is not "p" (patch) followed by "review".\n    if [[ "$rest" =~ ^(dev|alpha|beta|rc|patch|pl|stable|a|b|c|p)[-._]?([0-9]*)([-._].*)?$ ]]; then\n        case "${BASH_REMATCH[1]}" in\n            dev) _CV_RANK=0 ;;\n            alpha|a) _CV_RANK=1 ;;\n            beta|b) _CV_RANK=2 ;;\n            rc|c) _CV_RANK=3 ;;\n            stable) _CV_RANK=4 ;;\n            patch|pl|p) _CV_RANK=5 ;;\n        esac\n        _CV_NUM="${BASH_REMATCH[2]:-0}"\n        _CV_TAIL="${BASH_REMATCH[3]}"\n    else\n        # Unknown suffix: rank it like a pre-release so it stays inside "<x.y.z".\n        _CV_RANK=0\n        _CV_TAIL="$rest"\n    fi\n}\n\ncompare_versions_composer() {\n    _composer_parse "$1"\n    local -a nums1=("${_CV_NUMS[@]}")\n    local rank1=$_CV_RANK num1=$_CV_NUM tail1=$_CV_TAIL\n    _composer_parse "$2"\n    local -a nums2=("${_CV_NUMS[@]}")\n    local rank2=$_CV_RANK num2=$_CV_NUM tail2=$_CV_TAIL\n\n    local i n1 n2 len=${#nums1[@]}\n    [ "${#nums2[@]}" -gt "$len" ] && len=${#nums2[@]}\n    for (( i = 0; i < len; i++ )); do\n        n1="${nums1[$i]:-0}" n2="${nums2[$i]:-0}"\n        while [[ "$n1" == 0* && ${#n1} -gt 1 ]]; do n1="${n1#0}"; done\n        while [[ "$n2" == 0* && ${#n2} -gt 1 ]]; do n2="${n2#0}"; done\n        if (( ${#n1} != ${#n2} )); then\n            (( ${#n1} < ${#n2} )) && COMPARE_RESULT=-1 || COMPARE_RESULT=1\n            return\n        fi\n        if [[ "$n1" < "$n2" ]]; then COMPARE_RESULT=-1; return; fi\n        if [[ "$n1" > "$n2" ]]; then COMPARE_RESULT=1; return; fi\n    done\n\n    if (( rank1 != rank2 )); then\n        (( rank1 < rank2 )) && COMPARE_RESULT=-1 || COMPARE_RESULT=1\n        return\n    fi\n    compare_digits "$num1" "$num2"\n    [ "$DIGITS_CMP" = 0 ] || { COMPARE_RESULT="$DIGITS_CMP"; return; }\n    _composer_tail_cmp "$tail1" "$tail2"\n    COMPARE_RESULT="$DIGITS_CMP"\n}\n\n# Order the remainders after the stability number: a "-dev" tail precedes\n# the bare release (1.0.0-RC1-dev < 1.0.0-RC1), which precedes any other\n# tail; other tails compare part by part, numbers numerically\n# (beta.1.2 < beta.1.10). Sets DIGITS_CMP.\n_composer_tail_cmp() {\n    local t1="${1#[-._]}" t2="${2#[-._]}" k1=1 k2=1\n    [ -z "$t1" ] || k1=2\n    [ -z "$t2" ] || k2=2\n    [[ "$t1" != dev* ]] || k1=0\n    [[ "$t2" != dev* ]] || k2=0\n    if [ "$k1" != "$k2" ]; then\n        [ "$k1" -lt "$k2" ] && DIGITS_CMP=-1 || DIGITS_CMP=1\n        return\n    fi\n    DIGITS_CMP=0\n    [ "$k1" = 2 ] || return 0\n    local -a p1 p2\n    IFS=\'-._\' read -ra p1 <<< "$t1"\n    IFS=\'-._\' read -ra p2 <<< "$t2"\n    local i n=${#p1[@]}\n    [ "${#p2[@]}" -le "$n" ] || n=${#p2[@]}\n    for (( i = 0; i < n; i++ )); do\n        compare_digits "${p1[$i]:-0}" "${p2[$i]:-0}"\n        [ "$DIGITS_CMP" = 0 ] || return 0\n    done\n}\n# Pub (Dart) version comparator. Routed to from compare_versions_eco when\n# CHECK_ECO=pub.\n#\n# Pub orders build metadata, unlike semver: 0.3.5 < 0.3.5+1 < 0.3.5+2 (pub\n# publishes fixes as "+N" builds). Versions compare as semver first; when they\n# are equal, a version without build metadata is lower, and two builds compare\n# like pre-release identifiers (dot-separated, numeric parts numerically).\n#\n# Contract mirrors compare_versions: sets COMPARE_RESULT (-1/0/1), no stdout,\n# no subshell.\ncompare_versions_pub() {\n    local v1="$1" v2="$2" build1="" build2=""\n    [[ "$v1" == *+* ]] && build1="${v1#*+}"\n    [[ "$v2" == *+* ]] && build2="${v2#*+}"\n    compare_versions "${v1%%+*}" "${v2%%+*}"\n    [ "$COMPARE_RESULT" = 0 ] || return 0\n    if [ -z "$build1" ] && [ -z "$build2" ]; then return 0; fi\n    if [ -z "$build1" ]; then COMPARE_RESULT=-1; return 0; fi\n    if [ -z "$build2" ]; then COMPARE_RESULT=1; return 0; fi\n    compare_versions "0.0.0-$build1" "0.0.0-$build2"\n}\n# Severity rank used to compare and count advisories (sets SEV_RANK).\n# GHSA spells medium "moderate".\nseverity_rank() {\n    case "${1,,}" in\n        critical) SEV_RANK=4 ;;\n        high) SEV_RANK=3 ;;\n        medium|moderate) SEV_RANK=2 ;;\n        low) SEV_RANK=1 ;;\n        *) SEV_RANK=0 ;;\n    esac\n}\n\n# Collect the advisories attached to a matched version/range into the\n# caller\'s adv_list (records "severity;ghsa;cve;source;fix;id") and adv_ids\n# (identity -> index). GHSA and OSV describe the same advisory in two records:\n# records sharing a GHSA id, a CVE or an OSV id merge into one entry whose\n# sources accumulate ("ghsa, osv") and whose missing fields are filled in.\n# Two different GHSA ids never merge.\nrecord_matching_advisories() {\n    local lookup_key="$1"\n    local records="${VULN_RECORDS[$lookup_key]:-}"\n    local record severity ghsa cve source fix id idx key\n    local s0 g0 c0 src0 f0 i0\n    [ -n "$records" ] || records=";;;;;"\n    while IFS= read -r record; do\n        [ -n "$record" ] || continue\n        IFS=\';\' read -r severity ghsa cve source fix id <<< "$record"\n        idx=""\n        if [ -n "$ghsa$cve$id" ]; then\n            for key in ${ghsa:+"ghsa:$ghsa"} ${cve:+"cve:$cve"} ${id:+"id:$id"}; do\n                [ -n "${adv_ids[$key]+x}" ] || continue\n                idx="${adv_ids[$key]}"\n                IFS=\';\' read -r s0 g0 c0 src0 f0 i0 <<< "${adv_list[$idx]}"\n                if [ -n "$ghsa" ] && [ -n "$g0" ] && [ "$ghsa" != "$g0" ]; then\n                    idx=""\n                    continue\n                fi\n                break\n            done\n        elif [ -n "${adv_ids[record:$record]+x}" ]; then\n            continue\n        fi\n        if [ -z "$idx" ]; then\n            idx=${#adv_list[@]}\n            adv_list+=("$record")\n            [ -n "$ghsa$cve$id" ] || adv_ids["record:$record"]="$idx"\n        else\n            IFS=\';\' read -r s0 g0 c0 src0 f0 i0 <<< "${adv_list[$idx]}"\n            severity_rank "$s0"; local rank0=$SEV_RANK\n            severity_rank "$severity"\n            [ "$SEV_RANK" -gt "$rank0" ] || severity="$s0"\n            case ", $src0, " in\n                *", $source, "*) source="$src0" ;;\n                *) source="${src0:+$src0${source:+, }}$source" ;;\n            esac\n            adv_list[$idx]="$severity;${g0:-$ghsa};${c0:-$cve};$source;${f0:-$fix};${i0:-$id}"\n            IFS=\';\' read -r severity ghsa cve source fix id <<< "${adv_list[$idx]}"\n        fi\n        for key in ${ghsa:+"ghsa:$ghsa"} ${cve:+"cve:$cve"} ${id:+"id:$id"}; do\n            adv_ids["$key"]="$idx"\n        done\n    done <<< "$records"\n}\n\n# Store the merged advisories of one finding. VULN_ADVISORIES keeps them all\n# ("rec||rec"); the VULN_METADATA_* summary uses the most severe advisory and\n# VULN_METADATA_FIX the highest fixed version (the one that fixes them all).\nfinalize_advisories() {\n    local result_key="$1" rec joined="" best="" best_rank=-1 fixed=""\n    local severity ghsa cve source fix id\n    for rec in "${adv_list[@]}"; do\n        joined+="${joined:+||}$rec"\n        IFS=\';\' read -r severity ghsa cve source fix id <<< "$rec"\n        severity_rank "$severity"\n        if [ "$SEV_RANK" -gt "$best_rank" ]; then best_rank=$SEV_RANK; best="$rec"; fi\n        if [ -n "$fix" ]; then\n            if [ -z "$fixed" ]; then\n                fixed="$fix"\n            else\n                compare_versions_eco "$CHECK_ECO" "$fix" "$fixed"\n                [ "$COMPARE_RESULT" != 1 ] || fixed="$fix"\n            fi\n        fi\n    done\n    VULN_ADVISORIES["$result_key"]="$joined"\n    IFS=\';\' read -r severity ghsa cve source fix id <<< "$best"\n    VULN_METADATA_SEVERITY["$result_key"]="$severity"\n    VULN_METADATA_GHSA["$result_key"]="$ghsa"\n    VULN_METADATA_CVE["$result_key"]="$cve"\n    VULN_METADATA_SOURCE["$result_key"]="$source"\n    VULN_METADATA_FIX["$result_key"]="$fixed"\n}\n\n# Canonical form of a user-supplied package name for an ecosystem (the form\n# the lockfile parsers and feeds use). Sets CANON_NAME.\ncanonical_package_name() {\n    case "$1" in\n        pypi) _pypi_normalize_name "$2"; CANON_NAME="$PEP503_NAME" ;;\n        nuget|composer|githubactions) CANON_NAME="${2,,}" ;;\n        # groupId/artifactId (purl form) -> groupId:artifactId (lockfile form)\n        maven) CANON_NAME="${2//\\//:}" ;;\n        swift)\n            local n="${2,,}"\n            n="${n#*://}"; n="${n%/}"; n="${n%.git}"\n            CANON_NAME="$n" ;;\n        *) CANON_NAME="$2" ;;\n    esac\n}\n\n# Probe ecosystem-specific and wildcard feeds without cross-ecosystem leakage.\n# Args: ecosystem package version source-file. With --package-name, only that\n# package (PACKAGE_FILTER = "eco:name") is reported.\ncheck_vulnerability() {\n    local eco="$1" name="$2" version="$3" source="$4"\n    CHECKED_PACKAGE_COUNT=$(( ${CHECKED_PACKAGE_COUNT:-0} + 1 ))\n    if [ -n "${PACKAGE_FILTER:-}" ] && [ "$eco:$name" != "$PACKAGE_FILTER" ]; then\n        return 1\n    fi\n    # Most installed packages have no advisory. Avoid allocating per-advisory\n    # maps and parsing four empty lists for every such dependency in a lockfile.\n    # Wildcard sources (CSV, JSON, reports without a purl) keep names as their\n    # author wrote them: they are keyed by a loose form (lowercase, runs of\n    # - _ . as one "-", see loose_name in AWK_FEED_LIB), probed the same way.\n    local loose="${name,,}"\n    loose="${loose//[_.]/-}"\n    while [[ "$loose" == *--* ]]; do loose="${loose//--/-}"; done\n    if [ -z "${VULN_EXACT_LOOKUP[$eco:$name]+x}" ] &&\n        [ -z "${VULN_RANGE_LOOKUP[$eco:$name]+x}" ] &&\n        [ -z "${VULN_EXACT_LOOKUP[*:$loose]+x}" ] &&\n        [ -z "${VULN_RANGE_LOOKUP[*:$loose]+x}" ]; then\n        return 1\n    fi\n    CHECK_ECO="$eco"\n    local result_key="${eco}:${name}@${version}"\n    local -a probe_keys=("${eco}:${name}")\n    [ "$eco" = "*" ] || probe_keys+=("*:${loose}")\n    local pk candidate lookup_key message="" found=false\n    local -a candidates\n    local -A seen_candidates=() adv_ids=()\n    local -a adv_list=()\n    local collect=true\n    [ -z "${VULN_ADVISORIES[$result_key]+x}" ] || collect=false\n\n    for pk in "${probe_keys[@]}"; do\n        IFS=\'|\' read -ra candidates <<< "${VULN_EXACT_LOOKUP[$pk]:-}"\n        for candidate in "${candidates[@]}"; do\n            [ -n "$candidate" ] || continue\n            lookup_key="${pk}@${candidate}"\n            [ -z "${seen_candidates[$lookup_key]+x}" ] || continue\n            seen_candidates["$lookup_key"]=1\n            if version_matches_vulnerable "$version" "$candidate"; then\n                if [ "$found" = false ]; then\n                    if [ "$version" = "$candidate" ]; then\n                        message="(vulnerable)"\n                    else\n                        message="(vulnerable - pre-release of $candidate)"\n                    fi\n                fi\n                found=true\n                if [ "$collect" = true ]; then\n                    record_matching_advisories "$lookup_key"\n                fi\n            fi\n        done\n\n        # Newlines separate complete ranges, preserving OR (||) expressions.\n        while IFS= read -r candidate; do\n            [ -n "$candidate" ] || continue\n            lookup_key="${pk}:${candidate}"\n            [ -z "${seen_candidates[$lookup_key]+x}" ] || continue\n            seen_candidates["$lookup_key"]=1\n            if version_in_range "$version" "$candidate"; then\n                if [ "$found" = false ]; then\n                    message="(vulnerable - matches range: $candidate)"\n                fi\n                found=true\n                if [ "$collect" = true ]; then\n                    record_matching_advisories "$lookup_key"\n                fi\n            fi\n        done <<< "${VULN_RANGE_LOOKUP[$pk]:-}"\n    done\n\n    if [ "$found" = true ]; then\n        [ "$collect" = false ] || finalize_advisories "$result_key"\n        echo -e "${RED}\u26A0\uFE0F  [$source] $name@$version $message${NC}"\n        FOUND_VULNERABLE=1\n        VULNERABLE_PACKAGES+=("$source|$eco|$name@$version")\n        return 0\n    fi\n    return 1\n}\nanalyze_package_lock() {\n    local lockfile="$1"\n    local eco="${2:-npm}"\n    local vuln_count_before=${#VULNERABLE_PACKAGES[@]}\n    local packages\n\n    # Read the packages map (v2/v3) or recursive dependencies tree (v1).\n    # Structural records keep JSON whitespace and property order irrelevant.\n    packages=$(json_structural_lines "$lockfile" | awk \'\n    function key(line) {\n        sub(/^[[:space:]]*"/, "", line)\n        sub(/"[[:space:]]*:.*/, "", line)\n        gsub(/\\\\\\//, "/", line)\n        return line\n    }\n    function value(line) {\n        sub(/^[[:space:]]*"[^"]*"[[:space:]]*:[[:space:]]*"/, "", line)\n        sub(/"[[:space:]]*$/, "", line)\n        gsub(/\\\\\\//, "/", line)\n        return line\n    }\n    {\n        line = $0\n        gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)\n        if (line ~ /[\\{\\[]$/) {\n            field = key(line)\n            parent = kind[depth]\n            depth++\n            kind[depth] = "other"\n            names[depth] = versions[depth] = ""\n            linked[depth] = 0\n            if (depth == 2 && field == "packages") {\n                kind[depth] = "packages"\n                have_packages = 1\n            } else if (field == "dependencies" && (depth == 2 || parent == "legacy")) {\n                kind[depth] = "dependencies"\n            } else if (parent == "packages" && field ~ /(^|\\/)node_modules\\//) {\n                kind[depth] = "modern"\n                sub(/^.*node_modules\\//, "", field)\n                names[depth] = field\n            } else if (parent == "dependencies") {\n                kind[depth] = "legacy"\n                names[depth] = field\n            }\n            next\n        }\n        if (line == "}" || line == "]") {\n            if (names[depth] != "" && versions[depth] != "" && !linked[depth]) {\n                name = names[depth]; ver = versions[depth]\n                if (ver ~ /^npm:/) {\n                    sub(/^npm:/, "", ver)\n                    if (match(ver, /@[^@]+$/)) {\n                        name = substr(ver, 1, RSTART - 1)\n                        ver = substr(ver, RSTART + 1)\n                    }\n                }\n                if (kind[depth] == "modern") modern[name "|" ver] = 1\n                else if (kind[depth] == "legacy") legacy[name "|" ver] = 1\n            }\n            depth--\n            next\n        }\n        if (kind[depth] == "modern" || kind[depth] == "legacy") {\n            if (line ~ /^"version"[[:space:]]*:[[:space:]]*"/) versions[depth] = value(line)\n            else if (line ~ /^"name"[[:space:]]*:[[:space:]]*"/) names[depth] = value(line)\n            else if (line ~ /^"link"[[:space:]]*:[[:space:]]*true/) linked[depth] = 1\n        }\n    }\n    END {\n        if (have_packages) { for (entry in modern) print entry }\n        else { for (entry in legacy) print entry }\n    }\' | sort -u)\n\n    while IFS=\'|\' read -r pkg_name version; do\n        [ -z "$pkg_name" ] || [ -z "$version" ] && continue\n        check_vulnerability "$eco" "$pkg_name" "$version" "$lockfile" || true\n    done <<< "$packages"\n\n    if [ "${#VULNERABLE_PACKAGES[@]}" -eq "$vuln_count_before" ]; then\n        echo -e "${GREEN}\u2713 [$lockfile] No vulnerabilities found${NC}"\n    fi\n}\n\n# Function to analyze a yarn.lock file\n# Optimized: uses awk for batch extraction (POSIX-compatible)\n# Supports both Yarn Classic (v1) and Yarn Berry (v2+) formats\nanalyze_yarn_lock() {\n    local lockfile="$1"\n    local eco="${2:-npm}"\n\n    # Track vulnerabilities found in this file\n    local vuln_count_before=${#VULNERABLE_PACKAGES[@]}\n\n    # Use awk to extract all packages in one pass (POSIX-compatible)\n    local packages\n    packages=$(awk \'\n    # Package name of one yarn descriptor ("name@range", "@scope/name@range").\n    # An npm alias "alias@npm:real@^1" installs "real", so return that.\n    function spec_name(spec,   at, name, rest) {\n        at = index(substr(spec, 2), "@")\n        if (at == 0) return ""\n        name = substr(spec, 1, at)\n        rest = substr(spec, at + 2)\n        if (rest ~ /^npm:/) {\n            rest = substr(rest, 5)\n            at = index(substr(rest, 2), "@")\n            if (at > 0) name = substr(rest, 1, at)\n        }\n        return name\n    }\n    function flush() {\n        if (pkg != "" && ver != "" && ver !~ /^(workspace|file|link|npm|portal|patch|exec):/ && ver != "0.0.0-use.local")\n            print pkg "|" ver\n        pkg = ver = indent = ""\n    }\n    { sub(/\\r$/, "") }\n    # Block header: one or more comma-separated descriptors ending in ":".\n    /^[^[:space:]#].*:$/ {\n        flush()\n        line = $0\n        sub(/:$/, "", line)\n        gsub(/"/, "", line)\n        sub(/,.*/, "", line)\n        gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)\n        if (line != "__metadata") pkg = spec_name(line)\n        next\n    }\n    # The first property line sets the indentation of the entry fields: a\n    # dependency named "version" sits deeper, under dependencies:.\n    pkg != "" && indent == "" && match($0, /^[[:space:]]+[^[:space:]]/) { indent = substr($0, 1, RLENGTH - 1) }\n    # Classic: version "x.y.z"   Berry: version: x.y.z\n    /^[[:space:]]+version[[:space:]:]/ && pkg != "" && ver == "" && substr($0, 1, length(indent) + 1) == indent "v" {\n        line = $0\n        sub(/^[[:space:]]+version[[:space:]:]+/, "", line)\n        gsub(/"/, "", line)\n        gsub(/[[:space:]].*/, "", line)\n        ver = line\n        next\n    }\n    # Berry records the installed package itself: resolution: "real@npm:1.2.3"\n    /^[[:space:]]+resolution:[[:space:]]/ && pkg != "" {\n        line = $0\n        sub(/^[[:space:]]+resolution:[[:space:]]+/, "", line)\n        gsub(/"/, "", line)\n        at = index(substr(line, 2), "@")\n        if (at > 0 && substr(line, at + 2) ~ /^npm:/) pkg = substr(line, 1, at)\n        next\n    }\n    END { flush() }\n    \' "$lockfile" 2>/dev/null | sort -u)\n\n    # Process extracted packages\n    while IFS=\'|\' read -r pkg_name version; do\n        [ -z "$pkg_name" ] || [ -z "$version" ] && continue\n        check_vulnerability "$eco" "$pkg_name" "$version" "$lockfile" || true\n    done <<< "$packages"\n\n    # Check if vulnerabilities were found in this file\n    local vuln_count_after=${#VULNERABLE_PACKAGES[@]}\n    if [ "$vuln_count_after" -eq "$vuln_count_before" ]; then\n        echo -e "${GREEN}\u2713 [$lockfile] No vulnerabilities found${NC}"\n    fi\n}\n\n# Function to analyze a pnpm-lock.yaml file\n# Optimized: unified awk extraction for both formats (POSIX-compatible)\nanalyze_pnpm_lock() {\n    local lockfile="$1"\n    local eco="${2:-npm}"\n\n    # Track vulnerabilities found in this file\n    local vuln_count_before=${#VULNERABLE_PACKAGES[@]}\n\n    # Use awk to extract all packages in one pass (POSIX-compatible)\n    local packages\n    packages=$(awk \'\n    BEGIN { in_packages=0 }\n    /^packages:/ { in_packages=1; next }\n    /^[a-zA-Z]/ && !/^[[:space:]]/ && in_packages { in_packages=0 }\n    in_packages {\n        line = $0\n        # A package installed from a tarball URL or git names no version in\n        # its key ("xlsx@https://...", or before pnpm 9 a host path such as\n        # "github.com/owner/repo/<sha>" without even the name): pnpm records\n        # them in the name: and version: fields of the block.\n        if (want_fields && line ~ /^    (name|version):[[:space:]]*[^[:space:]]/) {\n            value = line\n            sub(/^    [a-z]+:[[:space:]]*/, "", value)\n            gsub(/[\\047"[:space:]]/, "", value)\n            if (line ~ /^    name:/) field_name = value\n            else field_version = value\n            if (field_name != "" && field_version != "") {\n                print field_name "|" field_version\n                want_fields = 0\n            }\n            next\n        }\n        # Only package-map keys, never nested dependency metadata.\n        if (line !~ /^  [^[:space:]].*:[[:space:]]*$/) next\n        want_fields = 0; field_name = ""; field_version = ""\n        # Remove leading whitespace\n        gsub(/^[[:space:]]+/, "", line)\n        # Remove trailing colon\n        gsub(/:[[:space:]]*$/, "", line)\n        # Remove surrounding quotes (single or double)\n        gsub(/^[\\047"]/, "", line)\n        gsub(/[\\047"]$/, "", line)\n        # Remove leading slash (old format)\n        gsub(/^\\//, "", line)\n\n        # Peer suffixes identify resolutions of this same installed version.\n        sub(/\\(.*/, "", line)\n        # pnpm <=7 uses /name/version, with optional _peer context. The\n        # trailing segment must be a version: "@scope/3d-lib@1.0.0" is the\n        # modern format with a name that merely starts with a digit.\n        if (match(line, /\\/[0-9][^\\/]*$/)) {\n            seg = substr(line, RSTART + 1)\n            if (seg ~ /^[0-9]+\\.[0-9]+[^@]*(_|$)/) {\n                pkg_name = substr(line, 1, RSTART - 1)\n                version = seg\n                sub(/_.*/, "", version)\n                print pkg_name "|" version\n                next\n            }\n        }\n\n        # Remote tarball or git source: the version follows in the block.\n        at = index(substr(line, 2), "@")\n        if (at > 0 && substr(line, at + 2) ~ /^(https?:|git\\+|git:|github:)/) {\n            want_fields = 1\n            field_name = substr(line, 1, at)\n            next\n        }\n\n        # name@version, split at the first "@" after a leading scope marker.\n        if (at > 0 && substr(line, at + 2) ~ /^[0-9]/) {\n            print substr(line, 1, at) "|" substr(line, at + 2)\n            next\n        }\n\n        # The key names no version: read the name: and version: fields.\n        want_fields = 1\n    }\n    \' "$lockfile" 2>/dev/null | sort -u)\n\n    # Process extracted packages\n    while IFS=\'|\' read -r pkg_name version; do\n        [ -z "$pkg_name" ] || [ -z "$version" ] && continue\n        check_vulnerability "$eco" "$pkg_name" "$version" "$lockfile" || true\n    done <<< "$packages"\n\n    # Check if vulnerabilities were found in this file\n    local vuln_count_after=${#VULNERABLE_PACKAGES[@]}\n    if [ "$vuln_count_after" -eq "$vuln_count_before" ]; then\n        echo -e "${GREEN}\u2713 [$lockfile] No vulnerabilities found${NC}"\n    fi\n}\n\n# Function to analyze a bun.lock file\n# Optimized: uses awk for batch extraction (POSIX-compatible)\nanalyze_bun_lock() {\n    local lockfile="$1"\n    local eco="${2:-npm}"\n\n    # Track vulnerabilities found in this file\n    local vuln_count_before=${#VULNERABLE_PACKAGES[@]}\n\n    # Use awk to extract all packages in one pass (POSIX-compatible)\n    local packages\n    packages=$(awk \'\n    { sub(/\\r$/, "") }\n    # Top-level keys sit at a two-space indent; only "packages" holds\n    # resolved versions ("workspaces" lists the requested specs, e.g. "2").\n    /^  "[^"]+"[[:space:]]*:/ {\n        section = $0\n        sub(/^  "/, "", section)\n        sub(/".*/, "", section)\n    }\n    section != "packages" { next }\n    # Remote tarball: ["pkg@https://.../<base>-<version>.tgz", ...]. bun\n    # records no version, so read it from the file name; skip it otherwise.\n    match($0, /\\["[^"]+@https?:[^"]*"/) {\n        temp = substr($0, RSTART + 2, RLENGTH - 3)\n        idx = index(substr(temp, 2), "@")\n        pkg_name = substr(temp, 1, idx)\n        file = substr(temp, idx + 2)\n        sub(/[?#].*/, "", file)\n        sub(/.*\\//, "", file)\n        sub(/\\.(tgz|tar\\.gz)$/, "", file)\n        base = pkg_name\n        sub(/.*\\//, "", base)\n        if (substr(file, 1, length(base) + 1) == base "-") {\n            version = substr(file, length(base) + 2)\n            if (version ~ /^[0-9]/) print pkg_name "|" version\n        }\n        next\n    }\n    # Package entries: "key": ["pkg@version", ...]. Only the first element of\n    # an entry names the installed version: the dependencies and\n    # peerDependencies objects that follow it list requested specs\n    # ("minimist": "0.0.8" under mkdirp), never installed versions.\n    match($0, /^[[:space:]]*"[^"]+"[[:space:]]*:[[:space:]]*\\["[^"]+@[0-9][^"]*"/) {\n        temp = substr($0, RSTART, RLENGTH)\n        sub(/^.*\\["/, "", temp)\n        sub(/"$/, "", temp)\n        # Split at last @\n        idx = 0\n        for (i=length(temp); i>0; i--) {\n            if (substr(temp, i, 1) == "@") { idx = i; break }\n        }\n        if (idx > 1) print substr(temp, 1, idx-1) "|" substr(temp, idx+1)\n    }\n    \' "$lockfile" 2>/dev/null | sort -u)\n\n    # Process extracted packages\n    while IFS=\'|\' read -r pkg_name version; do\n        [ -z "$pkg_name" ] || [ -z "$version" ] && continue\n        check_vulnerability "$eco" "$pkg_name" "$version" "$lockfile" || true\n    done <<< "$packages"\n\n    # Check if vulnerabilities were found in this file\n    local vuln_count_after=${#VULNERABLE_PACKAGES[@]}\n    if [ "$vuln_count_after" -eq "$vuln_count_before" ]; then\n        echo -e "${GREEN}\u2713 [$lockfile] No vulnerabilities found${NC}"\n    fi\n}\n\n# Function to analyze a deno.lock file\n# Optimized: uses awk for batch extraction (POSIX-compatible)\nanalyze_deno_lock() {\n    local lockfile="$1"\n    local eco="${2:-npm}"\n\n    # Track vulnerabilities found in this file\n    local vuln_count_before=${#VULNERABLE_PACKAGES[@]}\n\n    # Only the keys of the npm package map name installed npm packages:\n    # "npm" (lockfile v4/v5), "packages"."npm" (v3) and "npm"."packages" (v2).\n    # jsr packages, specifiers and remote URLs sit in sibling sections and\n    # are not npm packages. json_structural_lines makes the layout (pretty or\n    # compact) irrelevant: an object opens at the end of its record.\n    local packages\n    packages=$(json_structural_lines "$lockfile" 2>/dev/null | awk \'\n    {\n        rec = $0\n        sub(/[[:space:]]+$/, "", rec)\n        if (rec == "}" || rec == "]") { if (depth > 0) depth--; next }\n        last = substr(rec, length(rec))\n        if (last != "{" && last != "[") next\n        key = ""\n        if (match(rec, /^[[:space:]]*"[^"]*"[[:space:]]*:/)) {\n            key = substr(rec, RSTART, RLENGTH)\n            sub(/^[[:space:]]*"/, "", key)\n            sub(/"[[:space:]]*:$/, "", key)\n        }\n        in_npm = (depth == 2 && stack[2] == "npm") ||\n            (depth == 3 && stack[2] == "packages" && stack[3] == "npm") ||\n            (depth == 3 && stack[2] == "npm" && stack[3] == "packages")\n        # Name/version split at the first "@" after the scope marker.\n        # Package names may contain "_" (string_decoder): only the\n        # version carries the "_peer@x" suffix, so strip it there.\n        at_idx = index(substr(key, 2), "@")\n        if (in_npm && last == "{" && at_idx > 0) {\n            pkg_name = substr(key, 1, at_idx)\n            version = substr(key, at_idx + 2)\n            sub(/_.*/, "", version)\n            if (version ~ /^[0-9]/) print pkg_name "|" version\n        }\n        stack[++depth] = key\n    }\n    \' | sort -u)\n\n    # Process extracted packages\n    while IFS=\'|\' read -r pkg_name version; do\n        [ -z "$pkg_name" ] || [ -z "$version" ] && continue\n        check_vulnerability "$eco" "$pkg_name" "$version" "$lockfile" || true\n    done <<< "$packages"\n\n    # Check if vulnerabilities were found in this file\n    local vuln_count_after=${#VULNERABLE_PACKAGES[@]}\n    if [ "$vuln_count_after" -eq "$vuln_count_before" ]; then\n        echo -e "${GREEN}\u2713 [$lockfile] No vulnerabilities found${NC}"\n    fi\n}\n\n# Export vulnerabilities to JSON format\n# Output includes package name, version, severity, GHSA, CVE, and source\n# ============================================================================\n# Ecosystem registry \u2014 single source of truth for lockfile discovery/dispatch.\n#\n# Each entry: "basename|purl-type|parser-function|type-alias"\n#   basename        exact lockfile filename matched with `find -name`\n#   purl-type       ecosystem namespace passed to check_vulnerability and used\n#                   to resolve per-ecosystem default feeds (ghsa-<eco>.purl)\n#   parser-function analyzer invoked as: <fn> <lockfile> <purl-type>\n#   type-alias      user-facing name for --lockfile-types / --ecosystems\n#\n# Support for a new ecosystem is added by APPENDING one line here (plus the\n# matching parser file). Keep the npm rows first so the derived find-pattern\n# order stays byte-identical to the legacy hardcoded list.\n#\n# GitHub Actions is discovered by PATH (.github/workflows/*.yml|*.yaml), not by\n# a fixed lockfile basename, so it is declared in the parallel\n# PATH_ECOSYSTEM_REGISTRY below \u2014 NOT as a row in this table, whose derivations\n# all assume a fixed filename (find `-name`, basename dispatch, and the GitHub\n# code-search filename list). This file is the ONE place both registries live;\n# discover_project_files and the main() dispatch loop special-case path entries\n# via path_ecosystem_match (parser: src/50-ecosystems/60-actions.sh).\n# ============================================================================\nECOSYSTEM_REGISTRY=(\n    "package-lock.json|npm|analyze_package_lock|npm"\n    "npm-shrinkwrap.json|npm|analyze_package_lock|npm"\n    "yarn.lock|npm|analyze_yarn_lock|yarn"\n    "pnpm-lock.yaml|npm|analyze_pnpm_lock|pnpm"\n    "bun.lock|npm|analyze_bun_lock|bun"\n    "deno.lock|npm|analyze_deno_lock|deno"\n    "Cargo.lock|cargo|analyze_toml_pkg_lock|rust"\n    "go.sum|golang|analyze_go_sum|go"\n    "go.mod|golang|analyze_go_mod|go"\n    "requirements.txt|pypi|analyze_requirements_txt|python"\n    "poetry.lock|pypi|analyze_toml_pkg_lock|python"\n    "uv.lock|pypi|analyze_toml_pkg_lock|python"\n    "pdm.lock|pypi|analyze_toml_pkg_lock|python"\n    "Pipfile.lock|pypi|analyze_pipfile_lock|python"\n    "Gemfile.lock|gem|analyze_gemfile_lock|ruby"\n    "composer.lock|composer|analyze_composer_lock|php"\n    "gradle.lockfile|maven|analyze_gradle_lockfile|maven"\n    "pom.xml|maven|analyze_pom_xml|maven"\n    "packages.lock.json|nuget|analyze_nuget_lock|nuget"\n    "pubspec.lock|pub|analyze_pubspec_lock|dart"\n    "mix.lock|hex|analyze_mix_lock|hex"\n    "Package.resolved|swift|analyze_package_resolved|swift"\n)\n\n# ============================================================================\n# Path-discovered ecosystems \u2014 the parallel to ECOSYSTEM_REGISTRY for\n# ecosystems selected by a directory PATH pattern or a filename glob instead of\n# a fixed lockfile basename. GitHub Actions workflow YAML lives at a well-known\n# path (.github/workflows/*.yml|*.yaml) under ARBITRARY filenames, and pip\n# projects split pins into requirements-*.txt or requirements/*.txt, so `find\n# -name <basename>` cannot select them and `basename` cannot dispatch them. Both the find-args\n# builder and the dispatcher special-case these entries (see discover_project_files\n# and the analysis loop in src/90-main.sh); path_ecosystem_match() below is the\n# single resolver they share.\n#\n# Each entry: "path-glob|name-globs|purl-type|parser-function|type-alias"\n#   path-glob        find -path pattern selecting the containing directory\n#   name-globs       comma-separated -name patterns (OR-ed) for the filename\n#   purl-type        ecosystem namespace (as in ECOSYSTEM_REGISTRY)\n#   parser-function  analyzer invoked as: <fn> <file> <purl-type>\n#   type-alias       user-facing --lockfile-types / --ecosystems name\n#\n# NOTE: path ecosystems are deliberately absent from ecosystem_scan_filenames()\n# (the GitHub org-scan search) \u2014 matching arbitrary-named workflow YAML across a\n# whole repo tree via the code-search API is too noisy \u2014 so GitHub org scanning\n# does not fetch workflow files. This is a documented limitation.\nPATH_ECOSYSTEM_REGISTRY=(\n    "*/.github/workflows/*|*.yml,*.yaml|githubactions|analyze_github_workflow|actions"\n    "*|requirements-*.txt,requirements_*.txt,*-requirements.txt,*_requirements.txt,constraints.txt,constraints-*.txt|pypi|analyze_requirements_txt|python"\n    "*|*-gradle.lockfile|maven|analyze_gradle_lockfile|maven"\n    "*/requirements/*|*.txt|pypi|analyze_requirements_txt|python"\n)\n\n# Resolve a discovered file to its path-ecosystem. Echoes "parser|eco|alias"\n# for the FIRST PATH_ECOSYSTEM_REGISTRY entry whose path-glob matches $1 and one\n# of whose name-globs matches its basename; returns non-zero with no output when\n# nothing matches. Shared by the detection loop and the dispatcher so a workflow\n# file routes to its analyzer without a basename key. `case` patterns are used\n# (not filesystem globbing): the name-globs are read via IFS to avoid pathname\n# expansion, and `$glob`/`$path_glob` act as pattern metacharacters in `case`.\npath_ecosystem_match() {\n    # NB: separate declarations \u2014 `local file=.. base=${file##*/}` would expand\n    # base against file\'s OUTER value (bash evaluates all `local` args before\n    # assigning), yielding an empty basename.\n    local file="$1"\n    local base="${file##*/}"\n    local entry path_glob name_globs eco parser alias glob\n    local -a globs\n    for entry in "${PATH_ECOSYSTEM_REGISTRY[@]}"; do\n        IFS=\'|\' read -r path_glob name_globs eco parser alias <<< "$entry"\n        # SC2254: $path_glob is INTENTIONALLY unquoted so it acts as a glob\n        # pattern (e.g. */.github/workflows/*), not a literal string.\n        # shellcheck disable=SC2254\n        case "$file" in\n            $path_glob) ;;\n            *) continue ;;\n        esac\n        IFS=\',\' read -ra globs <<< "$name_globs"\n        for glob in "${globs[@]}"; do\n            # SC2254: $glob is INTENTIONALLY unquoted so *.yml / *.yaml match as\n            # patterns rather than literal filenames.\n            # shellcheck disable=SC2254\n            case "$base" in\n                $glob) printf \'%s|%s|%s\\n\' "$parser" "$eco" "$alias"; return 0 ;;\n            esac\n        done\n    done\n    return 1\n}\n\n# Derive the per-basename lookup tables from ECOSYSTEM_REGISTRY. Called once\n# near the top of main(). Fills LOCKFILE_PARSER / LOCKFILE_ECO\n# (keyed by basename) and KNOWN_LOCKFILE_ALIASES (space-separated unique list).\nbuild_ecosystem_tables() {\n    LOCKFILE_PARSER=()\n    LOCKFILE_ECO=()\n    KNOWN_LOCKFILE_ALIASES=""\n\n    local entry basename eco parser alias\n    for entry in "${ECOSYSTEM_REGISTRY[@]}"; do\n        IFS=\'|\' read -r basename eco parser alias <<< "$entry"\n        LOCKFILE_PARSER["$basename"]="$parser"\n        LOCKFILE_ECO["$basename"]="$eco"\n\n        # Append alias to KNOWN_LOCKFILE_ALIASES only if not already present\n        case " $KNOWN_LOCKFILE_ALIASES " in\n            *" $alias "*) ;;\n            *) KNOWN_LOCKFILE_ALIASES="${KNOWN_LOCKFILE_ALIASES:+$KNOWN_LOCKFILE_ALIASES }$alias" ;;\n        esac\n    done\n\n    # Path-discovered ecosystems contribute their type-alias to the known list\n    # too (so --lockfile-types actions and --ecosystems actions validate), but\n    # NO basename rows in the LOCKFILE_* maps \u2014 they dispatch by path via\n    # path_ecosystem_match(), not by a basename lookup.\n    local pglob nglobs\n    for entry in "${PATH_ECOSYSTEM_REGISTRY[@]}"; do\n        IFS=\'|\' read -r pglob nglobs eco parser alias <<< "$entry"\n        case " $KNOWN_LOCKFILE_ALIASES " in\n            *" $alias "*) ;;\n            *) KNOWN_LOCKFILE_ALIASES="${KNOWN_LOCKFILE_ALIASES:+$KNOWN_LOCKFILE_ALIASES }$alias" ;;\n        esac\n    done\n}\n\n# Filenames GitHub discovery should fetch: package.json (scanned but NOT a\n# registry row) followed by every registry basename, in registry order.\n# Space-separated (filenames contain no spaces).\necosystem_scan_filenames() {\n    local names="package.json" entry\n    for entry in "${ECOSYSTEM_REGISTRY[@]}"; do\n        names="$names ${entry%%|*}"\n    done\n    printf \'%s\' "$names"\n}\n\n# Map a --ecosystems / --lockfile-types token to a purl type. Registry aliases\n# resolve to their purl-type; anything else passes through unchanged (callers\n# validate the result separately).\necosystem_alias_to_purl() {\n    local token="$1" entry basename eco parser alias pglob nglobs\n    for entry in "${ECOSYSTEM_REGISTRY[@]}"; do\n        IFS=\'|\' read -r basename eco parser alias <<< "$entry"\n        if [ "$token" = "$alias" ]; then\n            printf \'%s\\n\' "$eco"\n            return 0\n        fi\n    done\n    # Path-discovered ecosystems (e.g. actions -> githubactions).\n    for entry in "${PATH_ECOSYSTEM_REGISTRY[@]}"; do\n        IFS=\'|\' read -r pglob nglobs eco parser alias <<< "$entry"\n        if [ "$token" = "$alias" ]; then\n            printf \'%s\\n\' "$eco"\n            return 0\n        fi\n    done\n    printf \'%s\\n\' "$token"\n}\n\n# Default feed filename for a (feed, eco) pair.\n#   npm  -> ghsa.purl / osv.purl        (legacy names, unchanged)\n#   else -> ghsa-<eco>.purl / osv-<eco>.purl\ndefault_feed_filename() {\n    local feed="$1" eco="$2"\n    if [ "$eco" = "npm" ]; then\n        printf \'%s.purl\\n\' "$feed"\n    else\n        printf \'%s-%s.purl\\n\' "$feed" "$eco"\n    fi\n}\n# Python / PyPI dependency parsers.\n#\n# Registered lockfiles (see 01-registry.sh):\n#   requirements.txt, requirements-*.txt, requirements/*.txt\n#                    -> analyze_requirements_txt   (exact == pins only)\n#   poetry.lock / uv.lock / pdm.lock -> analyze_toml_pkg_lock (shared TOML)\n#   Pipfile.lock     -> analyze_pipfile_lock        (JSON default+develop)\n#\n# CRITICAL: package names are compared PEP 503-normalized on BOTH sides. The\n# feeds emit normalized names (lowercase; runs of - _ . collapsed to a single\n# \'-\'); every pypi parser normalizes the names it extracts the same way via\n# _pypi_normalize_name so scanned names line up with advisory names.\n\n# PEP 503 normalize a package name into the global PEP503_NAME (no subshell):\n#   lowercase, then collapse every run of - _ . to a single \'-\'.\n# e.g. Django_REST-framework -> django-rest-framework, Flask..SQL -> flask-sql.\n_pypi_normalize_name() {\n    local n="${1,,}"\n    n="${n//[-_.]/-}"                    # each separator char -> \'-\'\n    while [[ "$n" == *--* ]]; do          # collapse runs of \'-\' into one\n        n="${n//--/-}"\n    done\n    PEP503_NAME="$n"\n}\n\n# Parse a requirements.txt: ONLY fully-pinned exact requirements (name==version,\n# also name[extra1,extra2]==version with extras stripped). Everything else is\n# skipped on purpose:\n#   * inline comments (# ...) and PEP 508 env markers (; python_version < "3.8")\n#     are stripped before matching;\n#   * -r / -c includes, -e / URL / VCS / path installs, and option lines\n#     (--hash=..., --index-url, ...) are skipped (any line starting with \'-\'\n#     or containing a scheme://);\n#   * backslash continuations are joined before comments/options are stripped;\n#   * requirements using any operator other than \'==\' (>=, <=, ~=, !=, ===, >,\n#     <) are skipped \u2014 a range is not an installed version \u2014 and so are\n#     wildcard pins such as ==1.0.*.\n# Extracted names are PEP 503-normalized.\nanalyze_requirements_txt() {\n    local lockfile="$1"\n    local eco="${2:-pypi}"\n\n    local vuln_count_before=${#VULNERABLE_PACKAGES[@]}\n\n    local packages\n    packages=$(awk \'\n    # A UTF-8 byte order mark is an encoding marker, not part of the first name.\n    NR == 1 && substr($0, 1, 3) == "\\357\\273\\277" { $0 = substr($0, 4) }\n    {\n        physical = $0\n        sub(/\\r$/, "", physical)\n        # pip drops comment lines before joining: a comment ending in "\\"\n        # does not continue onto the next requirement.\n        if (physical ~ /^[[:space:]]*#/) physical = ""\n        # pip joins physical lines without inserting whitespace. In particular\n        # a pin may be followed by several --hash options on continued lines.\n        if (physical ~ /\\\\$/) {\n            sub(/\\\\$/, "", physical)\n            pending = pending physical\n            next\n        }\n        requirement(pending physical)\n        pending = ""\n    }\n    # A continuation on the last line still ends that requirement.\n    END { if (pending != "") requirement(pending) }\n    function requirement(line,   eq, name, ver, br) {\n        sub(/[[:space:]]*#.*$/, "", line)          # strip inline/full comment\n        sub(/;.*$/, "", line)                       # strip PEP 508 env marker\n        gsub(/^[[:space:]]+/, "", line)             # trim\n        gsub(/[[:space:]]+$/, "", line)\n        if (line == "") return\n        if (line ~ /^-/) return                       # -r/-c/-e/--hash/--index-url\n        if (line ~ /:\\/\\//) return                    # scheme:// (URL/VCS install)\n        gsub(/[[:space:]]*==[[:space:]]*/, "==", line)  # tolerate spaced pins\n\n        # Exact pin only: name[extras]==version, no other operator. The name\n        # char class excludes < > ! ~ =, so >=, <=, ~=, != cannot precede the\n        # ==; the [^=...] after == rejects === and operator-led versions.\n        if (line !~ /^[A-Za-z0-9._-]+(\\[[^]]*\\])?==[^=<>!~ ]/) return\n\n        eq = index(line, "==")\n        name = substr(line, 1, eq - 1)\n        ver  = substr(line, eq + 2)\n        br = index(name, "[")                       # strip extras\n        if (br > 0) name = substr(name, 1, br - 1)\n        sub(/[[:space:]].*$/, "", ver)              # drop any trailing tokens\n        if (ver ~ /\\*/) return                        # ==1.0.* is a range, not a pin\n        if (name != "" && ver != "") print name "|" ver\n    }\n    \' "$lockfile" 2>/dev/null | sort -u)\n\n    while IFS=\'|\' read -r pkg_name version; do\n        [ -z "$pkg_name" ] || [ -z "$version" ] && continue\n        _pypi_normalize_name "$pkg_name"\n        check_vulnerability "$eco" "$PEP503_NAME" "$version" "$lockfile" || true\n    done <<< "$packages"\n\n    local vuln_count_after=${#VULNERABLE_PACKAGES[@]}\n    if [ "$vuln_count_after" -eq "$vuln_count_before" ]; then\n        echo -e "${GREEN}\u2713 [$lockfile] No vulnerabilities found${NC}"\n    fi\n}\n\n# Parse a Pipfile.lock (pipenv, JSON). Packages live under the top-level\n# "default" and "develop" objects as name -> { ... "version": "==x.y.z" ... }.\n# Entries without a "==" version (e.g. VCS/editable refs pinned by git ref) are\n# skipped. Names are PEP 503-normalized. jq-free (POSIX awk state machine).\nanalyze_pipfile_lock() {\n    local lockfile="$1"\n    local eco="${2:-pypi}"\n\n    local vuln_count_before=${#VULNERABLE_PACKAGES[@]}\n\n    local packages\n    packages=$(json_structural_lines "$lockfile" | awk \'\n    {\n        line = $0\n        gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)\n        if (line ~ /[\\{\\[]$/) {\n            if (depth == 1) section = (line ~ /^"(default|develop)"[[:space:]]*:/)\n            if (section && depth == 2 && line ~ /^"/) {\n                pkg = line\n                sub(/^"/, "", pkg)\n                sub(/".*/, "", pkg)\n            }\n            depth++\n        } else if (line == "}" || line == "]") {\n            depth--\n            if (depth == 2) pkg = ""\n            if (depth == 1) section = 0\n        } else if (section && depth == 3 && pkg != "" && line ~ /^"version"[[:space:]]*:[[:space:]]*"==/) {\n            sub(/^"version"[[:space:]]*:[[:space:]]*"==/, "", line)\n            sub(/".*/, "", line)\n            if (line != "") print pkg "|" line\n        }\n    }\n    \' | sort -u)\n\n    while IFS=\'|\' read -r pkg_name version; do\n        [ -z "$pkg_name" ] || [ -z "$version" ] && continue\n        _pypi_normalize_name "$pkg_name"\n        check_vulnerability "$eco" "$PEP503_NAME" "$version" "$lockfile" || true\n    done <<< "$packages"\n\n    local vuln_count_after=${#VULNERABLE_PACKAGES[@]}\n    if [ "$vuln_count_after" -eq "$vuln_count_before" ]; then\n        echo -e "${GREEN}\u2713 [$lockfile] No vulnerabilities found${NC}"\n    fi\n}\n# Go module dependency parsers.\n#\n# Two registry rows feed these:\n#   go.sum -> analyze_go_sum   (authoritative: the full transitive build list)\n#   go.mod -> analyze_go_mod   (fallback ONLY when no go.sum sits beside it)\n#\n# Canonical package identity is the full, case-sensitive module path (matching\n# the golang feed emission, e.g. pkg:golang/golang.org/x/text@...). Versions are\n# normalized to bare semver (leading `v` stripped) so exact-version and range\n# matching line up with the feeds.\n\n# Parse a go.sum file. Each module contributes up to two lines:\n#   <module> <version> h1:<hash>\n#   <module> <version>/go.mod h1:<hash>\n# The `/go.mod` lines duplicate the module@version pair, so they are skipped.\n# go.sum also !-escapes uppercase letters in module paths\n# (github.com/!burnt!sushi/toml == github.com/BurntSushi/toml); those are decoded\n# back before matching.\nanalyze_go_sum() {\n    local lockfile="$1"\n    local eco="${2:-golang}"\n\n    local vuln_count_before=${#VULNERABLE_PACKAGES[@]}\n\n    local packages\n    packages=$(awk \'\n    # Decode go.sum !-escaping: "!x" -> uppercase X (module paths only).\n    function decode_bang(s,   out, i, c, n) {\n        out = ""\n        n = length(s)\n        for (i = 1; i <= n; i++) {\n            c = substr(s, i, 1)\n            if (c == "!" && i < n) {\n                i++\n                out = out toupper(substr(s, i, 1))\n            } else {\n                out = out c\n            }\n        }\n        return out\n    }\n    NR == 1 && substr($0, 1, 3) == "\\357\\273\\277" { $0 = substr($0, 4) }\n    {\n        if ($0 ~ /^[[:space:]]*$/) next     # blank lines\n        mod = $1\n        ver = $2\n        if (mod == "" || ver == "") next\n        if (ver ~ /\\/go\\.mod$/) next        # skip duplicate /go.mod entries\n        sub(/^v/, "", ver)                  # normalize to bare semver\n        mod = decode_bang(mod)\n        print mod "|" ver\n    }\n    \' "$lockfile" 2>/dev/null | sort -u)\n\n    while IFS=\'|\' read -r pkg_name version; do\n        [ -z "$pkg_name" ] || [ -z "$version" ] && continue\n        check_vulnerability "$eco" "$pkg_name" "$version" "$lockfile" || true\n    done <<< "$packages"\n\n    local vuln_count_after=${#VULNERABLE_PACKAGES[@]}\n    if [ "$vuln_count_after" -eq "$vuln_count_before" ]; then\n        echo -e "${GREEN}\u2713 [$lockfile] No vulnerabilities found${NC}"\n    fi\n}\n\n# Parse a go.mod file. FALLBACK ONLY: when a go.sum exists next to this go.mod,\n# analyze_go_sum already covers the (larger, transitive) build list, so bail out\n# silently to avoid double reporting.\n#\n# Handles both require forms:\n#   require mod vX.Y.Z\n#   require (\n#       mod vX.Y.Z\n#       mod vX.Y.Z // indirect\n#   )\n# `// ...` comments are stripped; module/go/toolchain/replace/exclude directives\n# are ignored. go.mod module paths are NOT !-escaped (unlike go.sum).\nanalyze_go_mod() {\n    local lockfile="$1"\n    local eco="${2:-golang}"\n\n    # If a go.sum sits beside this go.mod, it is authoritative \u2014 do nothing.\n    local godir="${lockfile%/*}"\n    [ "$godir" = "$lockfile" ] && godir="."\n    if [ -f "$godir/go.sum" ]; then\n        LOCKFILE_SKIPPED=1\n        return 0\n    fi\n\n    local vuln_count_before=${#VULNERABLE_PACKAGES[@]}\n\n    local packages\n    packages=$(awk \'\n    # Requirements are collected first: a replace directive anywhere in the\n    # file decides which module version is actually built.\n    function add_require(line,   a, n) {\n        n = split(line, a, " ")\n        if (n >= 2) required[a[1]] = a[2]\n    }\n    # "old [version] => new [version]". A replacement without a version is a\n    # local directory: what it holds is unknown, as in go.sum (no entry).\n    function add_replace(line,   pos, a, b, na, nb, key) {\n        pos = index(line, "=>")\n        if (!pos) return\n        na = split(substr(line, 1, pos - 1), a, " ")\n        nb = split(substr(line, pos + 2), b, " ")\n        if (na < 1 || nb < 1) return\n        key = a[1] (na >= 2 ? "@" a[2] : "")\n        new_path[key] = b[1]\n        new_version[key] = (nb >= 2 ? b[2] : "")\n    }\n    NR == 1 && substr($0, 1, 3) == "\\357\\273\\277" { $0 = substr($0, 4) }\n    {\n        line = $0\n        sub(/\\/\\/.*$/, "", line)            # strip trailing // comment\n        gsub(/^[[:space:]]+/, "", line)\n        gsub(/[[:space:]]+$/, "", line)\n        if (line == "") next\n\n        if (block != "") {\n            if (line ~ /^\\)/) { block = ""; next }\n            if (block == "require") add_require(line)\n            else if (block == "replace") add_replace(line)\n            next\n        }\n\n        if (line ~ /^(require|replace|exclude|retract)[[:space:]]*\\(/) {\n            block = line\n            sub(/[[:space:]]*\\(.*$/, "", block)\n            next\n        }\n        if (line ~ /^require[[:space:]]+/) {\n            sub(/^require[[:space:]]+/, "", line)\n            add_require(line)\n        } else if (line ~ /^replace[[:space:]]+/) {\n            sub(/^replace[[:space:]]+/, "", line)\n            add_replace(line)\n        }\n        # module / go / toolchain / exclude / retract directives: ignored\n    }\n    END {\n        for (path in required) {\n            version = required[path]\n            key = path "@" version\n            if (!(key in new_path)) key = path\n            name = path\n            if (key in new_path) {\n                if (new_version[key] == "") continue\n                name = new_path[key]\n                version = new_version[key]\n            }\n            sub(/^v/, "", version)\n            print name "|" version\n        }\n    }\n    \' "$lockfile" 2>/dev/null | sort -u)\n\n    while IFS=\'|\' read -r pkg_name version; do\n        [ -z "$pkg_name" ] || [ -z "$version" ] && continue\n        check_vulnerability "$eco" "$pkg_name" "$version" "$lockfile" || true\n    done <<< "$packages"\n\n    local vuln_count_after=${#VULNERABLE_PACKAGES[@]}\n    if [ "$vuln_count_after" -eq "$vuln_count_before" ]; then\n        echo -e "${GREEN}\u2713 [$lockfile] No vulnerabilities found${NC}"\n    fi\n}\n\n# Annotate the Go findings with govulncheck\'s call analysis (--go-reachability):\n# VULN_REACHABILITY["dir|golang:module@version"] is "called" when one of the\n# module\'s findings reaches a vulnerable function from the code of the Go\n# module in dir, else "not called". govulncheck runs once per go.mod directory whose go.sum or\n# go.mod has a finding; a module it says nothing about stays unannotated. In its JSON stream, the first frame\n# of a finding\'s trace is the vulnerable module, and names a function only when\n# the code calls it. A missing govulncheck or a failed run only warns: the\n# scan result never depends on it.\ngo_reachability() {\n    local vuln file eco dir dirs=""\n    for vuln in "${VULNERABLE_PACKAGES[@]}"; do\n        IFS=\'|\' read -r file eco _ <<< "$vuln"\n        [ "$eco" = golang ] || continue\n        finding_dir "$file"\n        dir="$FINDING_DIR"\n        [ -f "$dir/go.mod" ] || continue\n        case $\'\\n\'"$dirs"$\'\\n\' in *$\'\\n\'"$dir"$\'\\n\'*) ;; *) dirs+="${dirs:+$\'\\n\'}$dir" ;; esac\n    done\n    [ -n "$dirs" ] || return 0\n    if ! command -v govulncheck > /dev/null 2>&1; then\n        echo -e "${YELLOW}\u26A0\uFE0F  --go-reachability: govulncheck not found (go install golang.org/x/vuln/cmd/govulncheck@latest); Go findings are not annotated${NC}"\n        return 0\n    fi\n\n    local out err rc annotations module state\n    while IFS= read -r dir; do\n        out=$(mktemp) || return 0\n        register_temp_file "$out"\n        err=$(mktemp) || return 0\n        register_temp_file "$err"\n        echo "\u{1F50E} Checking Go reachability with govulncheck in $dir..."\n        rc=0\n        govulncheck -C "$dir" -format json ./... > "$out" 2> "$err" || rc=$?\n        # 3 means "vulnerabilities found" in text mode; JSON mode exits 0.\n        if [ "$rc" -ne 0 ] && [ "$rc" -ne 3 ]; then\n            echo -e "${YELLOW}\u26A0\uFE0F  govulncheck failed in $dir (exit $rc): $(head -n 1 "$err"); its Go findings are not annotated${NC}"\n            continue\n        fi\n        annotations=$(json_structural_lines "$out" | awk "$AWK_FEED_LIB$AWK_JSON_PATH"\'\n        {\n            jp_step($0)\n            if (JP_EVENT == "open" && JP_PATH == "/#/finding/trace") frame = 0\n            else if (JP_EVENT == "open" && JP_PATH == "/#/finding/trace/#") frame++\n            else if (JP_EVENT == "scalar" && JP_PATH == "/#/finding/trace/#" && frame == 1) {\n                if (JP_KEY == "module") module = JP_VAL\n                else if (JP_KEY == "version") version = JP_VAL\n                else if (JP_KEY == "function" && JP_VAL != "") called = 1\n            } else if (JP_EVENT == "close" && JP_PATH == "/#/finding") {\n                if (module != "" && version != "") {\n                    sub(/^v/, "", version)\n                    key = module "@" version\n                    if (called) state[key] = "called"\n                    else if (!(key in state)) state[key] = "not called"\n                }\n                module = version = ""\n                called = 0\n            }\n        }\n        END { for (key in state) print key "|" state[key] }\n        \')\n        while IFS=\'|\' read -r module state; do\n            [ -n "$module" ] || continue\n            VULN_REACHABILITY["$dir|golang:$module"]="$state"\n        done <<< "$annotations"\n    done <<< "$dirs"\n}\n\n# Directory of a finding\'s file, in FINDING_DIR.\nfinding_dir() {\n    FINDING_DIR="${1%/*}"\n    [ "$FINDING_DIR" != "$1" ] || FINDING_DIR="."\n}\n\n# Reachability of one occurrence (file, eco:name@version) in REACHABILITY,\n# empty when govulncheck said nothing about it.\nreachability_of() {\n    finding_dir "$1"\n    REACHABILITY="${VULN_REACHABILITY[$FINDING_DIR|$2]:-}"\n}\n# Shared TOML "[[package]]" lockfile parser.\n#\n# Handles Cargo.lock (v3/v4) today; the same block shape (name = "..." /\n# version = "..." pairs inside [[package]] tables, keys in any order, plus\n# arbitrary other keys like source/checksum/dependencies to ignore) is reused\n# by poetry.lock, uv.lock and pdm.lock (registered by the Python task).\n#\n# HARDENING (subtable gap): name/version are only captured while INSIDE a\n# top-level [[package]] table \u2014 i.e. between a `[[package]]` header and the NEXT\n# `[`-prefixed header of ANY kind. Entering a subtable such as\n# [package.dependencies] / [package.extras] / [package.source] (or [metadata],\n# etc.) closes the capture window, so a dependency literally keyed `name` or\n# `version` inside a subtable can never leak a bogus pair.\n#\n# LOCAL PROJECTS: uv.lock lists the project being locked as a [[package]] with\n# source = { editable = "." } or { virtual = "." }; such entries are skipped.\n#\n# NORMALIZATION: when eco = pypi, package names are PEP 503-normalized\n# (lowercase; runs of - _ . collapsed to a single -) so they line up with the\n# normalized feed names. cargo names are left untouched.\nanalyze_toml_pkg_lock() {\n    local lockfile="$1"\n    local eco="${2:-cargo}"\n\n    # Track vulnerabilities found in this file\n    local vuln_count_before=${#VULNERABLE_PACKAGES[@]}\n\n    # Use awk to extract all packages in one pass (POSIX-compatible)\n    local packages\n    packages=$(awk \'\n    function emit_pkg() {\n        if (pkg_name != "" && pkg_version != "" && !local_pkg) {\n            print pkg_name "|" pkg_version\n        }\n        pkg_name = ""\n        pkg_version = ""\n        local_pkg = 0\n    }\n    # Start of a new [[package]] block: flush, then open the capture window.\n    /^[[:space:]]*\\[\\[package\\]\\][[:space:]]*$/ {\n        emit_pkg()\n        in_pkg = 1\n        next\n    }\n    # ANY other bracketed header (single-bracket subtable like\n    # [package.dependencies], [metadata], or a different [[...]] array) flushes\n    # and CLOSES the capture window until the next [[package]].\n    /^[[:space:]]*\\[/ {\n        emit_pkg()\n        in_pkg = 0\n        next\n    }\n    in_pkg && /^[[:space:]]*name[[:space:]]*=/ {\n        line = $0\n        sub(/^[[:space:]]*name[[:space:]]*=[[:space:]]*/, "", line)\n        gsub(/^[[:space:]]+/, "", line)\n        gsub(/[[:space:]]+$/, "", line)\n        gsub(/^"/, "", line)\n        gsub(/"$/, "", line)\n        pkg_name = line\n        next\n    }\n    # uv.lock records the project itself (and workspace members) with an\n    # editable or virtual source: local code, not a published release.\n    in_pkg && /^[[:space:]]*source[[:space:]]*=[[:space:]]*\\{.*(editable|virtual)[[:space:]]*=/ {\n        local_pkg = 1\n        next\n    }\n    in_pkg && /^[[:space:]]*version[[:space:]]*=/ {\n        line = $0\n        sub(/^[[:space:]]*version[[:space:]]*=[[:space:]]*/, "", line)\n        gsub(/^[[:space:]]+/, "", line)\n        gsub(/[[:space:]]+$/, "", line)\n        gsub(/^"/, "", line)\n        gsub(/"$/, "", line)\n        pkg_version = line\n        next\n    }\n    END { emit_pkg() }\n    \' "$lockfile" 2>/dev/null | sort -u)\n\n    # Process extracted packages\n    while IFS=\'|\' read -r pkg_name version; do\n        [ -z "$pkg_name" ] || [ -z "$version" ] && continue\n        # PEP 503 name normalization for pypi locks (cargo names untouched).\n        if [ "$eco" = "pypi" ]; then\n            _pypi_normalize_name "$pkg_name"\n            pkg_name="$PEP503_NAME"\n        fi\n        check_vulnerability "$eco" "$pkg_name" "$version" "$lockfile" || true\n    done <<< "$packages"\n\n    # Check if vulnerabilities were found in this file\n    local vuln_count_after=${#VULNERABLE_PACKAGES[@]}\n    if [ "$vuln_count_after" -eq "$vuln_count_before" ]; then\n        echo -e "${GREEN}\u2713 [$lockfile] No vulnerabilities found${NC}"\n    fi\n}\n# Ruby (Bundler) dependency parser.\n#\n#   Gemfile.lock -> analyze_gemfile_lock\n#\n# Gemfile.lock shape (indentation is significant and exact):\n#   GIT / PATH / GEM     column-0 section headers, one or more of each\n#     remote: ...          2-space\n#     specs:                2-space\n#       name (version)        4-space  <- the installed package + version\n#         dep (~> x.y)           6-space <- a dependency CONSTRAINT, not a\n#                                            resolved package: skip it\n#   PLATFORMS / DEPENDENCIES / CHECKSUMS / BUNDLED WITH / RUBY VERSION  column-0\n#\n# ONLY the "GEM" section\'s "specs:" packages are resolved gems installed from\n# a rubygems source; GIT and PATH sections have the identical "specs:" shape\n# but pin a local/VCS gem instead (no rubygems version to check against\n# advisories), so they must be excluded the same way npm parsers skip `link:`\n# workspace deps. The state machine below re-evaluates on every column-0\n# (unindented) line: `in_gem` is set only while inside a literal "GEM"\n# header, and cleared by ANY other column-0 line (GIT, PATH, PLATFORMS,\n# DEPENDENCIES, CHECKSUMS, BUNDLED WITH, RUBY VERSION, or a second "GIT"/\n# "PATH" block) \u2014 so it also correctly re-opens across multiple GEM blocks\n# (multiple gem sources) without hardcoding every non-GEM header name.\n#\n# The exactly-4-space check (`^    [^ ]`) is what tells a resolved spec line\n# apart from a 6-space dependency-constraint line: a 6-space line still has\n# 4 leading spaces, but its 5th character is ALSO a space, so it fails to\n# match.\n#\n# Platform-suffixed versions (native gems, e.g. `nokogiri (1.16.5-arm64-darwin)`)\n# are stripped to the bare version: a version starting with a digit followed\n# by `-<tail>` where the tail contains a known gem-platform token (darwin,\n# linux, x86_64, aarch64, arm64, universal, java, mingw, mswin, freebsd) has\n# the `-<tail>` dropped. The token must be a WHOLE dash/underscore-delimited\n# segment (optionally trailed by digits, e.g. `mingw32`), anchored via\n# `(^|[-_])TOKEN[0-9]*([-_]|$)` \u2014 so `1.0.0-javascript` is NOT stripped just\n# because `java` is a substring of `javascript`. A real prerelease dash\n# (`1.0.0-rc1`) does not match any platform token either, so it is left alone\n# (RubyGems itself treats `-` as a prerelease separator; see compare_versions_gem).\nanalyze_gemfile_lock() {\n    local lockfile="$1"\n    local eco="${2:-gem}"\n\n    local vuln_count_before=${#VULNERABLE_PACKAGES[@]}\n\n    local packages\n    packages=$(awk \'\n    BEGIN { in_gem = 0 }\n    NR == 1 && substr($0, 1, 3) == "\\357\\273\\277" { $0 = substr($0, 4) }\n    # Column-0 (unindented) line: a new top-level section. Re-evaluate\n    # in_gem; every non-"GEM" header (and blank-adjacent noise) closes the\n    # capture window until the next literal "GEM" header.\n    /^[A-Za-z]/ {\n        if ($0 ~ /^GEM[[:space:]]*$/) { in_gem = 1 } else { in_gem = 0 }\n        next\n    }\n    !in_gem { next }\n    # Exactly-4-space "name (version)" spec line (6-space dependency\n    # constraints fail this match on purpose - see header comment).\n    /^    [^ ]/ {\n        line = $0\n        sub(/^    /, "", line)\n        paren = index(line, " (")\n        if (paren == 0) next\n        name = substr(line, 1, paren - 1)\n        rest = substr(line, paren + 2)\n        closepos = index(rest, ")")\n        if (closepos == 0) next\n        ver = substr(rest, 1, closepos - 1)\n        if (name == "" || ver == "") next\n\n        # Platform-suffix strip (see header comment).\n        if (ver ~ /^[0-9][0-9A-Za-z.]*-/) {\n            dash = index(ver, "-")\n            base_ver = substr(ver, 1, dash - 1)\n            suffix = substr(ver, dash + 1)\n            if (suffix ~ /(^|[-_])(x86_64|aarch64|arm64|universal|java|mingw|mswin|darwin|linux|freebsd)[0-9]*([-_]|$)/) {\n                ver = base_ver\n            }\n        }\n        print name "|" ver\n    }\n    \' "$lockfile" 2>/dev/null | sort -u)\n\n    while IFS=\'|\' read -r pkg_name version; do\n        [ -z "$pkg_name" ] || [ -z "$version" ] && continue\n        check_vulnerability "$eco" "$pkg_name" "$version" "$lockfile" || true\n    done <<< "$packages"\n\n    local vuln_count_after=${#VULNERABLE_PACKAGES[@]}\n    if [ "$vuln_count_after" -eq "$vuln_count_before" ]; then\n        echo -e "${GREEN}\u2713 [$lockfile] No vulnerabilities found${NC}"\n    fi\n}\n# PHP (Composer) dependency parser.\n#\n#   composer.lock -> analyze_composer_lock\n#\n# composer.lock is plain JSON (no jq available/allowed on the scan path), and\n# unlike package-lock.json\'s flat "node_modules/x": {...} map, its packages\n# live in TWO top-level arrays: "packages" (production) and "packages-dev"\n# (require-dev). Each array element is a package object with MANY sibling\n# keys beyond name/version (source, dist, require, require-dev, provide,\n# suggest, type, extra, autoload, notification-url, license, authors,\n# description, homepage, keywords, support, funding, time, ...), several of\n# which are themselves nested objects/arrays. Notably "authors" is an array\n# of {"name": ..., "email": ..., ...} objects, so a naive "capture name, then\n# capture the next version" state machine (as used for package-lock.json)\n# would risk a nested author\'s "name" clobbering the package name, or -\n# worse - would never be at risk of finding a stray "version" key deeper in\n# (composer.lock has no "version" key inside require/source/dist/authors/\n# support/funding), but relying on that emptily is fragile. Instead this\n# parser tracks JSON brace/bracket DEPTH precisely (one increment per `{`/`[`,\n# one decrement per `}`/`]`, quoted-string contents skipped so punctuation\n# inside URLs/descriptions/names never miscounts) so that "name"/"version"\n# are only captured when they are DIRECT fields of a package object (exactly\n# one level below the "packages"/"packages-dev" array) - any subtable\n# (source/dist/require/autoload/authors/support/funding/...) sits at least\n# one level deeper and is excluded, mirroring the TOML [[package]] parser\'s\n# subtable-gap hardening (src/50-ecosystems/20-rust.sh) but for JSON nesting\n# instead of TOML headers. The pending name/version pair is emitted the\n# instant the enclosing package object\'s closing brace is seen, so it does\n# not matter how many nested keys/objects a real entry has in between.\n#\n# json_structural_lines splits JSON outside strings before depth tracking,\n# so compact JSON and Composer-generated pretty JSON have the same records.\n#\n# NORMALIZATION: package names are lowercased (composer canon is\n# "vendor/package", already lowercase on the feed side - data/ghsa-composer.purl\n# / data/osv-composer.purl - so this keeps a mixed-case lockfile entry, if\n# one is ever seen in the wild, matching). Versions have a leading "v"\n# stripped (some vendors tag "v7.4.0"; compare_versions_eco routes composer\n# through the plain semver comparator, which expects a bare "7.4.0" - see\n# src/40-versions/01-dispatch.sh) and "dev-*" branch aliases (e.g.\n# "dev-master", "dev-feature/x" - not a resolvable release, no advisory can\n# target it) are skipped silently, same as npm parsers skip workspace/link\n# deps and pypi skips VCS entries without a resolvable version.\nanalyze_composer_lock() {\n    local lockfile="$1"\n    local eco="${2:-composer}"\n\n    local vuln_count_before=${#VULNERABLE_PACKAGES[@]}\n\n    local packages\n    packages=$(json_structural_lines "$lockfile" | awk \'\n    function emit_pkg() {\n        if (pkg_name != "" && pkg_version != "") {\n            print pkg_name "|" pkg_version\n        }\n        pkg_name = ""\n        pkg_version = ""\n    }\n    BEGIN {\n        depth = 0\n        in_pkgs = 0\n        pkg_depth = -1\n    }\n    {\n        line = $0\n        start_depth = depth\n\n        # Enter a "packages" / "packages-dev" array at the CURRENT (pre-line)\n        # depth. Guarded by !in_pkgs so the same literal text appearing\n        # inside an already-open packages array (e.g. in a description\n        # string) cannot re-trigger this.\n        if (!in_pkgs && match(line, /"packages(-dev)?"[[:space:]]*:[[:space:]]*\\[/)) {\n            in_pkgs = 1\n            pkg_depth = start_depth + 1\n            pkg_name = ""\n            pkg_version = ""\n        }\n\n        # Only DIRECT fields of a package object (one level below the array)\n        # are candidate name/version lines; any nested object/array (source,\n        # dist, require, provide, suggest, extra, autoload, authors,\n        # support, funding, ...) sits at pkg_depth+2 or deeper and is\n        # excluded by this check.\n        if (in_pkgs && start_depth == pkg_depth + 1) {\n            if (match(line, /^[[:space:]]*"name"[[:space:]]*:[[:space:]]*"/)) {\n                temp = line\n                sub(/^[[:space:]]*"name"[[:space:]]*:[[:space:]]*"/, "", temp)\n                sub(/".*$/, "", temp)\n                if (temp != "") pkg_name = tolower(temp)\n            } else if (match(line, /^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"/)) {\n                temp = line\n                sub(/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"/, "", temp)\n                sub(/".*$/, "", temp)\n                if (temp != "" && temp !~ /^dev-/) {\n                    sub(/^v/, "", temp)\n                    pkg_version = temp\n                }\n            }\n        }\n\n        # Walk the line char-by-char (quoted-string contents skipped,\n        # backslash-escape aware) to keep `depth` exact, emitting the\n        # pending package the instant its object closes and closing the\n        # array itself once depth falls back below pkg_depth.\n        n = length(line)\n        in_str = 0\n        for (i = 1; i <= n; i++) {\n            c = substr(line, i, 1)\n            if (in_str) {\n                if (c == "\\\\") { i++ }\n                else if (c == "\\"") { in_str = 0 }\n                continue\n            }\n            if (c == "\\"") { in_str = 1; continue }\n            if (c == "{" || c == "[") {\n                depth++\n            } else if (c == "}" || c == "]") {\n                depth--\n                if (in_pkgs && depth == pkg_depth) {\n                    emit_pkg()\n                } else if (in_pkgs && depth < pkg_depth) {\n                    in_pkgs = 0\n                    pkg_depth = -1\n                    pkg_name = ""\n                    pkg_version = ""\n                }\n            }\n        }\n    }\n    END { emit_pkg() }\n    \' | sort -u)\n\n    while IFS=\'|\' read -r pkg_name version; do\n        [ -z "$pkg_name" ] || [ -z "$version" ] && continue\n        check_vulnerability "$eco" "$pkg_name" "$version" "$lockfile" || true\n    done <<< "$packages"\n\n    local vuln_count_after=${#VULNERABLE_PACKAGES[@]}\n    if [ "$vuln_count_after" -eq "$vuln_count_before" ]; then\n        echo -e "${GREEN}\u2713 [$lockfile] No vulnerabilities found${NC}"\n    fi\n}\n# Maven (JVM) dependency parsers.\n#\n#   gradle.lockfile -> analyze_gradle_lockfile   (Gradle\'s resolved dependency lock)\n#   pom.xml         -> analyze_pom_xml           (Maven manifest, direct deps)\n#\n# Canonical package identity is "groupId:artifactId" (the ONLY ecosystem whose\n# canonical names contain a \':\'). This matches the feed emission: the purl parser\n# canonicalizes pkg:maven/groupId/artifactId to the key "maven:groupId:artifactId"\n# (canon_purl_name joins the last two path components with \':\', see\n# src/31-parsers-purl.sh), and check_vulnerability probes "maven:<name>", so a\n# parser that emits "groupId:artifactId" lines up exactly. Versions are passed\n# through verbatim and ordered by compare_versions_maven (ComparableVersion).\n\n# Parse a gradle.lockfile. Format (one dependency per line):\n#   group:artifact:version=conf1,conf2,...\n# plus a header comment block (lines starting with \'#\') and a trailing sentinel\n#   empty=conf,...\n# listing configurations that resolved to nothing. Comments and the "empty="\n# sentinel carry no package, so they are skipped. The key (left of \'=\') splits on\n# \':\' into exactly group / artifact / version (Maven coordinates never contain a\n# \':\' in any single component), so a line that does not split into three is not a\n# coordinate and is ignored.\nanalyze_gradle_lockfile() {\n    local lockfile="$1"\n    local eco="${2:-maven}"\n\n    local vuln_count_before=${#VULNERABLE_PACKAGES[@]}\n\n    local packages\n    packages=$(awk \'\n    {\n        line = $0\n        gsub(/\\r/, "", line)                       # tolerate CRLF checkouts\n        gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)\n        if (line == "") next\n        if (line ~ /^#/) next                      # header comment lines\n        eq = index(line, "=")\n        if (eq == 0) next\n        key = substr(line, 1, eq - 1)\n        if (key == "empty") next                   # "empty=" sentinel\n        n = split(key, a, ":")\n        if (n != 3) next                           # not a group:artifact:version\n        if (a[1] == "" || a[2] == "" || a[3] == "") next\n        print a[1] ":" a[2] "|" a[3]\n    }\n    \' "$lockfile" 2>/dev/null | sort -u)\n\n    while IFS=\'|\' read -r pkg_name version; do\n        [ -z "$pkg_name" ] || [ -z "$version" ] && continue\n        check_vulnerability "$eco" "$pkg_name" "$version" "$lockfile" || true\n    done <<< "$packages"\n\n    local vuln_count_after=${#VULNERABLE_PACKAGES[@]}\n    if [ "$vuln_count_after" -eq "$vuln_count_before" ]; then\n        echo -e "${GREEN}\u2713 [$lockfile] No vulnerabilities found${NC}"\n    fi\n}\n\n# Parse a pom.xml. The whole file is read into one string so tags split over\n# several lines (<version>\\n  1.2.3\\n</version>) parse like single-line ones,\n# and XML comments are removed first (a commented-out <dependency> is not a\n# dependency). Each <dependency> block yields its <groupId>, <artifactId> and\n# <version>; nested <exclusions> are cut out so their coordinates cannot\n# clobber the dependency\'s. A version "${name}" is resolved from the same\n# file\'s <properties>; anything else that is not a literal version is SKIPPED:\n# unresolved properties (parent POMs, ${project.version}), dependencyManagement\n# inheritance (no version at all) and version ranges ("[1.0,2.0)"). This is a\n# manifest-grade parser \u2014 the same class of limitation every non-lockfile\n# parser in this codebase carries; the missing and unresolved versions are\n# counted and reported once, pointing to --sbom. <dependency> blocks anywhere are accepted\n# (project <dependencies> and <dependencyManagement> alike); the opening tag is\n# matched as "<dependency" followed by a space or \'>\' so that the\n# "<dependencies>" wrapper never opens a block.\nanalyze_pom_xml() {\n    local lockfile="$1"\n    local eco="${2:-maven}"\n\n    local vuln_count_before=${#VULNERABLE_PACKAGES[@]}\n\n    local packages\n    # One streaming pass: records are split at "<", so each one is a tag\n    # followed by the text up to the next tag. A stack of open elements gives\n    # every value its place: only the direct children of a <dependency> are\n    # its coordinates (an <exclusions> block is deeper), and project-level\n    # <properties> win over those of a <profile>. Versions are resolved at the\n    # end: <properties> may follow <dependencies>. Linear in the file size.\n    packages=$(awk \'\n    BEGIN { RS = "<" }\n    function trim(v) { gsub(/^[[:space:]]+|[[:space:]]+$/, "", v); return v }\n    # Text of the element that is currently open ("" target: ignored). Text\n    # after a comment inside an element (<version><!-- x -->1.0</version>)\n    # is appended to it.\n    function set_text(value, append) {\n        if (target == "") return\n        if (append) value = target_value[target] value\n        target_value[target] = value\n    }\n    NR == 1 { next }   # text before the first tag\n    {\n        record = $0\n        gsub(/\\r/, "", record)\n        if (in_comment || substr(record, 1, 3) == "!--") {\n            e = index(record, "-->")\n            if (substr(record, 1, 3) == "!--") {\n                e = index(substr(record, 4), "-->")\n                if (e) e += 3\n            }\n            if (e == 0) { in_comment = 1; next }\n            in_comment = 0\n            set_text(trim(substr(record, e + 3)), 1)\n            next\n        }\n        c = substr(record, 1, 1)\n        if (c == "?" || c == "!") next\n        gt = index(record, ">")\n        if (gt == 0) next\n        tag = substr(record, 1, gt - 1)\n        text = trim(substr(record, gt + 1))\n        if (c == "/") {\n            name = trim(substr(tag, 2))\n            if (depth > 0 && stack[depth] == name) {\n                if (name == "dependency" && depth == dep_depth) dep_depth = 0\n                depth--\n            }\n            target = ""\n            next\n        }\n        self_closing = (substr(tag, length(tag)) == "/")\n        name = tag\n        sub(/[[:space:]\\/].*$/, "", name)\n        if (self_closing) next\n        stack[++depth] = name\n        parent = stack[depth - 1]\n        target = ""\n        if (parent == "properties" && depth >= 3) {\n            if (depth == 3 && stack[1] == "project") target = "pp:" name\n            else if (!(("op:" name) in target_value)) target = "op:" name\n        }\n        if (name == "dependency" && dep_depth == 0) {\n            dep_depth = depth\n            n_deps++\n        } else if (dep_depth && depth == dep_depth + 1 &&\n                   (name == "groupId" || name == "artifactId" || name == "version")) {\n            target = "d" n_deps ":" name\n        }\n        set_text(text, 0)\n    }\n    END {\n        for (i = 1; i <= n_deps; i++) {\n            g = trim(target_value["d" i ":groupId"])\n            a = trim(target_value["d" i ":artifactId"])\n            v = trim(target_value["d" i ":version"])\n            if (g == "" || a == "") continue\n            if (v ~ /^\\$\\{[^}]+\\}$/) {\n                name = substr(v, 3, length(v) - 3)\n                v = ("pp:" name) in target_value ? target_value["pp:" name] : \\\n                    (("op:" name) in target_value ? target_value["op:" name] : "")\n                v = trim(v)\n            }\n            # Missing or unresolved versions come from a parent POM or a BOM.\n            if (v == "" || index(v, "${")) { unversioned++; continue }\n            # Version ranges are not installed versions.\n            if (v ~ /^[\\[(]/ || index(v, ",")) continue\n            print g ":" a "|" v\n        }\n        # "-" is never a groupId:artifactId: it carries the unversioned count.\n        if (unversioned) print "-|" unversioned\n    }\n    \' "$lockfile" 2>/dev/null | sort -u)\n\n    local unversioned=0\n    while IFS=\'|\' read -r pkg_name version; do\n        [ -z "$pkg_name" ] || [ -z "$version" ] && continue\n        if [ "$pkg_name" = "-" ]; then unversioned="$version"; continue; fi\n        check_vulnerability "$eco" "$pkg_name" "$version" "$lockfile" || true\n    done <<< "$packages"\n\n    if [ "$unversioned" -gt 0 ]; then\n        echo -e "${YELLOW}\u26A0\uFE0F  $unversioned dependencies in $lockfile have no version here (managed by a parent POM or BOM): scan a CycloneDX SBOM with --sbom (cyclonedx-maven-plugin) or a gradle.lockfile to check them${NC}"\n    fi\n\n    local vuln_count_after=${#VULNERABLE_PACKAGES[@]}\n    if [ "$vuln_count_after" -eq "$vuln_count_before" ]; then\n        echo -e "${GREEN}\u2713 [$lockfile] No vulnerabilities found${NC}"\n    fi\n}\n# NuGet dependency parser.\n#\n#   packages.lock.json -> analyze_nuget_lock\n#\n# (csproj is a tier-2 manifest \u2014 no manifest-grade property/MSBuild-condition\n# resolution is attempted anywhere else in this codebase either, see pom.xml\'s\n# ${property} skip \u2014 so it is NOT registered/parsed at all.)\n#\n# packages.lock.json is plain JSON (no jq on the scan path) shaped THREE\n# levels deep below the root: a single top-level "dependencies" object keyed\n# by target framework moniker (e.g. "net8.0"; a multi-targeted project has one\n# sibling object per TFM), each holding package-name-keyed objects with a\n# "type" ("Direct" | "Transitive" | "CentralTransitive" | "Project") and,\n# except for Project, a "resolved" version. CentralTransitive marks transitive\n# packages pinned through Central Package Management (Directory.Packages.props). This is one nesting level deeper than composer.lock\'s\n# "packages"/"packages-dev" ARRAY of objects (src/50-ecosystems/30-php.sh), so\n# the same JSON brace/bracket DEPTH-TRACKING approach is used here but against\n# TWO thresholds instead of composer\'s one: package names are only captured\n# at "framework object contents" depth (deps_depth + 1) and "type"/"resolved"\n# fields only at "package object contents" depth (deps_depth + 2). This\n# precision matters because a Transitive (or Project) entry commonly carries\n# its OWN nested "dependencies" sub-object (name -> requested-range STRING,\n# not an object with a "resolved" field) one level deeper still, e.g.:\n#   "Serilog.Sinks.Console": {\n#     "type": "Transitive", "resolved": "4.1.0",\n#     "dependencies": { "Serilog": "3.1.1" }\n#   }\n# A depth-exact parser skips straight past that nested map (it never reaches\n# the field-capture depth), so it can never be mistaken for another package\n# or clobber the enclosing entry\'s own type/resolved - the identical class of\n# hardening composer.lock\'s parser applies to "authors"/"require"/"support".\n#\n# "type": "Project" entries (an in-solution ProjectReference resolved through\n# the lock file, e.g. a referenced class library) carry NO "resolved" field\n# at all, so they are skipped by construction: emit_pkg() only prints when\n# type is Direct, Transitive or CentralTransitive AND a resolved version was\n# captured.\n#\n# NORMALIZATION: package names (the JSON keys themselves) are LOWERCASED\n# (NuGet canon - the feed side, data/ghsa-nuget.purl / data/osv-nuget.purl,\n# and canon_purl_name() in src/31-parsers-purl.sh, both lowercase nuget names\n# already; composer/githubactions share this same canon). Versions are passed\n# through verbatim - real "resolved" values are always a bare\n# Major.Minor.Patch[.Revision][-prerelease] with no "v" prefix, ordered by\n# compare_versions_nuget (src/40-versions/25-nuget.sh).\n#\n# DEDUPE: a multi-targeted project (TargetFrameworks with more than one TFM)\n# repeats every package once per framework block; identical name|version\n# pairs collapse via the same `sort -u` every other parser in this codebase\n# uses, so a package resolving to the SAME version under both frameworks is\n# reported (and checked) exactly once.\nanalyze_nuget_lock() {\n    local lockfile="$1"\n    local eco="${2:-nuget}"\n\n    local vuln_count_before=${#VULNERABLE_PACKAGES[@]}\n\n    local packages\n    packages=$(json_structural_lines "$lockfile" | awk \'\n    function emit_pkg() {\n        if (pkg_name != "" && pkg_version != "" && (pkg_type == "Direct" || pkg_type == "Transitive" || pkg_type == "CentralTransitive")) {\n            print pkg_name "|" pkg_version\n        }\n        pkg_name = ""\n        pkg_type = ""\n        pkg_version = ""\n    }\n    BEGIN {\n        depth = 0\n        in_deps = 0\n        deps_depth = -1\n    }\n    {\n        line = $0\n        gsub(/\\r/, "", line)                        # tolerate CRLF checkouts\n        start_depth = depth\n\n        # Enter the top-level "dependencies" object at the CURRENT (pre-line)\n        # depth. Guarded by !in_deps so a package\'\\\'\'s own nested "dependencies"\n        # sub-object (requested-range strings, no "type"/"resolved" fields -\n        # see header) cannot re-trigger this once already inside.\n        if (!in_deps && match(line, /"dependencies"[[:space:]]*:[[:space:]]*\\{/)) {\n            in_deps = 1\n            deps_depth = start_depth + 1\n            pkg_name = ""\n            pkg_type = ""\n            pkg_version = ""\n        }\n\n        # Package-name keys live one level inside each framework object\n        # (deps_depth + 1): "PackageId": { opens a new package entry.\n        if (in_deps && start_depth == deps_depth + 1) {\n            if (match(line, /^[[:space:]]*"[^"]+"[[:space:]]*:[[:space:]]*\\{/)) {\n                temp = line\n                sub(/^[[:space:]]*"/, "", temp)\n                sub(/"[[:space:]]*:[[:space:]]*\\{.*$/, "", temp)\n                if (temp != "") {\n                    pkg_name = tolower(temp)\n                    pkg_type = ""\n                    pkg_version = ""\n                }\n            }\n        }\n\n        # "type"/"resolved" are DIRECT fields of a package object, one level\n        # deeper still (deps_depth + 2); a nested per-package "dependencies"\n        # map (see header) sits at deps_depth + 3 and is excluded by this\n        # check regardless of its own key names.\n        if (in_deps && start_depth == deps_depth + 2) {\n            if (match(line, /^[[:space:]]*"type"[[:space:]]*:[[:space:]]*"/)) {\n                temp = line\n                sub(/^[[:space:]]*"type"[[:space:]]*:[[:space:]]*"/, "", temp)\n                sub(/".*$/, "", temp)\n                if (temp != "") pkg_type = temp\n            } else if (match(line, /^[[:space:]]*"resolved"[[:space:]]*:[[:space:]]*"/)) {\n                temp = line\n                sub(/^[[:space:]]*"resolved"[[:space:]]*:[[:space:]]*"/, "", temp)\n                sub(/".*$/, "", temp)\n                if (temp != "") pkg_version = temp\n            }\n        }\n\n        # Walk the line char-by-char (quoted-string contents skipped,\n        # backslash-escape aware) to keep `depth` exact, emitting the pending\n        # package the instant its object closes (back to deps_depth + 1),\n        # resetting stray state when a framework object closes (deps_depth),\n        # and closing "dependencies" itself once depth falls below deps_depth.\n        n = length(line)\n        in_str = 0\n        for (i = 1; i <= n; i++) {\n            c = substr(line, i, 1)\n            if (in_str) {\n                if (c == "\\\\") { i++ }\n                else if (c == "\\"") { in_str = 0 }\n                continue\n            }\n            if (c == "\\"") { in_str = 1; continue }\n            if (c == "{" || c == "[") {\n                depth++\n            } else if (c == "}" || c == "]") {\n                depth--\n                if (in_deps && depth == deps_depth + 1) {\n                    emit_pkg()\n                } else if (in_deps && depth == deps_depth) {\n                    pkg_name = ""\n                    pkg_type = ""\n                    pkg_version = ""\n                } else if (in_deps && depth < deps_depth) {\n                    in_deps = 0\n                    deps_depth = -1\n                    pkg_name = ""\n                    pkg_type = ""\n                    pkg_version = ""\n                }\n            }\n        }\n    }\n    END { emit_pkg() }\n    \' | sort -u)\n\n    while IFS=\'|\' read -r pkg_name version; do\n        [ -z "$pkg_name" ] || [ -z "$version" ] && continue\n        check_vulnerability "$eco" "$pkg_name" "$version" "$lockfile" || true\n    done <<< "$packages"\n\n    local vuln_count_after=${#VULNERABLE_PACKAGES[@]}\n    if [ "$vuln_count_after" -eq "$vuln_count_before" ]; then\n        echo -e "${GREEN}\u2713 [$lockfile] No vulnerabilities found${NC}"\n    fi\n}\n# Dart/Flutter (pub) dependency parser.\n#\n#   pubspec.lock -> analyze_pubspec_lock\n#\n# pubspec.lock is YAML, generated by `dart pub get` / `flutter pub get`. Shape\n# (indentation is significant and exact, 2 spaces per level):\n#\n#   packages:                        column-0, opens the block we care about\n#     dio:                             2-space  <- package name key\n#       dependency: "direct main"        4-space\n#       description:                     4-space\n#         name: dio                        6-space (nested map, ignored)\n#         sha256: "\u2026"                      6-space\n#         url: "https://pub.dev"           6-space\n#       source: hosted                   4-space  <- HOSTED packages only\n#       version: "4.0.6"                  4-space  <- always double-quoted\n#   sdks:                             column-0, closes the block\n#     dart: ">=3.0.0 <4.0.0"\n#     flutter: ">=3.10.0"\n#\n# Only `source: hosted` packages (pulled from pub.dev, or a self-hosted pub\n# server) resolve to a checkable name+version pair. `source: git` (a VCS\n# dependency pinned by commit, description holds url/ref/resolved-ref instead\n# of name/sha256/url) and `source: path` (a local filesystem dependency) are\n# both skipped the same way npm/ruby parsers skip link:/git-sourced deps \u2014 no\n# pub.dev release to compare against advisories. `source: sdk` (the `flutter`\n# and `dart` pseudo-packages the SDK itself provides) is skipped for the same\n# reason. Because the emit only fires when source == "hosted" was seen, all\n# three are excluded by construction; no explicit skip-list needed.\n#\n# The exactly-4-space checks (`^    source:` / `^    version:`) are what tell\n# a package\'s OWN source/version apart from anything nested inside its\n# 6-space "description:" sub-map: a 6-space line still starts with 4 spaces,\n# but its 5th character is ALSO a space, so it fails to match the literal\n# "source:"/"version:" that follows the 4-space prefix in the regex.\n#\n# The block ends at the next 2-space package key (flush + start a new one) or\n# at the top-level "sdks:" key (flush + stop): both close the currently-open\n# package the same way a `[[package]]` header change flushes Cargo.lock\'s\n# TOML parser.\nanalyze_pubspec_lock() {\n    local lockfile="$1"\n    local eco="${2:-pub}"\n\n    local vuln_count_before=${#VULNERABLE_PACKAGES[@]}\n\n    local packages\n    packages=$(awk \'\n    function emit_pkg() {\n        if (pkg_name != "" && pkg_source == "hosted" && pkg_version != "") {\n            print pkg_name "|" pkg_version\n        }\n        pkg_name = ""\n        pkg_source = ""\n        pkg_version = ""\n    }\n    BEGIN { in_packages = 0 }\n    {\n        gsub(/\\r/, "", $0)                     # tolerate CRLF checkouts\n    }\n    # Top-level "packages:" key opens the block we scan.\n    /^packages:[[:space:]]*$/ {\n        in_packages = 1\n        next\n    }\n    # Any OTHER column-0 (unindented) line \u2014 "sdks:" in practice, but treated\n    # generically like every other YAML-block parser in this codebase \u2014 flushes\n    # the pending package and closes the block for good.\n    in_packages && /^[A-Za-z]/ {\n        emit_pkg()\n        in_packages = 0\n        next\n    }\n    !in_packages { next }\n    # 2-space package-name key: flush the previous package, start this one.\n    /^  [A-Za-z0-9_]+:[[:space:]]*$/ {\n        emit_pkg()\n        line = $0\n        sub(/^  /, "", line)\n        sub(/:[[:space:]]*$/, "", line)\n        pkg_name = line\n        next\n    }\n    # 4-space "source: hosted" \u2014 git/path/sdk sources are simply never set,\n    # so emit_pkg()s guard (pkg_source == "hosted") skips them by construction.\n    /^    source:[[:space:]]*hosted[[:space:]]*$/ {\n        pkg_source = "hosted"\n        next\n    }\n    # 4-space "version: \\"x.y.z\\"" \u2014 always double-quoted in a real lockfile.\n    /^    version:[[:space:]]*"/ {\n        line = $0\n        sub(/^    version:[[:space:]]*"/, "", line)\n        sub(/".*$/, "", line)\n        pkg_version = line\n        next\n    }\n    END { emit_pkg() }\n    \' "$lockfile" 2>/dev/null | sort -u)\n\n    while IFS=\'|\' read -r pkg_name version; do\n        [ -z "$pkg_name" ] || [ -z "$version" ] && continue\n        check_vulnerability "$eco" "$pkg_name" "$version" "$lockfile" || true\n    done <<< "$packages"\n\n    local vuln_count_after=${#VULNERABLE_PACKAGES[@]}\n    if [ "$vuln_count_after" -eq "$vuln_count_before" ]; then\n        echo -e "${GREEN}\u2713 [$lockfile] No vulnerabilities found${NC}"\n    fi\n}\n# Hex (Elixir/Erlang) dependency parser.\n#\n#   mix.lock -> analyze_mix_lock\n#\n# mix.lock is a literal Elixir map, generated by `mix deps.get`, ONE entry per\n# line (Mix always emits it pre-sorted and pre-formatted this way; hand-edits\n# are never expected to survive `mix deps.get` re-running). Shape:\n#\n#   %{\n#     "jason": {:hex, :jason, "1.4.1", "<64-hex outer checksum>", [:mix], [{:decimal, "~> 1.0", [hex: :decimal, repo: "hexpm", optional: true]}], "hexpm", "<64-hex inner checksum>"},\n#     "internal_auth": {:git, "https://github.com/example-org/internal_auth.git", "<40-hex commit sha>", []},\n#   }\n#\n# Unlike every other lockfile in this codebase, this is NOT a block/indent\n# structure to track \u2014 each dependency is already a complete, self-contained\n# line, so a single per-line regex match is enough (no BEGIN/state-machine,\n# no emit_pkg() flush-on-boundary dance).\n#\n# Only `{:hex, ...}` tuples (packages resolved from the hex.pm/private hex\n# registry) are checkable. `{:git, ...}` tuples (and, per the same Mix\n# resolver, `{:path, ...}` / `{:in_umbrella, ...}` \u2014 not modeled here since\n# they never even reach a `{:hex,`-shaped line) pin a VCS ref or local sibling\n# app instead, with no hex.pm release to compare against advisories \u2014 skipped\n# the same way npm/ruby/dart parsers skip link:/git/path-sourced deps. Because\n# the match anchor below REQUIRES the literal `{:hex,` immediately after the\n# name key, git/path lines simply never match; no explicit skip-list needed.\n#\n# EXTRACTION: the second tuple element is the Hex package name. The map key\n# is the application name and may differ when a dependency uses :hex. The\n# version is the FIRST quoted string AFTER the\n# literal `{:hex,` tuple tag and its `:atom_name,` element \u2014 i.e. the 3rd\n# tuple element, `"1.2.3"` in `{:hex, :name, "1.2.3", ...}`. The checksum\n# fields, `[:mix]` build-tools list, and dependency sub-list are all ignored.\n#\n# NORMALIZATION: none. Hex package names are used as-is (same canon as\n# npm/golang/cargo/gem/pub \u2014 see canon_purl_name() in src/31-parsers-purl.sh),\n# matching hex.pm\'s own case-sensitive package naming.\nanalyze_mix_lock() {\n    local lockfile="$1"\n    local eco="${2:-hex}"\n\n    local vuln_count_before=${#VULNERABLE_PACKAGES[@]}\n\n    local packages\n    packages=$(awk \'\n    # Anchor: a quoted map key followed by a literal `{:hex,` tuple tag.\n    # `{:git, ...}` (and any other non-hex tuple) lines simply never match\n    # this pattern, so they are excluded by construction.\n    /^[[:space:]]*"[^"]+"[[:space:]]*:[[:space:]]*\\{:hex,/ {\n        line = $0\n\n        # Walk past "{:hex," then past the ":atom_name," element to reach\n        # the tuple\'\\\'\'s 3rd element, whose FIRST quoted string is the version.\n        hexpos = index(line, "{:hex,")\n        if (hexpos == 0) next\n        rest = substr(line, hexpos + 6)\n        commapos = index(rest, ",")\n        if (commapos == 0) next\n        name = substr(rest, 1, commapos - 1)\n        gsub(/^[[:space:]]*:|[[:space:]]+$/, "", name)\n        gsub(/^"|"$/, "", name)\n        rest = substr(rest, commapos + 1)\n        if (!match(rest, /"[^"]+"/)) next\n        ver = substr(rest, RSTART + 1, RLENGTH - 2)\n\n        if (name != "" && ver != "") print name "|" ver\n    }\n    \' "$lockfile" 2>/dev/null | sort -u)\n\n    while IFS=\'|\' read -r pkg_name version; do\n        [ -z "$pkg_name" ] || [ -z "$version" ] && continue\n        check_vulnerability "$eco" "$pkg_name" "$version" "$lockfile" || true\n    done <<< "$packages"\n\n    local vuln_count_after=${#VULNERABLE_PACKAGES[@]}\n    if [ "$vuln_count_after" -eq "$vuln_count_before" ]; then\n        echo -e "${GREEN}\u2713 [$lockfile] No vulnerabilities found${NC}"\n    fi\n}\n# Swift Package Manager dependency parser.\n#\n#   Package.resolved -> analyze_package_resolved\n#\n# Package.resolved is plain JSON, in ONE of two shapes depending on the\n# swift-tools-version that generated it:\n#\n#   v2/v3 (Swift 5.4+): pins live directly at the top level.\n#     {\n#       "pins" : [\n#         {\n#           "identity" : "swift-nio",\n#           "kind" : "remoteSourceControl",\n#           "location" : "https://github.com/apple/swift-nio.git",\n#           "state" : { "revision" : "...", "version" : "2.10.0" }\n#         }\n#       ],\n#       "version" : 2\n#     }\n#\n#   v1 (swift-tools-version < 5.4): pins are nested one level deeper, under\n#   "object", and the URL field is named "repositoryURL" instead of\n#   "location" ("identity" is spelled "package" too, but neither name field\n#   is ever read \u2014 see NORMALIZATION below).\n#     {\n#       "object" : { "pins" : [\n#         { "package" : "swift-nio", "repositoryURL" : "https://github.com/apple/swift-nio.git",\n#           "state" : { "branch" : null, "revision" : "...", "version" : "2.10.0" } }\n#       ] },\n#       "version" : 1\n#     }\n#\n# Rather than branching on the top-level "version" field, this parser tracks\n# brace/bracket DEPTH (the same technique packages.lock.json\'s parser uses,\n# src/50-ecosystems/40-nuget.sh) starting from wherever the "pins" key is\n# found \u2014 v1\'s extra "object" nesting simply shifts every depth down by one,\n# which the relative tracking below absorbs for free, so both shapes are\n# handled by ONE code path with no format sniffing. A pin\'s own direct\n# fields (identity/package, kind, location/repositoryURL) are captured one\n# level inside the array; its "state" sub-object is captured one level\n# deeper still, where \u2014 matching either format \u2014 a `"version": "..."`\n# QUOTED STRING field is required.\n#\n# Branch/revision-only pins (no released version \u2014 e.g. a dependency pinned\n# to a branch or an exact commit) carry `"version": null` (v1) or omit the\n# key entirely (v2/v3): neither satisfies the quoted-string match above, so\n# ver stays empty and emit_pkg() skips the pin by construction \u2014 exactly\n# like npm/dart/hex skip git/path/sdk-sourced deps that have no registry\n# release to compare against advisories.\n#\n# NORMALIZATION (CRITICAL \u2014 must exactly match canon_purl_name\'s swift\n# branch in src/31-parsers-purl.sh, and the feed emission in src/60-feeds.sh,\n# since check_vulnerability performs no canonicalization of its own \u2014 see\n# src/45-matching.sh): the package "name" checked against advisories is NOT\n# the "identity"/"package" field (a short, human-picked label with no\n# guaranteed uniqueness) but the resolved repository URL itself,\n# canonicalized the same way GHSA/OSV swift feed rows are: strip a leading\n# scheme ("https://", "ssh://git@"), rewrite the scp-like "git@host:owner/repo"\n# form to "host/owner/repo", strip a trailing "/" and ".git", lowercase the\n# rest. E.g. "https://GitHub.com/Apple/Swift-NIO.git" becomes\n# "github.com/apple/swift-nio". This makes matching resilient to\n# mixed-case GitHub URLs (GitHub itself is case-insensitive) and to\n# scheme/suffix variations across manifests.\n#\n# Versions fall through compare_versions_eco\'s default (npm-semver) branch \u2014\n# swift has no dedicated comparator, src/40-versions/01-dispatch.sh \u2014 with a\n# leading "v" stripped first, same as go.sum/go.mod tags\n# (src/50-ecosystems/15-go.sh), since Package.swift dependency pins commonly\n# resolve against tags like "v2.10.0".\nanalyze_package_resolved() {\n    local lockfile="$1"\n    local eco="${2:-swift}"\n\n    local vuln_count_before=${#VULNERABLE_PACKAGES[@]}\n\n    local packages\n    packages=$(json_structural_lines "$lockfile" | awk \'\n    function emit_pkg() {\n        if (url != "" && ver != "") {\n            canon = url\n            # https://host/o/r(.git)(/), ssh://git@host/o/r and the scp-like\n            # git@host:o/r all name the same repository: host/o/r.\n            if (sub(/^[A-Za-z][A-Za-z0-9+.-]*:\\/\\//, "", canon)) {\n                sub(/^[^@\\/]*@/, "", canon)\n            } else if (sub(/^[^@\\/:]*@/, "", canon)) {\n                sub(/:/, "/", canon)\n            }\n            sub(/\\/+$/, "", canon)\n            sub(/\\.git$/, "", canon)\n            canon = tolower(canon)\n            v = ver\n            sub(/^v/, "", v)\n            if (canon != "" && v != "") print canon "|" v\n        }\n        url = ""\n        ver = ""\n    }\n    BEGIN {\n        depth = 0\n        in_pins = 0\n        pins_depth = -1\n    }\n    {\n        line = $0\n        gsub(/\\r/, "", line)                        # tolerate CRLF checkouts\n        start_depth = depth\n\n        # Enter the "pins" array wherever it appears (top level for v2/v3,\n        # one level inside "object" for v1) \u2014 see header for why relative\n        # depth tracking makes the two formats interchangeable here.\n        if (!in_pins && match(line, /"pins"[[:space:]]*:[[:space:]]*\\[/)) {\n            in_pins = 1\n            pins_depth = start_depth + 1\n            url = ""\n            ver = ""\n        }\n\n        # A pin object own direct fields, one level inside the array:\n        # "location" (v2/v3) or "repositoryURL" (v1) carry the repo URL.\n        if (in_pins && start_depth == pins_depth + 1) {\n            if (match(line, /"location"[[:space:]]*:[[:space:]]*"/)) {\n                temp = line\n                sub(/^.*"location"[[:space:]]*:[[:space:]]*"/, "", temp)\n                sub(/".*$/, "", temp)\n                if (temp != "") url = temp\n            } else if (match(line, /"repositoryURL"[[:space:]]*:[[:space:]]*"/)) {\n                temp = line\n                sub(/^.*"repositoryURL"[[:space:]]*:[[:space:]]*"/, "", temp)\n                sub(/".*$/, "", temp)\n                if (temp != "") url = temp\n            }\n        }\n\n        # The pin nested "state" object, one level deeper still: only a\n        # QUOTED "version" string counts \u2014 branch-only pins carry\n        # "version": null (v1) or omit the key (v2/v3), neither of which\n        # matches, so those pins fall through unresolved (see header).\n        if (in_pins && start_depth == pins_depth + 2) {\n            if (match(line, /"version"[[:space:]]*:[[:space:]]*"/)) {\n                temp = line\n                sub(/^.*"version"[[:space:]]*:[[:space:]]*"/, "", temp)\n                sub(/".*$/, "", temp)\n                if (temp != "") ver = temp\n            }\n        }\n\n        # Walk the line char-by-char (quoted-string contents skipped,\n        # backslash-escape aware) to keep `depth` exact, emitting the\n        # pending pin the instant its object closes (back to pins_depth),\n        # and closing the "pins" array itself once depth falls below it.\n        n = length(line)\n        in_str = 0\n        for (i = 1; i <= n; i++) {\n            c = substr(line, i, 1)\n            if (in_str) {\n                if (c == "\\\\") { i++ }\n                else if (c == "\\"") { in_str = 0 }\n                continue\n            }\n            if (c == "\\"") { in_str = 1; continue }\n            if (c == "{" || c == "[") {\n                depth++\n            } else if (c == "}" || c == "]") {\n                depth--\n                if (in_pins && depth == pins_depth) {\n                    emit_pkg()\n                } else if (in_pins && depth < pins_depth) {\n                    in_pins = 0\n                    pins_depth = -1\n                    url = ""\n                    ver = ""\n                }\n            }\n        }\n    }\n    \' | sort -u)\n\n    while IFS=\'|\' read -r pkg_name version; do\n        [ -z "$pkg_name" ] || [ -z "$version" ] && continue\n        # Primary probe: the canonical repo-URL name (github.com/owner/repo).\n        local before_probe=${#VULNERABLE_PACKAGES[@]}\n        check_vulnerability "$eco" "$pkg_name" "$version" "$lockfile" || true\n        # A few GHSA/OSV Swift advisories record the package under a bare\n        # identifier (e.g. "swift-crypto") instead of the repo URL every\n        # other advisory uses. Those can never match the URL-form name, so\n        # when the primary probe found nothing, retry with the bare last\n        # path segment as a fallback (guarded so URL-form matches always win\n        # and we never double-count the same pin).\n        if [ "${#VULNERABLE_PACKAGES[@]}" -eq "$before_probe" ] && [ "${pkg_name##*/}" != "$pkg_name" ]; then\n            check_vulnerability "$eco" "${pkg_name##*/}" "$version" "$lockfile" || true\n        fi\n    done <<< "$packages"\n\n    local vuln_count_after=${#VULNERABLE_PACKAGES[@]}\n    if [ "$vuln_count_after" -eq "$vuln_count_before" ]; then\n        echo -e "${GREEN}\u2713 [$lockfile] No vulnerabilities found${NC}"\n    fi\n}\n# GitHub Actions workflow parser.\n#\n#   .github/workflows/*.yml | *.yaml -> analyze_github_workflow\n#\n# UNIQUE DISCOVERY: unlike every other ecosystem in this tool, GitHub Actions is\n# selected by PATH, not by a lockfile basename \u2014 workflow files live at a\n# well-known location (.github/workflows/) under arbitrary names. That hook is\n# declared ONCE in PATH_ECOSYSTEM_REGISTRY (src/50-ecosystems/01-registry.sh);\n# discover_project_files finds the files and the main() analysis loop routes\n# them here via path_ecosystem_match(). This file only implements the analyzer.\n#\n# WHAT IS CHECKED: the `uses:` step references that pin a published action, i.e.\n# `owner/repo@ref` or `owner/repo/subpath@ref` (the latter covers subpath\n# actions and reusable-workflow calls like `org/repo/.github/workflows/x.yml@ref`).\n# The plain mapping key (`uses: ...`), the list-item form (`- uses: ...`) and a\n# single-line flow mapping (`- {name: x, uses: ...}`) are handled, quoted\n# ("...") or unquoted.\n#\n# SKIPPED by construction:\n#   * local actions  \u2014 `./path` or `../path` (no published version to check)\n#   * docker images  \u2014 `docker://image:tag` (not a GitHub Action release)\n#   * versionless    \u2014 `uses: owner/repo` with no `@ref` (nothing to compare)\n#   * non-action     \u2014 a value with no `owner/repo`-shaped `/` before the `@`\n#\n# NORMALIZATION (must match canon_purl_name\'s githubactions branch in\n# src/31-parsers-purl.sh, which lowercases, and the feed emission): the name is\n# `owner/repo[/subpath]` LOWERCASED. The version is the ref with a leading `v`\n# stripped when it precedes a digit (`v4.1.1` -> `4.1.1`), matching go.sum/swift\n# tag handling and the semver comparator (githubactions falls through\n# compare_versions_eco\'s default npm-semver branch, src/40-versions/01-dispatch.sh).\n# Branch refs (main, release) and 40-hex commit SHAs pass through unchanged; a\n# SHA-pinned ref can then only ever EXACT-match a feed entry pinned to that same\n# SHA \u2014 which is fine.\n#\n# LIMITATIONS (documented, intentional):\n#   * The `uses: owner/repo@<sha> # vX.Y.Z` version-comment convention is NOT\n#     parsed \u2014 the trailing comment is stripped and the SHA is used verbatim, so\n#     a SHA-pinned action is only matched by an exact-SHA advisory, not by the\n#     commented semver. Keeping comment parsing out avoids a brittle heuristic.\n#   * A subpath ref (`github/codeql-action/analyze@v3`) is keyed by its FULL\n#     `owner/repo/subpath` name; advisories published against the base repo\n#     (`github/codeql-action`) therefore do not match a subpathed `uses:`.\n#   * Floating tags with fewer than three parts (`@v4`, `@v4.1`) are skipped:\n#     they track the latest release of that line, so the resolved version is\n#     unknown and comparing `4` against `<4.0.1` would be a false positive.\n#   * Best-effort line matching: a literal `uses: owner/repo@ref` line buried\n#     inside a `run:` shell block would be treated as a step reference. This\n#     mirrors the line-oriented approach of the other lockfile parsers.\nanalyze_github_workflow() {\n    local lockfile="$1"\n    local eco="${2:-githubactions}"\n\n    local vuln_count_before=${#VULNERABLE_PACKAGES[@]}\n\n    local packages\n    packages=$(awk \'\n    {\n        line = $0\n        gsub(/\\r/, "", line)                    # tolerate CRLF checkouts\n\n        if (line ~ /^[[:space:]]*-?[[:space:]]*\\{/ &&\n            match(line, /[{,][[:space:]]*uses[[:space:]]*:[[:space:]]*/)) {\n            # Flow mapping step: `- {name: x, uses: owner/repo@ref, with: {..}}`.\n            # The value ends at its closing quote, or at the next "," or "}".\n            val = substr(line, RSTART + RLENGTH)\n            quote = substr(val, 1, 1)\n            if (quote == "\\"" || quote == "\'\\\'\'") {\n                closing = index(substr(val, 2), quote)\n                if (closing == 0) next\n                val = substr(val, 2, closing - 1)\n            } else {\n                sub(/[[:space:]]*[,}].*$/, "", val)\n            }\n        } else {\n            # Only lines whose key is `uses:` (optionally a `- uses:` list item).\n            if (line !~ /^[[:space:]]*-?[[:space:]]*uses[[:space:]]*:/) next\n\n            # Strip everything up to and including the `uses:` key.\n            val = line\n            sub(/^[[:space:]]*-?[[:space:]]*uses[[:space:]]*:[[:space:]]*/, "", val)\n        }\n\n        # Strip a trailing YAML comment (whitespace + # to EOL). Action refs\n        # never contain a literal " #"; SHA-pin version comments are discarded.\n        sub(/[[:space:]]+#.*$/, "", val)\n\n        # Trim surrounding whitespace.\n        gsub(/^[[:space:]]+|[[:space:]]+$/, "", val)\n\n        # Strip one layer of surrounding quotes (double or single).\n        if (length(val) >= 2) {\n            first = substr(val, 1, 1)\n            last  = substr(val, length(val), 1)\n            if ((first == "\\"" && last == "\\"") || (first == "\'\\\'\'" && last == "\'\\\'\'")) {\n                val = substr(val, 2, length(val) - 2)\n                gsub(/^[[:space:]]+|[[:space:]]+$/, "", val)\n            }\n        }\n\n        if (val == "") next\n\n        # Skip local actions (./ or ../) and docker image references.\n        if (val ~ /^\\.\\.?\\//) next\n        if (val ~ /^docker:\\/\\//) next\n\n        # Need an @ref to resolve a version; split at the LAST @ (refs never\n        # contain @, and this is robust to any future name oddities).\n        at = 0\n        for (i = length(val); i >= 1; i--) {\n            if (substr(val, i, 1) == "@") { at = i; break }\n        }\n        if (at <= 1) next\n        name = substr(val, 1, at - 1)\n        ref  = substr(val, at + 1)\n        if (name == "" || ref == "") next\n\n        # A real action reference is owner/repo[/subpath] \u2014 require the slash.\n        # This drops stray `uses:` lines that are not action references.\n        if (index(name, "/") == 0) next\n\n        # Canonical GitHub Actions name: lowercased owner/repo[/subpath].\n        name = tolower(name)\n\n        # Version tag: strip a leading `v` before a digit (v1.2.3 -> 1.2.3).\n        # Branch names and 40-hex commit SHAs pass through unchanged.\n        if (ref ~ /^v[0-9]/) sub(/^v/, "", ref)\n\n        # Floating major/minor tags (@v4, @v4.1) move with every release: the\n        # commit they resolve to is unknown here, so comparing "46" against\n        # "<46.0.1" would flag every user of a long-patched action. Skip them.\n        if (ref ~ /^[0-9]+(\\.[0-9]+)?$/) next\n\n        if (name != "" && ref != "") print name "|" ref\n    }\n    \' "$lockfile" 2>/dev/null | sort -u)\n\n    while IFS=\'|\' read -r pkg_name version; do\n        [ -z "$pkg_name" ] || [ -z "$version" ] && continue\n        check_vulnerability "$eco" "$pkg_name" "$version" "$lockfile" || true\n    done <<< "$packages"\n\n    local vuln_count_after=${#VULNERABLE_PACKAGES[@]}\n    if [ "$vuln_count_after" -eq "$vuln_count_before" ]; then\n        echo -e "${GREEN}\u2713 [$lockfile] No vulnerabilities found${NC}"\n    fi\n}\n# ============================================================================\n# Runtime version check (Node.js, PHP)\n#\n# A project also targets a runtime: .nvmrc, a Docker base image, the PHP\n# version composer resolves for... Those versions are checked against the\n# runtime feed (data/osv-runtime.purl, lines pkg:runtime/<node|php>@<range>,\n# see fetch_runtime in src/60-feeds.sh).\n#\n#   * an exact version (22.1.0) is a normal finding: [runtime] node@22.1.0;\n#   * a release line (20, 8.3, node:20-alpine) floats to its latest release:\n#     it is reported only when no release of the line is fixed (EOL line);\n#   * a range (>=18, ^8.1) is reported when its lowest admitted version is\n#     vulnerable.\n# Lines and ranges are yellow warnings only: they never change the exit code.\n# Values that name no version (lts/*, latest, ${NODE_VERSION}) are ignored.\n#\n# Runtime files are discovered with the lockfiles (discover_project_files) but\n# are not ecosystem registry rows: they select no GHSA/OSV feed.\n# ============================================================================\n\n# find -name patterns of the runtime version files (package.json and the\n# GitHub Actions workflows are matched separately by discover_project_files).\nRUNTIME_FILE_NAMES=(.nvmrc .node-version .tool-versions .php-version composer.json composer.lock \'Dockerfile*\' \'*.Dockerfile\' \'*.dockerfile\')\n\n# Warnings printed again in the summary (one line per file and runtime).\nRUNTIME_WARNINGS=()\n\n# A line any file naming a runtime version contains (a superset of what\n# runtime_specs reads): most package.json files have no engines and must not\n# pull the runtime feed.\nRUNTIME_HINT_RE=\'"(engines|volta)"[[:space:]]*:|"php"[[:space:]]*:|"platform-overrides"|(node|php)-version[[:space:]]*:|^[[:space:]]*[Ff][Rr][Oo][Mm][[:space:]].*(node|php)|^(nodejs|node|php)[[:space:]]|^[[:space:]]*[vV]?[0-9]\'\n\n# Print the files of a newline-separated list that may name a runtime version\n# (one grep for all of them).\nruntime_files_with_versions() {\n    [ -n "$1" ] || return 0\n    printf \'%s\\n\' "$1" | tr \'\\n\' \'\\0\' | xargs -0 grep -lE -- "$RUNTIME_HINT_RE" 2>/dev/null || true\n}\n\n# Classify a discovered file. Sets RUNTIME_KIND; returns 1 when the file names\n# no runtime version.\nruntime_file_kind() {\n    local file="$1"\n    case "${file##*/}" in\n        .nvmrc|.node-version) RUNTIME_KIND=node_version ;;\n        .php-version) RUNTIME_KIND=php_version ;;\n        .tool-versions) RUNTIME_KIND=tool_versions ;;\n        package.json) RUNTIME_KIND=package_json ;;\n        composer.json) RUNTIME_KIND=composer_json ;;\n        composer.lock) RUNTIME_KIND=composer_lock ;;\n        Dockerfile*|*.Dockerfile|*.dockerfile) RUNTIME_KIND=dockerfile ;;\n        *.yml|*.yaml)\n            [[ "$file" == */.github/workflows/* ]] || return 1\n            RUNTIME_KIND=workflow ;;\n        *) return 1 ;;\n    esac\n}\n\n# Print "runtime|spec" for every runtime version a file names, raw (quotes\n# and comments removed).\n#\n# json_runtime_values FILE RUNTIME PATH...: print "RUNTIME|value" for the\n# string or number at each slash PATH of a JSON file, in PATH order, in one\n# pass (paths are member names from the root object).\njson_runtime_values() {\n    local file="$1" runtime="$2"\n    shift 2\n    # AWK_JSON_PATH calls AWK_FEED_LIB functions: mawk rejects a program\n    # referencing undefined functions, even uncalled ones.\n    json_structural_lines "$file" 2>/dev/null | awk -v runtime="$runtime" -v wanted="$*" "$AWK_FEED_LIB$AWK_JSON_PATH"\'\n    BEGIN { n = split(wanted, order, " ") }\n    {\n        jp_step($0)\n        if (JP_EVENT != "scalar" || JP_VAL == "null" || JP_VAL == "") next\n        path = JP_PATH "/" JP_KEY\n        sub(/^\\/#/, "", path)\n        if (!(path in found)) found[path] = JP_VAL\n    }\n    END { for (i = 1; i <= n; i++) if (order[i] in found) print runtime "|" found[order[i]] }\n    \'\n}\n\nruntime_specs() {\n    local file="$1"\n    runtime_file_kind "$file" || return 0\n    case "$RUNTIME_KIND" in\n        node_version|php_version)\n            local rt=node\n            [ "$RUNTIME_KIND" = node_version ] || rt=php\n            awk -v rt="$rt" \'{ sub(/\\r$/, ""); sub(/#.*/, "") } NF { print rt "|" $1; exit }\' "$file"\n            ;;\n        tool_versions)\n            # asdf / mise: "nodejs 22.1.0 20.0.0" (every listed version is installed)\n            awk \'{ sub(/\\r$/, ""); sub(/#.*/, "") }\n                $1 == "nodejs" || $1 == "node" || $1 == "php" {\n                    rt = ($1 == "php") ? "php" : "node"\n                    for (i = 2; i <= NF; i++) print rt "|" $i\n                }\' "$file"\n            ;;\n        package_json)\n            grep -qE \'"(engines|volta)"[[:space:]]*:\' "$file" || return 0\n            json_runtime_values "$file" node /engines/node /volta/node\n            ;;\n        composer_json)\n            grep -q \'"php"\' "$file" || return 0\n            # config.platform.php: the PHP version composer resolves for\n            json_runtime_values "$file" php /config/platform/php /require/php\n            ;;\n        composer_lock)\n            grep -q \'"platform-overrides"\' "$file" || return 0\n            json_runtime_values "$file" php /platform-overrides/php\n            ;;\n        dockerfile)\n            # FROM [--platform=...] [registry/][library/]node:TAG[@digest] [AS name]\n            awk \'{ sub(/\\r$/, "") }\n                toupper($1) == "FROM" {\n                    i = 2\n                    while (i <= NF && substr($i, 1, 2) == "--") i++\n                    image = $i\n                    sub(/@.*/, "", image)\n                    colon = 0\n                    for (j = length(image); j > 0; j--) {\n                        c = substr(image, j, 1)\n                        if (c == "/") break\n                        if (c == ":") { colon = j; break }\n                    }\n                    if (colon == 0) next\n                    name = tolower(substr(image, 1, colon - 1))\n                    tag = substr(image, colon + 1)\n                    sub(/^(index\\.)?docker\\.io\\//, "", name)\n                    sub(/^library\\//, "", name)\n                    if (name != "node" && name != "php") next\n                    # Variant suffixes name no version: 20-alpine, 8.3.10-fpm-bookworm\n                    if (match(tag, /^[vV]?[0-9]+(\\.[0-9]+)*/) && (RLENGTH == length(tag) || substr(tag, RLENGTH + 1, 1) == "-"))\n                        tag = substr(tag, 1, RLENGTH)\n                    print name "|" tag\n                }\' "$file"\n            ;;\n        workflow)\n            # node-version: 22.1.0 | [18, 20] | a block list; php-version: likewise\n            awk \'\n            function emit(rt, v) {\n                gsub(/^[[:space:]"\\047]+|[[:space:]"\\047]+$/, "", v)\n                if (v != "") print rt "|" v\n            }\n            { sub(/\\r$/, "") }\n            list_rt != "" {\n                if (match($0, /^[[:space:]]*-[[:space:]]+/) && RLENGTH > list_indent) {\n                    v = substr($0, RLENGTH + 1)\n                    sub(/[[:space:]]+#.*/, "", v)\n                    emit(list_rt, v)\n                    next\n                }\n                if ($0 !~ /^[[:space:]]*(#.*)?$/) list_rt = ""\n            }\n            match($0, /^[[:space:]]*(-[[:space:]]+)?(node|php)-version:/) {\n                key_indent = RLENGTH\n                rt = ($0 ~ /php-version:/) ? "php" : "node"\n                v = substr($0, RLENGTH + 1)\n                sub(/[[:space:]]+#.*/, "", v)\n                gsub(/^[[:space:]]+|[[:space:]]+$/, "", v)\n                if (v == "") { list_rt = rt; list_indent = key_indent - length(rt "-version:"); next }\n                if (substr(v, 1, 1) == "[") {\n                    gsub(/[][]/, "", v)\n                    n = split(v, items, ",")\n                    for (k = 1; k <= n; k++) emit(rt, items[k])\n                } else emit(rt, v)\n            }\' "$file"\n            ;;\n    esac\n}\n\n# Normalize a raw spec: no quotes or blanks at the ends, no "v" before a\n# version, ".x" / ".*" wildcards dropped (20.x -> 20). Sets RT_SPEC.\nruntime_normalize_spec() {\n    local s="$1"\n    s="${s#"${s%%[![:space:]\\"\\\']*}"}"\n    s="${s%"${s##*[![:space:]\\"\\\']}"}"\n    [[ "$s" == [vV][0-9]* ]] && s="${s:1}"\n    while [[ "$s" == *.[xX*] ]]; do s="${s%.?}"; done\n    RT_SPEC="$s"\n}\n\n# Lowest version a range admits, padded to x.y.z (>=18 -> 18.0.0,\n# ^8.1 || ^7.4 -> 7.4.0). Alternatives without a lower bound (<20, *) are\n# skipped. Sets RT_FLOOR (empty when no alternative has one).\nruntime_range_floor() {\n    local spec="${1//||/|}" alt token v\n    local -a alts tokens parts\n    RT_FLOOR=""\n    IFS=\'|\' read -ra alts <<< "$spec"\n    for alt in "${alts[@]}"; do\n        alt="${alt//,/ }"\n        # Glue a detached operator to its version: ">= 18" -> ">=18"\n        while [[ "$alt" =~ ^(.*)(\\>=|\\>|~\\>|~=|\\^|~|==|=)[[:space:]]+(.*)$ ]]; do\n            alt="${BASH_REMATCH[1]}${BASH_REMATCH[2]}${BASH_REMATCH[3]}"\n        done\n        read -ra tokens <<< "$alt"\n        v=""\n        for token in "${tokens[@]}"; do\n            if [[ "$token" =~ ^(\\>=|\\>|~\\>|~=|\\^|~|==|=)?[vV]?([0-9]+(\\.[0-9xX*]+)*)$ ]]; then\n                v="${BASH_REMATCH[2]}"\n                break\n            fi\n        done\n        [ -n "$v" ] || continue\n        while [[ "$v" == *.[xX*] ]]; do v="${v%.?}"; done\n        IFS=\'.\' read -ra parts <<< "$v"\n        v="${parts[0]}.${parts[1]:-0}.${parts[2]:-0}"\n        if [ -z "$RT_FLOOR" ]; then\n            RT_FLOOR="$v"\n        else\n            compare_versions "$v" "$RT_FLOOR"\n            [ "$COMPARE_RESULT" != -1 ] || RT_FLOOR="$v"\n        fi\n    done\n}\n\n# Integer key of a plain x.y.z version (missing parts count as 0), ordered\n# like compare_versions for such versions. Sets RT_KEY; returns 1 for any\n# other version (pre-release, 6+ digit minor or patch).\n_rt_numeric_key() {\n    [[ "$1" =~ ^[vV]?([0-9]{1,8})(\\.([0-9]{1,5}))?(\\.([0-9]{1,5}))?$ ]] || return 1\n    RT_KEY=$(( 10#${BASH_REMATCH[1]} * 10000000000 + 10#${BASH_REMATCH[3]:-0} * 100000 + 10#${BASH_REMATCH[5]:-0} ))\n}\n\n# Per runtime, the loaded feed indexed once (runtime_index): RT_INDEX[rt]\n# holds one "range|ident|fix_key|fix" row per advisory record, RT_COND\n# ["rt|range"] the range as integer comparators ("op key op key", "*" or "!";\n# empty when a bound is not plain x.y.z: version_in_range decides).\ndeclare -A RT_INDEX=() RT_COND=() RT_AFFECTED_CACHE=()\n\nruntime_index() {\n    local rt="$1" key="runtime:$1" range rec recs rows="" cond parsed i ok\n    local ghsa cve fix id ident fix_key\n    local -a tokens\n    while IFS= read -r range; do\n        [ -n "$range" ] || continue\n        cond=""\n        case "$range" in\n            # Alternatives and intervals: version_in_range decides.\n            *"|"*|*"["*|*"("*) ;;\n            *)\n                [ -n "${RANGE_CACHE[runtime|$range]+x}" ] || _prepare_range "$range" "runtime|$range"\n                parsed="${RANGE_CACHE[runtime|$range]}"\n                # Exclusions (!=1.3.*) and version lists: version_in_range decides.\n                [ -z "${RANGE_EXCLUDES[runtime|$range]+x}" ] || parsed="anyof"\n                case "$parsed" in\n                    "anyof"*) ;;\n                    "*"|"!") cond="$parsed" ;;\n                    *)\n                        ok=true\n                        read -ra tokens <<< "$parsed"\n                        for (( i = 0; i < ${#tokens[@]}; i += 2 )); do\n                            _rt_numeric_key "${tokens[i + 1]}" || { ok=false; break; }\n                            cond+="${tokens[i]} $RT_KEY "\n                        done\n                        [ "$ok" = true ] || cond="" ;;\n                esac ;;\n        esac\n        RT_COND["$rt|$range"]="${cond% }"\n        recs="${VULN_RECORDS[$key:$range]:-}"\n        while [ -n "$recs" ]; do\n            # "severity;ghsa;cve;source;fix;id", split without a subshell\n            rec="${recs%%$\'\\n\'*}"\n            recs="${recs#*$\'\\n\'}"\n            [ "$rec" != "$recs" ] || recs=""\n            rec="${rec#*;}"; ghsa="${rec%%;*}"\n            rec="${rec#*;}"; cve="${rec%%;*}"\n            rec="${rec#*;}"; rec="${rec#*;}"; fix="${rec%%;*}"\n            id="${rec#*;}"\n            ident="${cve:-${ghsa:-$id}}"\n            [ -n "$ident" ] || continue\n            fix_key=""\n            [ -z "$fix" ] || ! _rt_numeric_key "$fix" || fix_key="$RT_KEY"\n            rows+="$range|$ident|$fix_key|$fix"$\'\\n\'\n        done\n    done <<< "${VULN_RANGE_LOOKUP[$key]:-}"\n    RT_INDEX["$rt"]="$rows"\n}\n\n# Advisories of a runtime that affect one version. Sets RT_IDS (sorted,\n# space-separated CVE or advisory ids) and RT_FIX (for each advisory, the\n# lowest fixed version above VERSION; the highest of those, so that one\n# upgrade fixes them all). Returns 1 when no advisory affects VERSION.\n# Results are cached per version: workflows repeat the same lines.\nruntime_affected() {\n    local rt="$1" version="$2" cached="$1|$2"\n    if [ -n "${RT_AFFECTED_CACHE[$cached]+x}" ]; then\n        cached="${RT_AFFECTED_CACHE[$cached]}"\n        [ -n "$cached" ] || return 1\n        RT_IDS="${cached%%|*}" RT_FIX="${cached#*|}"\n        return 0\n    fi\n    [ -n "${RT_INDEX[$rt]+x}" ] || runtime_index "$rt"\n    local key="runtime:$1" range ident fix_key fix cond vkey="" i matched candidate rec lk lf\n    local severity ghsa cve source id\n    local -A hit=() lowest_key=() lowest_fix=() range_hit=()\n    local -a c exacts\n    RT_IDS="" RT_FIX=""\n    CHECK_ECO=runtime\n    ! _rt_numeric_key "$version" || vkey="$RT_KEY"\n    while IFS=\'|\' read -r range ident fix_key fix; do\n        [ -n "$range" ] || continue\n        if [ -z "${range_hit[$range]+x}" ]; then\n            cond="${RT_COND[$rt|$range]}"\n            matched=0\n            if [ -n "$vkey" ] && [ -n "$cond" ]; then\n                case "$cond" in\n                    "*") matched=1 ;;\n                    "!") ;;\n                    *)\n                        matched=1\n                        read -ra c <<< "$cond"\n                        for (( i = 0; i < ${#c[@]}; i += 2 )); do\n                            case "${c[i]}" in\n                                ">=") (( vkey >= c[i + 1] )) ;;\n                                ">") (( vkey > c[i + 1] )) ;;\n                                "<") (( vkey < c[i + 1] )) ;;\n                                "<=") (( vkey <= c[i + 1] )) ;;\n                                "=") (( vkey == c[i + 1] )) ;;\n                                "!=") (( vkey != c[i + 1] )) ;;\n                            esac || { matched=0; break; }\n                        done ;;\n                esac\n            elif version_in_range "$version" "$range"; then\n                matched=1\n            fi\n            range_hit["$range"]=$matched\n        fi\n        [ "${range_hit[$range]}" = 0 ] || hit["$ident"]=1\n        [ -n "$fix" ] || continue\n        # Lowest fix above VERSION, per advisory (integer keys when both\n        # sides are plain x.y.z, compare_versions otherwise).\n        lk="${lowest_key[$ident]:-}" lf="${lowest_fix[$ident]:-}"\n        if [ -n "$vkey" ] && [ -n "$fix_key" ]; then\n            (( fix_key > vkey )) || continue\n            if [ -n "$lk" ]; then\n                (( fix_key < lk )) || continue\n            elif [ -n "$lf" ]; then\n                compare_versions "$fix" "$lf"\n                [ "$COMPARE_RESULT" = -1 ] || continue\n            fi\n        else\n            compare_versions "$fix" "$version"\n            [ "$COMPARE_RESULT" = 1 ] || continue\n            if [ -n "$lf" ]; then\n                compare_versions "$fix" "$lf"\n                [ "$COMPARE_RESULT" = -1 ] || continue\n            fi\n        fi\n        lowest_key["$ident"]="$fix_key"\n        lowest_fix["$ident"]="$fix"\n    done <<< "${RT_INDEX[$rt]}"\n    IFS=\'|\' read -ra exacts <<< "${VULN_EXACT_LOOKUP[$key]:-}"\n    for candidate in "${exacts[@]}"; do\n        [ -n "$candidate" ] && version_matches_vulnerable "$version" "$candidate" || continue\n        while IFS= read -r rec; do\n            IFS=\';\' read -r severity ghsa cve source fix id <<< "$rec"\n            ident="${cve:-${ghsa:-$id}}"\n            [ -z "$ident" ] || hit["$ident"]=1\n        done <<< "${VULN_RECORDS[$key@$candidate]:-}"\n    done\n    if [ ${#hit[@]} -eq 0 ]; then\n        RT_AFFECTED_CACHE["$rt|$version"]=""\n        return 1\n    fi\n    RT_IDS=$(printf \'%s\\n\' "${!hit[@]}" | sort | tr \'\\n\' \' \')\n    RT_IDS="${RT_IDS% }"\n    for ident in "${!hit[@]}"; do\n        fix="${lowest_fix[$ident]:-}"\n        [ -n "$fix" ] || continue\n        if [ -n "$RT_FIX" ]; then\n            compare_versions "$fix" "$RT_FIX"\n            [ "$COMPARE_RESULT" = 1 ] || continue\n        fi\n        RT_FIX="$fix"\n    done\n    RT_AFFECTED_CACHE["$rt|$version"]="$RT_IDS|$RT_FIX"\n    return 0\n}\n\nruntime_display_name() {\n    case "$1" in\n        node) echo "Node.js" ;;\n        php) echo "PHP" ;;\n        *) echo "$1" ;;\n    esac\n}\n\n# Check the runtime versions of every RUNTIME_FILES entry (see the header).\nscan_runtimes() {\n    local file rt spec probe kind count before=${#VULNERABLE_PACKAGES[@]} warned=0\n    local -A seen=() warn_specs=() warn_ids=() warn_fix=() warn_kind=()\n    local ids n message label\n    # Monorepos repeat the same spec ("engines": {"node": ">=18"}) in every\n    # package: its advisory id list is formatted once (5 processes).\n    local -A ids_cache=()\n    count=$(printf \'%s\\n\' "$RUNTIME_FILES" | wc -l | tr -d \' \')\n    echo "\u{1F9E9} Checking runtime versions in $count file(s)..."\n    while IFS= read -r file; do\n        # Unreadable files never get here (runtime_files_with_versions).\n        [ -n "$file" ] || continue\n        # Per runtime: the specs to warn about, their advisories, the fix.\n        warn_specs=() warn_ids=() warn_fix=() warn_kind=()\n        while IFS=\'|\' read -r rt spec; do\n            [ -n "$rt" ] || continue\n            runtime_normalize_spec "$spec"\n            spec="$RT_SPEC"\n            [ -z "${seen[$file|$rt|$spec]+x}" ] || continue\n            seen["$file|$rt|$spec"]=1\n            if [[ "$spec" =~ ^[0-9]+\\.[0-9]+\\.[0-9]+$ ]]; then\n                check_vulnerability "runtime" "$rt" "$spec" "$file" || true\n                continue\n            fi\n            # Warnings belong to full scans, not to a --package-name lookup.\n            [ -z "${PACKAGE_FILTER:-}" ] || continue\n            if [[ "$spec" =~ ^[0-9]+$ ]]; then\n                probe="$spec.99999.99999" kind=line\n            elif [[ "$spec" =~ ^[0-9]+\\.[0-9]+$ ]]; then\n                probe="$spec.99999" kind=line\n            elif [[ "$spec" =~ [\\<\\>=^~|,*\\ ] ]]; then\n                runtime_range_floor "$spec"\n                [ -n "$RT_FLOOR" ] || continue\n                probe="$RT_FLOOR" kind=range\n            else\n                continue\n            fi\n            runtime_affected "$rt" "$probe" || continue\n            warn_specs["$rt"]+="${warn_specs[$rt]:+, }$spec"\n            warn_ids["$rt"]+="${warn_ids[$rt]:+ }$RT_IDS"\n            [ "$kind" = line ] && [ -n "${warn_kind[$rt]:-}" ] || warn_kind["$rt"]="$kind"\n            if [ -n "$RT_FIX" ]; then\n                if [ -z "${warn_fix[$rt]:-}" ]; then\n                    warn_fix["$rt"]="$RT_FIX"\n                else\n                    compare_versions "$RT_FIX" "${warn_fix[$rt]}"\n                    [ "$COMPARE_RESULT" != 1 ] || warn_fix["$rt"]="$RT_FIX"\n                fi\n            fi\n        done < <(runtime_specs "$file")\n\n        for rt in "${!warn_specs[@]}"; do\n            if [ -z "${ids_cache[${warn_ids[$rt]}]+x}" ]; then\n                # Newest advisories first (CVE-YYYY-NNNN).\n                # shellcheck disable=SC2086 # space-separated advisory ids\n                ids=$(printf \'%s\\n\' ${warn_ids[$rt]} | sort -u | sort -t- -k2,2nr -k3,3nr)\n                n=$(printf \'%s\\n\' "$ids" | wc -l | tr -d \' \')\n                ids=$(printf \'%s\\n\' "$ids" | head -n 3 | tr \'\\n\' \' \')\n                ids="${ids% }"\n                ids="${ids// /, }"\n                [ "$n" -le 3 ] || ids+=" (+$((n - 3)) more)"\n                ids_cache["${warn_ids[$rt]}"]="$ids"\n            fi\n            ids="${ids_cache[${warn_ids[$rt]}]}"\n            label="$(runtime_display_name "$rt") ${warn_specs[$rt]}"\n            if [ "${warn_kind[$rt]}" = line ]; then\n                message="$label: no release of this line fixes $ids"\n                [ -z "${warn_fix[$rt]:-}" ] || message+="; move to >= ${warn_fix[$rt]}"\n            else\n                message="$label allows vulnerable versions ($ids)"\n                [ -z "${warn_fix[$rt]:-}" ] || message+="; raise the minimum to >= ${warn_fix[$rt]}"\n            fi\n            echo -e "${YELLOW}\u26A0\uFE0F  [$file] $message${NC}"\n            RUNTIME_WARNINGS+=("[$file] $message")\n            warned=$((warned + 1))\n        done\n    done <<< "$RUNTIME_FILES"\n\n    if [ "${#VULNERABLE_PACKAGES[@]}" -eq "$before" ] && [ "$warned" -eq 0 ]; then\n        echo -e "${GREEN}\u2713 Runtime versions: no known vulnerability${NC}"\n    fi\n}\n# Write a JSON string without a subshell or a runtime JSON dependency.\njson_print_string() {\n    local value="$1" code char escaped\n    value="${value//\\\\/\\\\\\\\}"\n    value="${value//\\"/\\\\\\"}"\n    if [[ "$value" == *[$\'\\001\'-$\'\\037\']* ]]; then\n        for ((code = 1; code < 32; code++)); do\n            printf -v escaped \'\\\\%03o\' "$code"\n            printf -v char \'%b\' "$escaped"\n            printf -v escaped \'\\\\u%04x\' "$code"\n            value="${value//"$char"/"$escaped"}"\n        done\n    fi\n    printf \'"%s"\' "$value"\n}\n\n# Summary metadata of one finding: the most severe advisory\'s fields, the\n# version that fixes every advisory (see finalize_advisories) and, with\n# --go-reachability, whether the code calls it.\nexport_metadata() {\n    local eco="$1" pkg="$2" file="$3"\n    local key="${eco}:${pkg}"\n    severity="${VULN_METADATA_SEVERITY[$key]:-}"\n    ghsa="${VULN_METADATA_GHSA[$key]:-}"\n    cve="${VULN_METADATA_CVE[$key]:-}"\n    source="${VULN_METADATA_SOURCE[$key]:-}"\n    fixed_in="${VULN_METADATA_FIX[$key]:-}"\n    reachability_of "$file" "$key"\n    reachability="$REACHABILITY"\n}\n\n# The report is written even when nothing is vulnerable, so a CI job never\n# picks up a stale report from an earlier run.\nexport_vulnerabilities_json() {\n    local output_file="${1:-vulnerabilities.json}"\n    local vuln file eco pkg severity ghsa cve source fixed_in reachability field first=true\n    local advisories advisory a_first a_sev a_ghsa a_cve a_source a_fix a_id\n    local -A unique=()\n    {\n        printf \'{\\n  "vulnerabilities": [\'\n        for vuln in "${VULNERABLE_PACKAGES[@]}"; do\n            IFS=\'|\' read -r file eco pkg <<< "$vuln"\n            unique["${eco}:${pkg}"]=1\n            if [ "$first" = true ]; then first=false; printf \'\\n\'; else printf \',\\n\'; fi\n            export_metadata "$eco" "$pkg" "$file"\n            printf \'    {"package": \'; json_print_string "$pkg"\n            printf \', "name": \'; json_print_string "${pkg%@*}"\n            printf \', "version": \'; json_print_string "${pkg##*@}"\n            printf \', "file": \'; json_print_string "$file"\n            printf \', "ecosystem": \'; json_print_string "$eco"\n            for field in severity ghsa cve source fixed_in reachability; do\n                if [ -n "${!field}" ]; then\n                    printf \', "%s": \' "$field"\n                    json_print_string "${!field}"\n                fi\n            done\n            printf \', "advisories": [\'\n            advisories="${VULN_ADVISORIES[$eco:$pkg]:-}"\n            a_first=true\n            while [ -n "$advisories" ]; do\n                advisory="${advisories%%||*}"\n                if [ "$advisory" = "$advisories" ]; then advisories=""; else advisories="${advisories#*||}"; fi\n                IFS=\';\' read -r a_sev a_ghsa a_cve a_source a_fix a_id <<< "$advisory"\n                [ -n "$a_sev$a_ghsa$a_cve$a_source$a_fix$a_id" ] || continue\n                if [ "$a_first" = true ]; then a_first=false; else printf \', \'; fi\n                printf \'{"severity": \'; json_print_string "$a_sev"\n                printf \', "ghsa": \'; json_print_string "$a_ghsa"\n                printf \', "cve": \'; json_print_string "$a_cve"\n                printf \', "id": \'; json_print_string "$a_id"\n                printf \', "source": \'; json_print_string "$a_source"\n                printf \', "fix": \'; json_print_string "$a_fix"\n                printf \'}\'\n            done\n            printf \']}\'\n        done\n        [ "$first" = true ] || printf \'\\n  \'\n        printf \'],\\n  "summary": {\\n\'\n        printf \'    "total_unique_vulnerabilities": %s,\\n\' "${#unique[@]}"\n        printf \'    "total_occurrences": %s\\n\' "${#VULNERABLE_PACKAGES[@]}"\n        printf \'  }\\n}\\n\'\n    } > "$output_file" || return 1\n    echo -e "${GREEN}\u2713 JSON report exported to: $output_file${NC}"\n}\n\n# Quote one CSV cell. A cell starting with = + - @ (or a tab/CR) is a formula\n# in spreadsheet applications: prefix it with an apostrophe.\ncsv_cell() {\n    local value="$1"\n    case "$value" in\n        [=+@-]*|$\'\\t\'*|$\'\\r\'*) value="\'$value" ;;\n    esac\n    printf \'"%s"\' "${value//\\"/\\"\\"}"\n}\n\nexport_vulnerabilities_csv() {\n    local output_file="${1:-vulnerabilities.csv}"\n    local vuln file eco pkg severity ghsa cve source fixed_in reachability value first\n    {\n        printf \'package,file,severity,ghsa,cve,source,ecosystem,version,fix,reachability\\n\'\n        for vuln in "${VULNERABLE_PACKAGES[@]}"; do\n            IFS=\'|\' read -r file eco pkg <<< "$vuln"\n            export_metadata "$eco" "$pkg" "$file"\n            first=true\n            for value in "$pkg" "$file" "$severity" "$ghsa" "$cve" "$source" "$eco" "${pkg##*@}" "$fixed_in" "$reachability"; do\n                if [ "$first" = true ]; then first=false; else printf \',\'; fi\n                csv_cell "$value"\n            done\n            printf \'\\n\'\n        done\n    } > "$output_file" || return 1\n    echo -e "${GREEN}\u2713 CSV report exported to: $output_file${NC}"\n}\n# ============================================================================\n# Vulnerability Feed Generation Functions\n# ============================================================================\n#\n# Feeds are generated from two upstream sources, both using the OSV schema:\n#   - GHSA:  a single sparse clone of github/advisory-database, scanned once,\n#            emitting PURL lines for every supported ecosystem at once.\n#   - OSV:   one all.zip per ecosystem from the OSV GCS bucket.\n#   - Runtime: the Node.js / PHP advisories of the OSV "Bitnami" ecosystem\n#            (fetch_runtime), checked against the runtime a project targets.\n#\n# jq is REQUIRED here (fetch path only); the scan path stays jq-free.\n#\n# FEED_ECOSYSTEM_MAP is the single source of truth mapping:\n#   purl-type | OSV/GHSA ecosystem string | OSV zip directory (URL-encoded)\n#\n# The "ecosystem string" is matched against .affected[].package.ecosystem in the\n# advisory JSON; the "zip directory" is the path segment used to fetch\n# https://osv-vulnerabilities.storage.googleapis.com/<dir>/all.zip .\n#\n# Empirically verified (HEAD requests to the OSV bucket + ecosystems.txt index +\n# real advisory JSON): all 12 directories return 200 and the ecosystem strings\n# below match the upstream data exactly (notably "SwiftURL" and "GitHub Actions").\n# ============================================================================\nFEED_ECOSYSTEM_MAP=(\n    "npm|npm|npm"\n    "pypi|PyPI|PyPI"\n    "golang|Go|Go"\n    "maven|Maven|Maven"\n    "cargo|crates.io|crates.io"\n    "gem|RubyGems|RubyGems"\n    "composer|Packagist|Packagist"\n    "nuget|NuGet|NuGet"\n    "pub|Pub|Pub"\n    "hex|Hex|Hex"\n    "swift|SwiftURL|SwiftURL"\n    "githubactions|GitHub Actions|GitHub%20Actions"\n)\n\n# Space-separated list of every supported purl type, in table order.\nfeed_all_types() {\n    local entry types=""\n    for entry in "${FEED_ECOSYSTEM_MAP[@]}"; do\n        types="${types:+$types }${entry%%|*}"\n    done\n    printf \'%s\' "$types"\n}\n\n# Print the OSV/GHSA ecosystem string for a purl type (empty if unsupported).\nfeed_eco_string() {\n    local type="$1" entry t eco dir\n    for entry in "${FEED_ECOSYSTEM_MAP[@]}"; do\n        IFS=\'|\' read -r t eco dir <<< "$entry"\n        if [ "$t" = "$type" ]; then printf \'%s\' "$eco"; return 0; fi\n    done\n    return 0\n}\n\n# Print the OSV zip directory (URL-encoded) for a purl type.\nfeed_osv_dir() {\n    local type="$1" entry t eco dir\n    for entry in "${FEED_ECOSYSTEM_MAP[@]}"; do\n        IFS=\'|\' read -r t eco dir <<< "$entry"\n        if [ "$t" = "$type" ]; then printf \'%s\' "$dir"; return 0; fi\n    done\n    return 0\n}\n\n# Build a JSON object mapping {ecosystem-string: purl-type} for the given purl\n# types, consumed by the shared jq program via --argjson. Ecosystem strings are\n# simple ASCII (no quotes/backslashes) so hand-building the JSON is safe.\nfeed_build_ecomap() {\n    local out="{" first=1 t eco\n    for t in "$@"; do\n        [ -z "$t" ] && continue\n        eco=$(feed_eco_string "$t")\n        [ -z "$eco" ] && continue\n        [ "$first" -eq 0 ] && out="$out,"\n        out="$out\\"$eco\\":\\"$t\\""\n        first=0\n    done\n    printf \'%s}\' "$out"\n}\n\n# Shared jq program. Emits one PURL line per affected package/range for every\n# ecosystem present in $ecomap. Reproduces the legacy npm emission byte-for-byte\n# (npm\'s transform is identity and $ecomap={"npm":"npm"} matches the old filter),\n# while adding per-type name canonicalization that MUST match canon_purl_name in\n# the scan-side parser (src/31-parsers-purl.sh):\n#   pypi           -> lowercase, collapse runs of [-_.] to a single \'-\'\n#   maven          -> groupId:artifactId emitted as groupId/artifactId\n#   composer/nuget -> lowercase\n#   githubactions  -> strip any scheme and "github.com/", lowercase\n#   swift          -> strip any scheme, trailing "/" and ".git", lowercase\n#   npm/golang/cargo/gem/pub/hex -> name as-is\n# $source is "ghsa" or "osv" (the source= param). Severity: the advisory\'s own\n# (GHSA database_specific), else the CVSS 3.x base score computed from the\n# first CVSS_V3 vector, MAL- (malicious package) advisories being critical.\n# shellcheck disable=SC2089,SC2090 # a jq program, passed through the environment\nFEED_JQ_PROGRAM=\'\ndef emit_name($type; $name):\n    if $type == "pypi" then ($name | ascii_downcase | gsub("[-_.]+"; "-"))\n    elif $type == "maven" then ($name | gsub(":"; "/"))\n    elif ($type == "composer" or $type == "nuget") then ($name | ascii_downcase)\n    elif $type == "githubactions" then ($name | sub("^[A-Za-z][A-Za-z0-9+.-]*://"; "") | sub("^github\\\\.com/"; "") | sub("/+$"; "") | ascii_downcase)\n    elif $type == "swift" then ($name | sub("^[A-Za-z][A-Za-z0-9+.-]*://"; "") | sub("/+$"; "") | sub("\\\\.git$"; "") | ascii_downcase)\n    else $name end;\n\n# CVSS 3.x base score of a vector ("CVSS:3.1/AV:N/AC:L/..."), null when the\n# vector is not a complete 3.x one. Roundup as defined by CVSS 3.1.\ndef roundup: ((. * 100000) | round) as $i\n    | if ($i % 10000) == 0 then $i / 100000 else (($i / 10000 | floor) + 1) / 10 end;\ndef cvss3_score:\n    if (type == "string" and test("^CVSS:3\\\\.[01]/")) then\n        # A missing metric reads as "" so the lookups give null, never an error.\n        ((split("/")[1:] | map(split(":") | {(.[0]): (.[1] // "")}) | add) // {}) as $m\n        | ({"U": false, "C": true}[$m.S // ""]) as $changed\n        | ({"N": 0.85, "A": 0.62, "L": 0.55, "P": 0.2}[$m.AV // ""]) as $av\n        | ({"L": 0.77, "H": 0.44}[$m.AC // ""]) as $ac\n        | (if $changed then {"N": 0.85, "L": 0.68, "H": 0.5} else {"N": 0.85, "L": 0.62, "H": 0.27} end)[$m.PR // ""] as $pr\n        | ({"N": 0.85, "R": 0.62}[$m.UI // ""]) as $ui\n        | ([$m.C, $m.I, $m.A] | map({"H": 0.56, "L": 0.22, "N": 0}[. // ""])) as $cia\n        | if ([$av, $ac, $pr, $ui, $changed] + $cia | any(. == null)) then null else\n            (1 - ((1 - $cia[0]) * (1 - $cia[1]) * (1 - $cia[2]))) as $iss\n            | (if $changed then 7.52 * ($iss - 0.029) - 3.25 * pow($iss - 0.02; 15) else 6.42 * $iss end) as $impact\n            | (8.22 * $av * $ac * $pr * $ui) as $exploit\n            | if $impact <= 0 then 0\n              elif $changed then ([1.08 * ($impact + $exploit), 10] | min | roundup)\n              else ([$impact + $exploit, 10] | min | roundup) end\n          end\n    elif (type == "string" and test("^[0-9]+(\\\\.[0-9]+)?$")) then tonumber\n    else null end;\ndef score_severity:\n    if . >= 9.0 then "CRITICAL"\n    elif . >= 7.0 then "HIGH"\n    elif . >= 4.0 then "MODERATE"\n    elif . > 0 then "LOW"\n    else null end;\n\n# Every field is read through a type guard: one malformed value must not\n# make jq fail, which would drop every package of the advisory file.\nselect(type == "object" and .withdrawn == null) |\n(.id | strings // "") as $id |\n(if ($id | startswith("MAL-")) then "CRITICAL"\n else ((.database_specific | objects | .severity | strings) //\n       first(.severity[]? | objects | select(.type == "CVSS_V3") | .score | cvss3_score | numbers | score_severity | strings) //\n       "UNKNOWN") end) as $severity |\n\n[.aliases[]? | strings] as $aliases |\n# The GHSA id is the advisory id itself (GHSA feed, and OSV copies of GHSA\n# advisories) or else a GHSA alias. Any other non-CVE id (PYSEC-, GO-,\n# RUSTSEC-, MAL-, ...) is kept as id=.\n(if ($id | startswith("GHSA-")) then $id\n else ($aliases | map(select(startswith("GHSA-"))) | .[0] // "") end) as $ghsa |\n(if ($id | startswith("CVE-")) then $id\n else ($aliases | map(select(startswith("CVE-"))) | .[0] // "") end) as $cve |\n(if ($id | startswith("GHSA-") or startswith("CVE-")) then "" else $id end) as $other_id |\n([\n    ("severity=" + ($severity | ascii_downcase)),\n    (if $ghsa != "" then "ghsa=" + $ghsa else empty end),\n    (if $cve != "" then "cve=" + $cve else empty end),\n    (if $other_id != "" then "id=" + $other_id else empty end),\n    ("source=" + $source)\n] | join("&")) as $params |\n\n.affected[]? | objects |\n((.package | objects | .ecosystem | strings) // "") as $e |\n($ecomap[$e] // "") as $type |\nselect($type != "") |\n((.package.name | strings) // "") as $name |\nselect($name != "") |\n# RustSec informational notices "unmaintained" and "notice" are warnings\n# about a crate, not vulnerabilities of its versions (cargo audit reports them\n# apart): listing them would flag every version as vulnerable. "unsound"\n# notices describe a defect of specific versions and are kept.\nselect(((.database_specific | objects | .informational) // null) as $info\n       | $info == null or $info == "unsound") |\n(emit_name($type; $name)) as $pkg |\n# GHSA records the upper bound of an interval with no known fix here\n# ("< 3.0.0", "<= 2.26.11"): it bounds the open interval, but is no fix.\n((.database_specific | objects | .last_known_affected_version_range | strings) // "" | gsub(" "; "")\n | if test("^<=?[0-9A-Za-z]") then . else "" end) as $last_known |\n# Ranges that define an interval (a range with only "limit" events does not).\n[.ranges[]? | objects | select(.type == "SEMVER" or .type == "ECOSYSTEM")\n | select([.events[]? | objects | select(.introduced or .fixed or .last_affected)] | length > 0)] as $ranges |\n(\n    ($ranges[] |\n        [.events[]? | objects] |\n        ([.[] | select(.limit) | .limit | strings] | if length == 0 then ["*"] else . end) as $limits |\n        map(select(.introduced or .fixed or .last_affected)) |\n        if length > 0 then\n            reduce .[] as $event (\n                {current: {}, intervals: []};\n                if $event.introduced then\n                    # A second "introduced" inside an open interval changes\n                    # nothing: the versions since the first one stay affected.\n                    if .current.introduced then . else .current = {introduced: $event.introduced} end\n                elif $event.fixed then\n                    .intervals += [(.current + {fixed: $event.fixed})] |\n                    .current = {}\n                elif $event.last_affected then\n                    .intervals += [(.current + {last_affected: $event.last_affected})] |\n                    .current = {}\n                else . end\n            ) |\n            (.intervals + (if .current.introduced then [.current] else [] end))[] |\n            . as $interval |\n            ($interval.fixed == null and $interval.last_affected == null and $last_known != "") as $bounded |\n            ([\n                (if .introduced then ">=" + .introduced else empty end),\n                (if .fixed then "<" + .fixed else empty end),\n                (if .last_affected then "<=" + .last_affected else empty end),\n                (if $bounded then $last_known else empty end)\n            ] | join(" ")) as $bounds |\n            $limits[] as $limit |\n            (if $limit == "*" then "" else " <" + $limit end) as $cap |\n            # A limit or a last-known bound is an applicability boundary, not a\n            # known patched version.\n            (if ($limit != "*" or $bounded) and ($interval.fixed == null) then "&fixed=" else "" end) as $fix_override |\n            "pkg:\\($type)/\\($pkg)@\\($bounds)\\($cap)?\\($params)\\($fix_override)"\n        else empty end\n    ),\n    # Exact versions only for entries without a SEMVER/ECOSYSTEM interval (e.g.\n    # MAL advisories, or ranges with only "limit" events): OSV enumerates every\n    # version a range covers, so emitting them alongside ranges is redundant and\n    # pushes feeds past the GitHub 100 MB file limit.\n    (if ($ranges | length) == 0 then\n        .versions[]? | strings | select(. != "") |\n        "pkg:\\($type)/\\($pkg)@\\(.)?\\($params)"\n    else empty end)\n)\'\n\n# Run FEED_JQ_PROGRAM over every *.json file under an input directory, in\n# parallel, and append the raw (unsorted) PURL lines to a combined file.\n#   $1 input dir   $2 source ("ghsa"|"osv")   $3 ecomap JSON   $4 combined out\n#\n# Robustness: 8 parallel workers each write to their OWN temp file \u2014 never a\n# shared pipe \u2014 because concurrent jq processes writing to one pipe interleave\n# non-atomically and tear PURL lines (observed frequently under load). Each\n# worker runs jq once per batch of 400 files (one process start instead of\n# 400); a batch that jq cannot process is redone file by file, so a malformed\n# advisory is isolated: it is skipped and counted (its partial output\n# discarded) instead of failing the whole ecosystem. A failed write, a failed\n# worker, no input file, or every file failing prevents replacement of the\n# existing feed. Callers sort/split the combined file (LC_ALL=C for locale\n# stability).\nfeed_emit_raw() {\n    local in_dir="$1" src="$2" ecomap="$3" combined="$4"\n    [ -d "$in_dir" ] && command -v jq >/dev/null 2>&1 || return 1\n    local parts_dir total skipped\n    total=$(find "$in_dir" -name "*.json" -type f | wc -l | tr -d \' \')\n    if [ "$total" -eq 0 ]; then\n        echo "Error: no advisory file found in $in_dir; previous output preserved" >&2\n        return 1\n    fi\n    parts_dir=$(mktemp -d) || return 1\n    # shellcheck disable=SC2090\n    export FEED_JQ_PROGRAM\n    if ! (set -o pipefail; find "$in_dir" -name "*.json" -type f -print0 | \\\n        FEED_SRC="$src" FEED_ECOMAP="$ecomap" PARTS_DIR="$parts_dir" \\\n        xargs -0 -P 8 -n 400 sh -c \'\n            out=$(mktemp "$PARTS_DIR/part.XXXXXX") || exit 1\n            bad=$(mktemp "$PARTS_DIR/bad.XXXXXX") || exit 1\n            emit() { jq -r --arg source "$FEED_SRC" --argjson ecomap "$FEED_ECOMAP" "$FEED_JQ_PROGRAM" "$@" 2>/dev/null; }\n            if ! emit "$@" > "$out"; then\n                : > "$out" || exit 1\n                for f in "$@"; do\n                    if lines=$(emit "$f"); then\n                        if [ -n "$lines" ]; then printf "%s\\n" "$lines" >> "$out" || exit 1; fi\n                    else\n                        printf "%s\\n" "$f" >> "$bad" || exit 1\n                    fi\n                done\n            fi\n        \' _); then\n        echo "Error: Failed to generate feed; previous output preserved" >&2\n        rm -rf "$parts_dir"\n        return 1\n    fi\n    skipped=$(cat "$parts_dir"/bad.* 2>/dev/null | wc -l | tr -d \' \')\n    if [ "$skipped" -gt 0 ]; then\n        echo "\u26A0\uFE0F  Skipped $skipped of $total advisory file(s) that jq could not process" >&2\n        if [ "$skipped" -ge "$total" ]; then\n            echo "Error: no advisory could be processed; previous output preserved" >&2\n            rm -rf "$parts_dir"\n            return 1\n        fi\n    fi\n    if ! cat "$parts_dir"/part.* > "$combined"; then\n        echo "Error: unable to write $combined; previous output preserved" >&2\n        rm -rf "$parts_dir"\n        return 1\n    fi\n    rm -rf "$parts_dir"\n}\n\n# Replace a feed file with a staged one, atomically, only when the staged file\n# has content: an empty result means a broken download or parse, not a feed\n# with no advisory. Feed files are world-readable like committed ones (mktemp\n# creates them 0600). Returns non-zero when the previous file was kept.\nfeed_install() {\n    local staged="$1" out_file="$2"\n    if [ ! -s "$staged" ]; then\n        echo "\u26A0\uFE0F  No entry generated for ${out_file##*/}; previous file preserved" >&2\n        rm -f "$staged"\n        return 1\n    fi\n    chmod 644 "$staged" && mv "$staged" "$out_file" && return 0\n    rm -f "$staged"\n    return 1\n}\n\n# Purl types requested on the command line (--fetch-ghsa / --fetch-osv):\n# lockfile aliases (go, rust, python...) map to their purl type. Sets\n# FEED_TYPES; returns non-zero, after an error message, when a token is not\n# a supported ecosystem.\nfeed_resolve_types() {\n    FEED_TYPES=()\n    local token type\n    for token in "$@"; do\n        [ -n "$token" ] || continue\n        type=$(ecosystem_alias_to_purl "$token")\n        if [ -z "$(feed_eco_string "$type")" ]; then\n            echo "Error: unknown ecosystem \'$token\' (supported: $(feed_all_types))" >&2\n            return 1\n        fi\n        case " ${FEED_TYPES[*]} " in *" $type "*) ;; *) FEED_TYPES+=("$type") ;; esac\n    done\n}\n\n# Create (if needed) and print the absolute feed output directory.\nfeed_output_dir() {\n    local dir="${FEED_OUTPUT_DIR:-data}"\n    mkdir -p "$dir" && (cd "$dir" && pwd)\n}\n\n# Fetch GitHub Security Advisory data for the requested ecosystems.\n# Usage: fetch_ghsa [purl-type ...]   (default: all supported types)\n# Writes data/ghsa.purl (npm, legacy name) and data/ghsa-<type>.purl (others)\n# into ${FEED_OUTPUT_DIR:-data}. Performs a SINGLE sparse clone and a SINGLE\n# parallel jq pass over the advisory files, then splits the combined output by\n# pkg:<type>/ prefix \u2014 never cloning or scanning per ecosystem.\nfetch_ghsa() {\n    command -v jq >/dev/null 2>&1 || { echo "Error: jq is required to generate feeds" >&2; return 1; }\n    local -a types=("$@")\n    if [ "${#types[@]}" -eq 0 ]; then\n        read -ra types <<< "$(feed_all_types)"\n    fi\n\n    feed_resolve_types "${types[@]}" || return 1\n    local -a valid_types=("${FEED_TYPES[@]}")\n    if [ "${#valid_types[@]}" -eq 0 ]; then\n        echo "Error: no ecosystem to fetch" >&2\n        return 1\n    fi\n\n    local out_dir\n    out_dir=$(feed_output_dir) || { echo "Error: unable to create the feed directory" >&2; return 1; }\n\n    local ecomap t\n    ecomap=$(feed_build_ecomap "${valid_types[@]}")\n\n    local ghsa_tmp\n    ghsa_tmp=$(mktemp -d) || return 1\n    register_temp_dir "$ghsa_tmp"\n    local GHSA_REPO="https://github.com/github/advisory-database.git"\n    local CLONE_DIR="$ghsa_tmp/advisory-database"\n\n    echo "Cloning GitHub Advisory Database (all reviewed advisories)..." >&2\n\n    # Shallow clone with sparse checkout for all reviewed advisories\n    if ! git clone --filter=blob:none --no-checkout --depth 1 "$GHSA_REPO" "$CLONE_DIR" > "$ghsa_tmp/clone.log" 2>&1 || ! (\n        cd "$CLONE_DIR" || exit 1\n        git sparse-checkout init --cone &&\n        git sparse-checkout set advisories/github-reviewed &&\n        git checkout\n    ) > "$ghsa_tmp/checkout.log" 2>&1; then\n        echo "Error: Failed to fetch GHSA database; previous feeds preserved" >&2\n        rm -rf "$ghsa_tmp"\n        return 1\n    fi\n\n    echo "Processing GHSA advisories for: ${valid_types[*]}" >&2\n\n    local file_count\n    file_count=$(find "$CLONE_DIR/advisories/github-reviewed" -name "*.json" -type f | wc -l | tr -d \' \')\n    echo "Found $file_count advisory files" >&2\n    echo "Using parallel processing (single pass, all ecosystems)..." >&2\n\n    # SINGLE parallel jq pass emitting PURLs for every requested ecosystem.\n    local combined="$ghsa_tmp/combined.purl"\n    if ! feed_emit_raw "$CLONE_DIR/advisories/github-reviewed" "ghsa" "$ecomap" "$combined"; then\n        rm -rf "$ghsa_tmp"\n        return 1\n    fi\n\n    # Split combined output by pkg:<type>/ prefix into per-ecosystem files.\n    local base out_file line_count staged failed=0\n    for t in "${valid_types[@]}"; do\n        base=$(default_feed_filename "ghsa" "$t")\n        out_file="$out_dir/$base"\n        # LC_ALL=C: deterministic byte-order sort, reproducible across locales\n        # (matches the CI runner and keeps committed feed diffs to real churn).\n        if ! staged=$(mktemp "$out_file.tmp.XXXXXX"); then\n            failed=1\n            continue\n        fi\n        if ! { grep "^pkg:$t/" "$combined" || true; } | LC_ALL=C sort -u > "$staged" ||\n            ! feed_install "$staged" "$out_file"; then\n            rm -f "$staged"\n            failed=1\n            continue\n        fi\n        line_count=$(wc -l < "$out_file" | tr -d \' \')\n        echo "  \u2192 $base: $line_count entries" >&2\n    done\n\n    rm -rf "$ghsa_tmp"\n    echo "GHSA processing complete" >&2\n    return "$failed"\n}\n\n# Fetch OSV vulnerability data for the requested ecosystems.\n# Usage: fetch_osv [purl-type ...]   (default: all supported types)\n# Writes data/osv.purl (npm, legacy name) and data/osv-<type>.purl (others)\n# into ${FEED_OUTPUT_DIR:-data}. Downloads one all.zip per ecosystem and reuses\n# the shared jq emission via the existing xargs -P 8 parallel pattern.\nfetch_osv() {\n    command -v jq >/dev/null 2>&1 || { echo "Error: jq is required to generate feeds" >&2; return 1; }\n    local failed=0\n    local -a types=("$@")\n    if [ "${#types[@]}" -eq 0 ]; then\n        read -ra types <<< "$(feed_all_types)"\n    fi\n\n    feed_resolve_types "${types[@]}" || return 1\n    types=("${FEED_TYPES[@]}")\n    if [ "${#types[@]}" -eq 0 ]; then\n        echo "Error: no ecosystem to fetch" >&2\n        return 1\n    fi\n\n    local out_dir\n    out_dir=$(feed_output_dir) || { echo "Error: unable to create the feed directory" >&2; return 1; }\n\n    local t eco_string osv_dir ecomap zip_file eco_tmp out_file base file_count line_count\n    for t in "${types[@]}"; do\n        eco_string=$(feed_eco_string "$t")\n        osv_dir=$(feed_osv_dir "$t")\n        ecomap=$(feed_build_ecomap "$t")\n        base=$(default_feed_filename "osv" "$t")\n        out_file="$out_dir/$base"\n\n        if ! eco_tmp=$(mktemp -d); then\n            failed=1\n            continue\n        fi\n        register_temp_dir "$eco_tmp"\n        zip_file="$eco_tmp/all.zip"\n\n        echo "Fetching OSV $eco_string vulnerabilities..." >&2\n        if ! curl -fsSL --connect-timeout 10 --max-time 300 "https://osv-vulnerabilities.storage.googleapis.com/${osv_dir}/all.zip" -o "$zip_file"; then\n            echo "\u26A0\uFE0F  Failed to download OSV feed for $t; skipping" >&2\n            rm -rf "$eco_tmp"\n            failed=1\n            continue\n        fi\n\n        echo "Extracting $eco_string vulnerabilities..." >&2\n        if ! unzip -q "$zip_file" -d "$eco_tmp" 2>/dev/null; then\n            echo "\u26A0\uFE0F  Failed to extract OSV feed for $t; skipping" >&2\n            rm -rf "$eco_tmp"\n            failed=1\n            continue\n        fi\n\n        file_count=$(find "$eco_tmp" -name "*.json" -type f | wc -l | tr -d \' \')\n        echo "Processing $file_count $eco_string files (parallel)..." >&2\n\n        # Robust parallel emission, then deterministic C-locale sort/dedupe.\n        local combined="$eco_tmp/combined.purl"\n        local staged\n        if ! feed_emit_raw "$eco_tmp" "osv" "$ecomap" "$combined"; then\n            rm -rf "$eco_tmp"\n            failed=1\n            continue\n        fi\n        if ! staged=$(mktemp "$out_file.tmp.XXXXXX"); then\n            rm -rf "$eco_tmp"\n            failed=1\n            continue\n        fi\n        if ! LC_ALL=C sort -u "$combined" > "$staged" || ! feed_install "$staged" "$out_file"; then\n            rm -f "$staged"\n            rm -rf "$eco_tmp"\n            failed=1\n            continue\n        fi\n\n        line_count=$(wc -l < "$out_file" | tr -d \' \')\n        echo "  \u2192 $base: $line_count entries" >&2\n\n        rm -rf "$eco_tmp"\n    done\n\n    echo "OSV processing complete" >&2\n    return "$failed"\n}\n\n# Runtimes whose own advisories are tracked (purl type "runtime"). The names\n# are Bitnami package names; add one here to cover another runtime.\nRUNTIME_FEED_PACKAGES="node php"\n\n# Fetch runtime advisories (Node.js, PHP, ...) from the OSV Bitnami ecosystem,\n# which carries the upstream version ranges of each runtime CVE.\n# Writes ${FEED_OUTPUT_DIR:-data}/osv-runtime.purl (pkg:runtime/<name>@<range>).\n# Only BIT-<name>-<year>-* advisories are extracted: the BIT-<name>-min-*\n# copies describe the same CVEs for Bitnami\'s minimal images.\nfetch_runtime() {\n    command -v jq >/dev/null 2>&1 || { echo "Error: jq is required to generate feeds" >&2; return 1; }\n    local out_dir\n    out_dir=$(feed_output_dir) || { echo "Error: unable to create the feed directory" >&2; return 1; }\n\n    local out_file="$out_dir/osv-runtime.purl" tmp pkg names="" staged line_count\n    local -a patterns=()\n    for pkg in $RUNTIME_FEED_PACKAGES; do\n        patterns+=("BIT-$pkg-[0-9]*")\n        names="${names:+$names|}$pkg"\n    done\n    tmp=$(mktemp -d) || return 1\n    register_temp_dir "$tmp"\n\n    echo "Fetching OSV Bitnami runtime vulnerabilities ($RUNTIME_FEED_PACKAGES)..." >&2\n    if ! curl -fsSL --connect-timeout 10 --max-time 300 "https://osv-vulnerabilities.storage.googleapis.com/Bitnami/all.zip" -o "$tmp/all.zip"; then\n        echo "\u26A0\uFE0F  Failed to download the OSV Bitnami feed; previous runtime feed preserved" >&2\n        rm -rf "$tmp"\n        return 1\n    fi\n    mkdir "$tmp/advisories"\n    if ! unzip -q "$tmp/all.zip" "${patterns[@]}" -d "$tmp/advisories" 2>/dev/null; then\n        echo "\u26A0\uFE0F  Failed to extract the runtime advisories; previous runtime feed preserved" >&2\n        rm -rf "$tmp"\n        return 1\n    fi\n\n    if ! feed_emit_raw "$tmp/advisories" "osv" \'{"Bitnami":"runtime"}\' "$tmp/combined.purl"; then\n        rm -rf "$tmp"\n        return 1\n    fi\n    staged=$(mktemp "$out_file.tmp.XXXXXX") || { rm -rf "$tmp"; return 1; }\n    # Other Bitnami packages listed in the same advisories are dropped.\n    if ! { grep -E "^pkg:runtime/($names)@" "$tmp/combined.purl" || true; } | LC_ALL=C sort -u > "$staged" ||\n        ! feed_install "$staged" "$out_file"; then\n        echo "\u26A0\uFE0F  No runtime advisory could be generated; previous runtime feed preserved" >&2\n        rm -f "$staged"\n        rm -rf "$tmp"\n        return 1\n    fi\n    rm -rf "$tmp"\n    line_count=$(wc -l < "$out_file" | tr -d \' \')\n    echo "  \u2192 osv-runtime.purl: $line_count entries" >&2\n}\n\n# Main orchestration function to fetch all PURL vulnerability feeds\n# (GHSA + OSV) for every supported ecosystem.\nfetch_all() {\n    local output_dir="${1:-data}"\n\n    echo "========================================="\n    echo "Vulnerability PURL Feed Generator"\n    echo "========================================="\n    echo ""\n\n    mkdir -p "$output_dir" || return 1\n\n    export FEED_OUTPUT_DIR="$output_dir"\n\n    # An OSV failure must not prevent the GHSA feeds: run both, report both.\n    local status=0\n\n    # Generate OSV feeds (one zip per ecosystem)\n    echo "Generating OSV feeds for all ecosystems..."\n    fetch_osv || status=1\n    echo ""\n\n    # Generate GHSA feeds (single clone, single pass, split per ecosystem)\n    echo "Generating GHSA feeds for all ecosystems..."\n    fetch_ghsa || status=1\n    echo ""\n\n    # Generate the runtime feed (Node.js, PHP: OSV Bitnami advisories)\n    echo "Generating the runtime feed..."\n    fetch_runtime || status=1\n    echo ""\n\n    unset FEED_OUTPUT_DIR\n\n    echo "========================================="\n    echo "Feed generation complete!"\n    echo "========================================="\n    echo "Per-ecosystem totals:"\n    local f count total=0\n    for f in "$output_dir"/*.purl; do\n        [ -e "$f" ] || continue\n        count=$(wc -l < "$f" | tr -d \' \')\n        total=$((total + count))\n        printf \'  - %-24s %s\\n\' "$(basename "$f")" "$count"\n    done\n    echo "  ---------------------------------------"\n    printf \'  - %-24s %s\\n\' "TOTAL" "$total"\n    echo ""\n    [ "$status" -eq 0 ] || echo "\u26A0\uFE0F  Some feeds could not be generated; previous files were kept" >&2\n    return "$status"\n}\n\n# find_default_source runs in command substitutions: resolve the installation\n# paths it probes once, in the calling shell, so they are not recomputed\n# (brew --prefix) for every feed. Only needed when a built-in feed is loaded.\nprepare_default_source_lookup() {\n    resolve_script_home\n    [ -d "$SCRIPT_HOME/data" ] || resolve_brew_prefix\n}\n\n# Find default source file with fallback logic. Tries, in order:\n# 1. the data/ directory next to this script (symlinks resolved: a git\n#    checkout, a release, Homebrew or Docker through their symlinks)\n# 2. the Homebrew installation path\n# 3. the Docker /app/data/ directory\n# 4. the remote GitHub URL\n# 5. ./data/ in the current directory, only when nothing else is reachable\n#    (offline piped run), with a warning\n# The scanned project is usually the current directory: its own data/ must\n# never replace the built-in feeds while those can be reached.\n# Returns path/URL if found, empty string if not found\nfind_default_source() {\n    local source_file="$1"  # e.g., "ghsa.purl" or "osv.purl"\n\n    resolve_script_home\n    if [ -n "$SCRIPT_HOME" ] && [ -f "$SCRIPT_HOME/data/$source_file" ]; then\n        echo "$SCRIPT_HOME/data/$source_file"\n        return 0\n    fi\n\n    resolve_brew_prefix\n    if [ -n "$BREW_PREFIX" ] && [ -f "$BREW_PREFIX/share/package-checker/data/$source_file" ]; then\n        echo "$BREW_PREFIX/share/package-checker/data/$source_file"\n        return 0\n    fi\n\n    # Try Docker /app/data/ directory\n    if [ -f "/app/data/$source_file" ]; then\n        echo "/app/data/$source_file"\n        return 0\n    fi\n\n    local github_url="https://raw.githubusercontent.com/maxgfr/package-checker.sh/refs/heads/main/data/$source_file"\n    if curl --output /dev/null --silent --head --fail --connect-timeout 10 --max-time 30 "$github_url" 2>/dev/null; then\n        echo "$github_url"\n        return 0\n    fi\n\n    if [ -f "./data/$source_file" ]; then\n        echo -e "${YELLOW}\u26A0\uFE0F  Warning: built-in feeds unreachable; using ./data/$source_file from the current directory${NC}" >&2\n        echo "./data/$source_file"\n        return 0\n    fi\n\n    # Nothing found\n    echo ""\n    return 1\n}\n\n# Main execution\n# ============================================================================\n# Per-ecosystem remediation snippets for GitHub issue bodies.\n#\n# The GitHub issue builders in src/90-main.sh used to hardcode npm remediation\n# (`npm update` / `npm audit`). These helpers make the "how do I fix this"\n# guidance ecosystem-aware so a Cargo, Go, PyPI, \u2026 finding gets the command a\n# developer on THAT stack would actually run. npm keeps its historical\n# update/audit guidance so npm-only issues read essentially as before.\n# ============================================================================\n\n# Emit the shell/command lines that fix a vulnerable package, for one ecosystem.\n# Args:\n#   $1 eco     purl type (npm, cargo, golang, pypi, gem, composer, maven,\n#              nuget, pub, hex, swift, githubactions, runtime)\n#   $2 pkg     package name (or a placeholder like "<package-name>" for the\n#              consolidated issue, which is not per-package)\n#   $3 indent  optional prefix prepended to every line (e.g. "   " to sit inside\n#              a numbered-list code fence). Defaults to no indentation.\n# The output is the BODY of a ```bash block; the caller supplies the fence.\nfix_commands_for_eco() {\n    local eco="$1" pkg="$2" ind="${3:-}"\n    case "$eco" in\n        npm)\n            printf \'%snpm update %s\\n\' "$ind" "$pkg"\n            printf \'%s# or yarn upgrade %s\\n\' "$ind" "$pkg"\n            printf \'%s# or pnpm update %s\\n\' "$ind" "$pkg"\n            printf \'%s# auto-fix all advisories: npm audit fix\\n\' "$ind"\n            ;;\n        cargo)\n            printf \'%scargo update -p %s\\n\' "$ind" "$pkg"\n            ;;\n        golang)\n            printf \'%sgo get %s@latest && go mod tidy\\n\' "$ind" "$pkg"\n            ;;\n        pypi)\n            printf \'%spip install --upgrade %s\\n\' "$ind" "$pkg"\n            printf \'%s# or with Poetry: poetry update %s\\n\' "$ind" "$pkg"\n            printf \'%s# or with uv:     uv lock --upgrade-package %s\\n\' "$ind" "$pkg"\n            ;;\n        gem)\n            printf \'%sbundle update %s\\n\' "$ind" "$pkg"\n            ;;\n        composer)\n            printf \'%scomposer update %s\\n\' "$ind" "$pkg"\n            ;;\n        maven)\n            printf \'%s# Bump %s to the patched version in pom.xml (or build.gradle).\\n\' "$ind" "$pkg"\n            printf \'%s# For Gradle lockfiles, refresh them: ./gradlew dependencies --write-locks\\n\' "$ind"\n            ;;\n        nuget)\n            printf \'%sdotnet add package %s\\n\' "$ind" "$pkg"\n            ;;\n        pub)\n            printf \'%sdart pub upgrade %s\\n\' "$ind" "$pkg"\n            ;;\n        hex)\n            printf \'%smix deps.update %s\\n\' "$ind" "$pkg"\n            ;;\n        swift)\n            # SwiftPM takes the package identity (the last URL component),\n            # not the repository URL the findings are keyed by.\n            printf \'%sswift package update %s\\n\' "$ind" "${pkg##*/}"\n            ;;\n        githubactions)\n            printf \'%s# Bump the `uses:` ref to the patched tag, e.g. %s@<patched-tag>\\n\' "$ind" "$pkg"\n            ;;\n        runtime)\n            printf \'%s# Upgrade the %s runtime to the fixed version (or later): update\\n\' "$ind" "$pkg"\n            printf \'%s# .nvmrc / .node-version / .php-version / .tool-versions, the Docker\\n\' "$ind"\n            printf \'%s# base image tag, and composer.json config.platform.php.\\n\' "$ind"\n            ;;\n        *)\n            printf \'%s# Update %s to the latest patched version.\\n\' "$ind" "$pkg"\n            ;;\n    esac\n}\n\n# Emit the one-line command that re-verifies an ecosystem after updating, used\n# as inline code in the issue "Run a security audit" step. Ecosystems without a\n# ubiquitous audit tool return a short guidance comment instead.\nverify_command_for_eco() {\n    case "$1" in\n        npm)           echo "npm audit" ;;\n        cargo)         echo "cargo audit" ;;\n        golang)        echo "govulncheck ./..." ;;\n        pypi)          echo "pip-audit" ;;\n        gem)           echo "bundle audit check --update  # needs bundler-audit: gem install bundler-audit" ;;\n        composer)      echo "composer audit" ;;\n        maven)         echo "# re-run your SCA scan (e.g. OWASP dependency-check, Trivy)" ;;\n        nuget)         echo "dotnet list package --vulnerable" ;;\n        pub)           echo "dart pub outdated" ;;\n        hex)           echo "mix deps.audit  # needs mix_audit; mix hex.audit only lists retired packages" ;;\n        swift)         echo "# re-resolve and re-scan Package.resolved" ;;\n        githubactions) echo "# re-run package-checker (or pin to the patched commit SHA)" ;;\n        runtime)       echo "node --version  # or php --version, then re-run package-checker" ;;\n        *)             echo "# re-run package-checker after updating" ;;\n    esac\n}\n\n# Human-readable ecosystem label for issue section headings.\neco_display_name() {\n    case "$1" in\n        npm)           echo "npm / Node.js" ;;\n        pypi)          echo "Python (pip / Poetry / uv)" ;;\n        golang)        echo "Go modules" ;;\n        maven)         echo "Maven / Gradle (JVM)" ;;\n        cargo)         echo "Rust (Cargo)" ;;\n        gem)           echo "Ruby (Bundler)" ;;\n        composer)      echo "PHP (Composer)" ;;\n        nuget)         echo "NuGet (.NET)" ;;\n        pub)           echo "Dart / Flutter (pub)" ;;\n        hex)           echo "Elixir (Hex)" ;;\n        swift)         echo "Swift (SwiftPM)" ;;\n        githubactions) echo "GitHub Actions" ;;\n        runtime)       echo "Runtime (Node.js / PHP)" ;;\n        *)             echo "$1" ;;\n    esac\n}\n# Validate a comma/space-separated ecosystems list (for --ecosystems). Every\n# token must be a known lockfile-type alias or a supported purl type.\nvalidate_ecosystems_list() {\n    local list="$1"\n    list="${list//,/ }"\n    local token\n    for token in $list; do\n        [ -z "$token" ] && continue\n        case " $KNOWN_LOCKFILE_ALIASES " in\n            *" $token "*) continue ;;\n        esac\n        case "$token" in\n            npm|pypi|golang|maven|cargo|gem|composer|nuget|pub|hex|swift|githubactions|runtime) continue ;;\n        esac\n        echo -e "${RED}\u274C Error: Unknown ecosystem \'$token\' in --ecosystems${NC}"\n        echo "Valid values: aliases (${KNOWN_LOCKFILE_ALIASES// /, }) or purl types (npm, pypi, golang, maven, cargo, gem, composer, nuget, pub, hex, swift, githubactions, runtime)"\n        return 1\n    done\n    return 0\n}\n\n# Emit the space-separated ecosystems (purl types) to load default feeds for.\n# Precedence: --ecosystems override > config (CONFIG_ECOSYSTEMS) > auto-detected\n# (DETECTED_ECOSYSTEMS). Falls back to npm when nothing was detected so the\n# legacy "npm feed always available" behavior is preserved.\nresolve_feed_ecosystems() {\n    local cli_override="$1"\n    local raw=""\n    if [ -n "$cli_override" ]; then\n        raw="$cli_override"\n    elif [ -n "$CONFIG_ECOSYSTEMS" ]; then\n        raw="$CONFIG_ECOSYSTEMS"\n    fi\n\n    local ecos="" item eco e\n    if [ -n "$raw" ]; then\n        raw="${raw//,/ }"\n        for item in $raw; do\n            [ -z "$item" ] && continue\n            eco=$(ecosystem_alias_to_purl "$item")\n            case " $ecos " in *" $eco "*) ;; *) ecos="${ecos:+$ecos }$eco" ;; esac\n        done\n    else\n        for e in "${!DETECTED_ECOSYSTEMS[@]}"; do\n            ecos="${ecos:+$ecos }$e"\n        done\n    fi\n\n    [ -z "$ecos" ] && ecos="npm"\n    printf \'%s\\n\' "$ecos"\n}\n\n# Write the name tokens of every discovered project file (plus extra names\n# given as arguments) to a temp file and point PREFILTER_TOKENS_FILE at it, so\n# parse_purl_to_lookup_eval keeps only the feed entries this project can\n# match. A token is a run of [A-Za-z0-9._-] (and each of its dot-separated\n# parts), lowercased with runs of - _ . collapsed to "-". One awk pass reads\n# every file; split() keeps it linear on minified one-line lockfiles.\n# PACKAGE_CHECKER_NO_PREFILTER=1 disables the filter (diagnostics).\nbuild_project_tokens() {\n    PREFILTER_TOKENS_FILE=""\n    [ "${PACKAGE_CHECKER_NO_PREFILTER:-}" != 1 ] || return 0\n    local tokens_file\n    tokens_file=$(mktemp) || return 0\n    register_temp_file "$tokens_file"\n    # awk reads the files itself (no argument list to overflow). A file it\n    # cannot read leaves the filter off: a partial token list would silently\n    # drop real findings.\n    printf \'%s\\n\' "${LOCKFILES}${LOCKFILES:+$\'\\n\'}${PACKAGE_JSON_FILES}" | awk -v names="$*" \'\n    function scan(line,   cnt, w) {\n        cnt = split(line, words, /[^A-Za-z0-9._-]+/)\n        for (w = 1; w <= cnt; w++) add(words[w])\n        # go.sum escapes capitals ("base64!captcha" is base64Captcha): add\n        # the unescaped words too, which lowercase like the feed names.\n        if (index(line, "!")) {\n            gsub(/!/, "", line)\n            cnt = split(line, words, /[^A-Za-z0-9._-]+/)\n            for (w = 1; w <= cnt; w++) add(words[w])\n        }\n    }\n    function add(t,   n, parts, cnt, i) {\n        if (t == "" || length(t) > 214) return\n        n = tolower(t)\n        gsub(/[-_.]+/, "-", n)\n        seen[n] = 1\n        if (index(t, ".")) {\n            cnt = split(t, parts, ".")\n            for (i = 1; i <= cnt; i++) {\n                n = tolower(parts[i])\n                gsub(/[-_]+/, "-", n)\n                if (n != "") seen[n] = 1\n            }\n        }\n    }\n    BEGIN { scan(names) }\n    $0 != "" {\n        file = $0\n        while ((status = (getline line < file)) > 0) scan(line)\n        if (status < 0) exit 1\n        close(file)\n    }\n    END { for (t in seen) print t }\n    \' > "$tokens_file" || return 0\n    PREFILTER_TOKENS_FILE="$tokens_file"\n}\n\n# True when DIR declares workspaces (npm/yarn/bun "workspaces", pnpm\n# pnpm-workspace.yaml, deno "workspace"): its lockfile then pins the\n# dependencies of every member package.json below it.\nis_workspace_root() {\n    local dir="$1"\n    [ -f "$dir/pnpm-workspace.yaml" ] && return 0\n    [ -f "$dir/package.json" ] && grep -q \'"workspaces"[[:space:]]*:\' "$dir/package.json" && return 0\n    local deno\n    for deno in "$dir/deno.json" "$dir/deno.jsonc"; do\n        [ -f "$deno" ] && grep -q \'"workspace"[[:space:]]*:\' "$deno" && return 0\n    done\n    return 1\n}\n\n# Discover lockfiles and package.json files under the scan directory, populate\n# the LOCKFILES / PACKAGE_JSON_FILES globals, and record which ecosystems are\n# present in DETECTED_ECOSYSTEMS. Runs BEFORE feed loading so detection can\n# drive which default feeds are pulled. Reads main()\'s locals (target_path,\n# lockfile_types, only_package_json, only_lockfiles, use_github, sbom_files)\n# via bash dynamic scope; sets SEARCH_DIR/LOCKFILES/PACKAGE_JSON_FILES/\n# SBOM_FILES as globals.\ndiscover_project_files() {\n    # Determine the (global) search directory (no trailing slash, so found\n    # paths share an exact prefix)\n    SEARCH_DIR="${target_path:-.}"\n    while [ "${#SEARCH_DIR}" -gt 1 ] && [ "${SEARCH_DIR%/}" != "$SEARCH_DIR" ]; do\n        SEARCH_DIR="${SEARCH_DIR%/}"\n    done\n    if [ "$use_github" = true ] && [ -d "$GITHUB_OUTPUT_DIR" ]; then\n        SEARCH_DIR="$GITHUB_OUTPUT_DIR"\n    elif [ -n "$target_path" ]; then\n        if [ ! -d "$SEARCH_DIR" ]; then\n            echo -e "${RED}\u274C Error: Target path does not exist: $target_path${NC}"\n            exit "$EXIT_ERROR"\n        fi\n    fi\n\n    # Resolve the lockfile basenames to search for (validates --lockfile-types\n    # against the registry-derived alias list). selected_path_entries mirrors\n    # selected_basenames for PATH-discovered ecosystems (e.g. GitHub Actions\n    # workflows), which are selected by the same --lockfile-types aliases but\n    # found via a path predicate instead of a basename (see PATH_ECOSYSTEM_REGISTRY).\n    local selected_basenames=()\n    local selected_path_entries=()\n    local entry bn eco parser alias\n    if [ -n "$lockfile_types" ]; then\n        local requested=" " t\n        local _requested_types\n        IFS=\',\' read -ra _requested_types <<< "$lockfile_types"\n        for t in "${_requested_types[@]}"; do\n            t="${t//[[:space:]]/}"\n            [ -z "$t" ] && continue\n            case " $KNOWN_LOCKFILE_ALIASES " in\n                *" $t "*) ;;\n                *)\n                    echo -e "${RED}\u274C Unknown lockfile type: $t${NC}"\n                    echo "Valid types: ${KNOWN_LOCKFILE_ALIASES// /, }"\n                    exit "$EXIT_ERROR" ;;\n            esac\n            requested="$requested$t "\n        done\n        for entry in "${ECOSYSTEM_REGISTRY[@]}"; do\n            IFS=\'|\' read -r bn eco parser alias <<< "$entry"\n            case "$requested" in\n                *" $alias "*) selected_basenames+=("$bn") ;;\n            esac\n        done\n        for entry in "${PATH_ECOSYSTEM_REGISTRY[@]}"; do\n            alias="${entry##*|}"\n            case "$requested" in\n                *" $alias "*) selected_path_entries+=("$entry") ;;\n            esac\n        done\n    else\n        for entry in "${ECOSYSTEM_REGISTRY[@]}"; do\n            selected_basenames+=("${entry%%|*}")\n        done\n        selected_path_entries=("${PATH_ECOSYSTEM_REGISTRY[@]}")\n    fi\n\n    # ---- One find for every candidate file ----\n    # Ignored directories are pruned (never descended into), and a single\n    # traversal collects lockfiles, PATH-discovered files (GitHub Actions\n    # workflows, split requirements files) and package.json files.\n    local want_locks=false want_pj=false\n    [ "$only_package_json" = false ] && want_locks=true\n    [ "$only_lockfiles" = false ] && want_pj=true\n    local -a match_args=()\n    if [ "$want_locks" = true ]; then\n        for bn in "${selected_basenames[@]}"; do\n            [ ${#match_args[@]} -gt 0 ] && match_args+=( -o )\n            match_args+=( -name "$bn" )\n        done\n        local pentry pglob nglobs ng gi\n        local -a nglob_arr\n        for pentry in "${selected_path_entries[@]}"; do\n            # eco/parser/alias are unused here (dispatch happens later).\n            IFS=\'|\' read -r pglob nglobs _ <<< "$pentry"\n            [ ${#match_args[@]} -gt 0 ] && match_args+=( -o )\n            match_args+=( \'(\' -path "$pglob" \'(\' )\n            IFS=\',\' read -ra nglob_arr <<< "$nglobs"\n            gi=0\n            for ng in "${nglob_arr[@]}"; do\n                [ "$gi" -gt 0 ] && match_args+=( -o )\n                match_args+=( -name "$ng" )\n                gi=$((gi + 1))\n            done\n            match_args+=( \')\' \')\' )\n        done\n    fi\n    # Runtime version files (src/50-ecosystems/65-runtimes.sh) ride on the same\n    # traversal, whatever --only-lockfiles / --lockfile-types select.\n    local want_runtime=true\n    [ "$runtime_check" != false ] || want_runtime=false\n    if [ "$want_pj" = true ] || [ "$want_runtime" = true ]; then\n        [ ${#match_args[@]} -gt 0 ] && match_args+=( -o )\n        match_args+=( -name "package.json" )\n    fi\n    if [ "$want_runtime" = true ]; then\n        local rname\n        for rname in "${RUNTIME_FILE_NAMES[@]}"; do\n            match_args+=( -o -name "$rname" )\n        done\n        match_args+=( -o \'(\' -path \'*/.github/workflows/*\' \'(\' -name \'*.yml\' -o -name \'*.yaml\' \')\' \')\' )\n    fi\n\n    local found=""\n    if [ ${#match_args[@]} -gt 0 ]; then\n        local -a find_args=( "$SEARCH_DIR" )\n        local ignore_path\n        # Empty entries ("ignore_paths": [""]) are dropped first: an empty\n        # "( )" group is a find syntax error that would hide every file.\n        local -a prune_args=()\n        for ignore_path in "${CONFIG_IGNORE_PATHS[@]}"; do\n            ignore_path="${ignore_path%/}"\n            [ -n "$ignore_path" ] || continue\n            [ ${#prune_args[@]} -eq 0 ] || prune_args+=( -o )\n            prune_args+=( -path "*/$ignore_path" )\n        done\n        if [ ${#prune_args[@]} -gt 0 ]; then\n            find_args+=( \'(\' "${prune_args[@]}" \')\' -prune -o )\n        fi\n        find_args+=( \'(\' "${match_args[@]}" \')\' -type f -print )\n        # An unreadable directory must not abort the scan (set -e): report it\n        # and keep whatever was found. A failure that found nothing at all is\n        # not a scan: stop instead of reporting a clean project.\n        if ! found=$(find "${find_args[@]}" 2>/dev/null); then\n            if [ -z "$found" ]; then\n                echo -e "${RED}\u274C Error: unable to search $SEARCH_DIR for project files${NC}" >&2\n                exit "$EXIT_ERROR"\n            fi\n            echo -e "${YELLOW}\u26A0\uFE0F  Warning: some directories under $SEARCH_DIR could not be read; results may be incomplete${NC}" >&2\n        fi\n    fi\n\n    # ---- Drop git-ignored files ----\n    # The repository is the one containing the scanned directory (not the\n    # current one), checked once for all files. Files fetched from GitHub are\n    # never filtered: the output directory itself is often git-ignored.\n    # Skipped files are listed; --include-gitignored scans them.\n    if [ -n "$found" ] && [ "$include_gitignored" = false ] && [ "$SEARCH_DIR" != "$GITHUB_OUTPUT_DIR" ] &&\n        git -C "$SEARCH_DIR" rev-parse --is-inside-work-tree > /dev/null 2>&1; then\n        local prefix="${SEARCH_DIR%/}/" ignored\n        ignored=$(printf \'%s\\n\' "$found" | while IFS= read -r f; do printf \'%s\\n\' "${f#"$prefix"}"; done |\n            git -C "$SEARCH_DIR" check-ignore --stdin 2>/dev/null) || true\n        if [ -n "$ignored" ]; then\n            found=$(printf \'%s\\n\' "$found" | awk -v prefix="$prefix" \'\n                NR == FNR { ignored[$0] = 1; next }\n                { rel = $0; if (index(rel, prefix) == 1) rel = substr(rel, length(prefix) + 1) }\n                !(rel in ignored)\' <(printf \'%s\\n\' "$ignored") -)\n            local ignored_count\n            ignored_count=$(printf \'%s\\n\' "$ignored" | wc -l | tr -d \' \')\n            echo -e "${YELLOW}\u26A0\uFE0F  Skipping $ignored_count git-ignored file(s) (use --include-gitignored to scan them):${NC}"\n            printf \'%s\\n\' "$ignored" | head -n 10 | sed \'s/^/      /\'\n            [ "$ignored_count" -le 10 ] || echo "      ... and $((ignored_count - 10)) more"\n            echo ""\n        fi\n    fi\n\n    # ---- Split lockfiles, package.json files and runtime version files ----\n    # A runtime pattern may also find a file no lockfile selection asked for\n    # (composer.lock under --lockfile-types npm): only selected names and\n    # paths become lockfiles.\n    LOCKFILES=""\n    PACKAGE_JSON_FILES=""\n    RUNTIME_FILES=""\n    local -A lock_basenames=()\n    for bn in "${selected_basenames[@]}"; do lock_basenames["$bn"]=1; done\n    local file base is_runtime is_lock pentry pglob nglobs ng\n    while IFS= read -r file; do\n        [ -n "$file" ] || continue\n        base="${file##*/}"\n        is_runtime=false\n        if [ "$want_runtime" = true ] && runtime_file_kind "$file"; then\n            RUNTIME_FILES+="${RUNTIME_FILES:+$\'\\n\'}$file"\n            is_runtime=true\n        fi\n        if [ "$base" = "package.json" ]; then\n            [ "$want_pj" = false ] || PACKAGE_JSON_FILES+="${PACKAGE_JSON_FILES:+$\'\\n\'}$file"\n            continue\n        fi\n        [ "$want_locks" = true ] || continue\n        is_lock=true\n        if [ "$is_runtime" = true ] && [ -z "${lock_basenames[$base]+x}" ]; then\n            is_lock=false\n            for pentry in "${selected_path_entries[@]}"; do\n                IFS=\'|\' read -r pglob nglobs _ _ _ <<< "$pentry"\n                # shellcheck disable=SC2053 # glob patterns from the registry\n                [[ "$file" == $pglob ]] || continue\n                IFS=\',\' read -ra nglob_arr <<< "$nglobs"\n                for ng in "${nglob_arr[@]}"; do\n                    # shellcheck disable=SC2053\n                    if [[ "$base" == $ng ]]; then is_lock=true; break 2; fi\n                done\n            done\n        fi\n        [ "$is_lock" = false ] || LOCKFILES+="${LOCKFILES:+$\'\\n\'}$file"\n    done <<< "$found"\n    RUNTIME_FILES=$(runtime_files_with_versions "$RUNTIME_FILES")\n\n    # ---- CycloneDX SBOMs given with --sbom ----\n    # Scanned like lockfiles, whatever their name or location (often a\n    # git-ignored build output such as target/bom.json).\n    local sbom\n    for sbom in "${sbom_files[@]}"; do\n        [ -n "${SBOM_FILES[$sbom]+x}" ] && continue\n        SBOM_FILES["$sbom"]=1\n        LOCKFILES+="${LOCKFILES:+$\'\\n\'}$sbom"\n    done\n\n    # ---- package.json files already covered by a lockfile ----\n    # A lockfile pins what is installed; the manifest only declares ranges\n    # (lodash ^4.17.0 would be checked as 4.17.0 while the lock has 4.18.1).\n    # Skip a package.json whose directory holds an npm-family lockfile, or\n    # whose ancestor (up to the scan root) is a workspace root with one.\n    SKIPPED_PACKAGE_JSON_COUNT=0\n    if [ -n "$PACKAGE_JSON_FILES" ] && [ -n "$LOCKFILES" ]; then\n        local -A npm_lock_dirs=()\n        local lf\n        while IFS= read -r lf; do\n            case "${lf##*/}" in\n                package-lock.json|npm-shrinkwrap.json|yarn.lock|pnpm-lock.yaml|bun.lock|deno.lock)\n                    npm_lock_dirs["${lf%/*}"]=1 ;;\n            esac\n        done <<< "$LOCKFILES"\n        if [ ${#npm_lock_dirs[@]} -gt 0 ]; then\n            local kept="" pj dir covered\n            while IFS= read -r pj; do\n                [ -n "$pj" ] || continue\n                dir="${pj%/*}"\n                covered=false\n                if [ -n "${npm_lock_dirs[$dir]+x}" ]; then\n                    covered=true\n                else\n                    while [ "$dir" != "$SEARCH_DIR" ] && [[ "$dir" == */* ]]; do\n                        dir="${dir%/*}"\n                        if [ -n "${npm_lock_dirs[$dir]+x}" ] && is_workspace_root "$dir"; then\n                            covered=true\n                            break\n                        fi\n                    done\n                fi\n                if [ "$covered" = true ]; then\n                    SKIPPED_PACKAGE_JSON_COUNT=$((SKIPPED_PACKAGE_JSON_COUNT + 1))\n                else\n                    kept+="${kept:+$\'\\n\'}$pj"\n                fi\n            done <<< "$PACKAGE_JSON_FILES"\n            PACKAGE_JSON_FILES="$kept"\n        fi\n    fi\n\n    # ---- Record detected ecosystems ----\n    if [ -n "$LOCKFILES" ]; then\n        local lfile b e _pe\n        while IFS= read -r lfile; do\n            [ -z "$lfile" ] && continue\n            if [ -n "${SBOM_FILES[$lfile]+x}" ]; then\n                # Parsed once: analyze_cyclonedx_inventory reuses the list.\n                SBOM_COMPONENTS["$lfile"]=$(cyclonedx_components "$lfile")\n                for e in $(printf \'%s\\n\' "${SBOM_COMPONENTS[$lfile]}" | cut -d\'|\' -f1 | sort -u); do\n                    case "$e" in\n                        npm|pypi|golang|maven|cargo|gem|composer|nuget|pub|hex|swift|githubactions)\n                            DETECTED_ECOSYSTEMS["$e"]=1 ;;\n                    esac\n                done\n                continue\n            fi\n            b="${lfile##*/}"\n            e="${LOCKFILE_ECO[$b]:-}"\n            # Path-discovered files (workflows) have no basename row; resolve\n            # their ecosystem by path so detection pulls the right default feed.\n            if [ -z "$e" ] && _pe=$(path_ecosystem_match "$lfile"); then\n                e="${_pe#*|}"; e="${e%%|*}"\n            fi\n            [ -n "$e" ] && DETECTED_ECOSYSTEMS["$e"]=1\n        done <<< "$LOCKFILES"\n    fi\n    if [ -n "$PACKAGE_JSON_FILES" ]; then\n        DETECTED_ECOSYSTEMS["npm"]=1\n    fi\n}\n\n# Report a project file that cannot be read: it was not scanned, so the run\n# cannot end with a clean result (see the end of main).\nreport_unreadable_file() {\n    echo -e "${RED}\u274C [$1] Cannot read this file: it was not scanned${NC}"\n    UNREADABLE_FILE_COUNT=$((UNREADABLE_FILE_COUNT + 1))\n}\n\n# Print the merged advisories of one finding ("rec||rec", each record\n# "severity;ghsa;cve;source;fix;id"). Returns non-zero when nothing was printed.\nprint_advisories() {\n    local advisories="$1" advisory severity ghsa cve source fix id color printed=1\n    while [ -n "$advisories" ]; do\n        advisory="${advisories%%||*}"\n        if [ "$advisory" = "$advisories" ]; then advisories=""; else advisories="${advisories#*||}"; fi\n        IFS=\';\' read -r severity ghsa cve source fix id <<< "$advisory"\n        if [ -n "$severity" ]; then\n            severity_rank "$severity"\n            case "$SEV_RANK" in\n                4) color="$RED" ;;\n                3) color="$YELLOW" ;;\n                2) color="$BLUE" ;;\n                *) color="$NC" ;;\n            esac\n            echo -e "      ${color}Severity: $severity${NC}"\n            printed=0\n        fi\n        if [ -n "$ghsa" ]; then\n            case ", $source, " in\n                *", ghsa, "*) echo -e "      ${BLUE}GHSA: $ghsa (https://github.com/advisories/$ghsa)${NC}" ;;\n                *", osv, "*) echo -e "      ${BLUE}GHSA: $ghsa (https://osv.dev/vulnerability/$ghsa)${NC}" ;;\n                *) echo -e "      ${BLUE}GHSA: $ghsa${NC}" ;;\n            esac\n            printed=0\n        fi\n        if [ -n "$cve" ]; then\n            echo -e "      ${BLUE}CVE: $cve (https://nvd.nist.gov/vuln/detail/$cve)${NC}"\n            printed=0\n        fi\n        if [ -n "$id" ]; then\n            echo -e "      ${BLUE}ID: $id (https://osv.dev/vulnerability/$id)${NC}"\n            printed=0\n        fi\n        if [ -n "$source" ]; then\n            echo -e "      ${BLUE}Source: $source${NC}"\n            printed=0\n        fi\n        if [ -n "$fix" ]; then\n            echo -e "      ${GREEN}Fix: upgrade to >= $fix${NC}"\n            printed=0\n        fi\n    done\n    return "$printed"\n}\n\nmain() {\n    local use_config=true\n    local cli_sources=false\n    local custom_config=""\n    local custom_sources=()\n    local use_github=false\n    local name=""\n    local package_version=""\n    local ecosystem="npm"\n    local export_json_file=""\n    local export_csv_file=""\n    local only_package_json=false\n    local only_lockfiles=false\n    local lockfile_types=""\n    local target_path=""\n    local default_feeds=""\n    local cli_ecosystems=""\n    local sbom_files=()\n    local go_reachability=false\n    local runtime_check=""   # "" = not set on the command line (config decides)\n    local include_gitignored=false\n\n    # Any unexpected failure that aborts the run (set -e) exits with\n    # EXIT_ERROR, never with 1, which means "vulnerable packages found".\n    # Command substitutions keep their usual non-fatal behavior.\n    set -E\n    trap \'[ "$BASH_SUBSHELL" -ne 0 ] || exit "$EXIT_ERROR"\' ERR\n\n    # Parse command line arguments\n    while [[ $# -gt 0 ]]; do\n        case "$1" in\n            -s|--source|-f|--format|--csv-columns|-c|--config|--github-org|--github-repo|--github-token|--github-output|--package-name|--package-version|--ecosystem|--ecosystems|--lockfile-types|--sbom)\n                if [ "$#" -lt 2 ] || [ -z "$2" ] || [[ "$2" == --* ]]; then\n                    echo "Error: $1 requires a value"\n                    exit "$EXIT_ERROR"\n                fi\n                ;;\n        esac\n        case $1 in\n            -h|--help)\n                if [[ "$2" == "format" ]]; then\n                    show_format_help\n                else\n                    show_help\n                fi\n                ;;\n            --help-ai)\n                show_ai_help "$2"\n                ;;\n            -v|--version)\n                show_version\n                ;;\n            -s|--source)\n                custom_sources+=("$2|")\n                cli_sources=true\n                shift 2\n                ;;\n            --default-source-ghsa|--default-source-osv|--default-source-ghsa-osv)\n                # Record intent; the feed is resolved per detected ecosystem\n                # after project discovery (see the source-loading section).\n                # The flags add up: --default-source-ghsa --default-source-osv\n                # loads both feeds.\n                local wanted_feed\n                for wanted_feed in ghsa osv; do\n                    case "$1" in *"-$wanted_feed"*) ;; *) continue ;; esac\n                    case " $default_feeds " in\n                        *" $wanted_feed "*) ;;\n                        *) default_feeds="${default_feeds:+$default_feeds }$wanted_feed" ;;\n                    esac\n                done\n                cli_sources=true\n                shift\n                ;;\n            -f|--format|--csv-columns)\n                # Both qualify the preceding -s/--source, in either order:\n                # rebuild its "url|format|columns" entry from its parts.\n                if [ ${#custom_sources[@]} -eq 0 ]; then\n                    echo -e "${RED}\u274C Error: $1 must follow the -s/--source it applies to${NC}"\n                    exit "$EXIT_ERROR"\n                fi\n                local last_idx=$((${#custom_sources[@]} - 1))\n                local src_url src_format src_columns\n                IFS=\'|\' read -r src_url src_format src_columns <<< "${custom_sources[$last_idx]}"\n                if [ "$1" = "--csv-columns" ]; then\n                    src_columns="$2"\n                else\n                    src_format="$2"\n                fi\n                custom_sources[$last_idx]="$src_url|$src_format|$src_columns"\n                shift 2\n                ;;\n            -c|--config)\n                custom_config="$2"\n                shift 2\n                ;;\n            --no-config)\n                use_config=false\n                shift\n                ;;\n            --github-org)\n                GITHUB_ORG="$2"\n                use_github=true\n                shift 2\n                ;;\n            --github-repo)\n                GITHUB_REPO="$2"\n                use_github=true\n                shift 2\n                ;;\n            --github-token)\n                GITHUB_TOKEN="$2"\n                shift 2\n                ;;\n            --github-output)\n                GITHUB_OUTPUT_DIR="$2"\n                shift 2\n                ;;\n            --github-only)\n                GITHUB_ONLY=true\n                use_github=true\n                shift\n                ;;\n            --create-multiple-issues)\n                CREATE_GITHUB_ISSUE=true\n                shift\n                ;;\n            --create-single-issue)\n                CREATE_SINGLE_ISSUE=true\n                shift\n                ;;\n            --package-name)\n                name="$2"\n                shift 2\n                ;;\n            --package-version)\n                package_version="$2"\n                shift 2\n                ;;\n            --ecosystem)\n                ecosystem="$2"\n                shift 2\n                ;;\n            --export-json|--export-csv)\n                # The file name is optional: a following option or an existing\n                # directory (the scan PATH) is not taken as the file name.\n                local export_option="$1" export_file="vulnerabilities.${1#--export-}"\n                if [ -n "${2:-}" ] && [[ "$2" != -* ]] && [ ! -d "$2" ]; then\n                    export_file="$2"\n                    shift\n                fi\n                if [ "$export_option" = "--export-json" ]; then\n                    export_json_file="$export_file"\n                else\n                    export_csv_file="$export_file"\n                fi\n                shift\n                ;;\n            --fetch-all)\n                # Optional DIR argument (default: data). Generates GHSA + OSV\n                # feeds for ALL supported ecosystems.\n                check_dependencies curl jq git unzip\n                local fetch_dir="data"\n                [ -z "${2:-}" ] || [[ "$2" == -* ]] || fetch_dir="$2"\n                fetch_all "$fetch_dir" || exit "$EXIT_ERROR"\n                exit 0\n                ;;\n            --fetch-osv)\n                # Optional argument:\n                #   (none)            -> all ecosystems into data/\n                #   comma/space list  -> those ecosystems into data/ (e.g. pypi,go)\n                #   legacy file path  -> npm feed into that file\'s directory\n                check_dependencies curl jq unzip\n                case "${2:-}" in\n                    ""|-*) fetch_osv ;;\n                    */) FEED_OUTPUT_DIR="${2%/}" fetch_osv ;;\n                    */*|*.purl)\n                        if [ -d "$2" ]; then FEED_OUTPUT_DIR="$2" fetch_osv\n                        else FEED_OUTPUT_DIR="$(dirname "$2")" fetch_osv npm; fi ;;\n                    # Ecosystem names win; otherwise an existing directory\n                    # named without a slash ("data") is the output directory.\n                    *) IFS=\', \' read -ra _fetch_ecos <<< "$2"\n                       if ! feed_resolve_types "${_fetch_ecos[@]}" 2>/dev/null && [ -d "$2" ]; then\n                           FEED_OUTPUT_DIR="$2" fetch_osv\n                       else fetch_osv "${_fetch_ecos[@]}"; fi ;;\n                esac || exit "$EXIT_ERROR"\n                exit 0\n                ;;\n            --fetch-ghsa)\n                # Same argument semantics as --fetch-osv (single clone, all ecos).\n                check_dependencies jq git\n                case "${2:-}" in\n                    ""|-*) fetch_ghsa ;;\n                    */) FEED_OUTPUT_DIR="${2%/}" fetch_ghsa ;;\n                    */*|*.purl)\n                        if [ -d "$2" ]; then FEED_OUTPUT_DIR="$2" fetch_ghsa\n                        else FEED_OUTPUT_DIR="$(dirname "$2")" fetch_ghsa npm; fi ;;\n                    # Ecosystem names win; otherwise an existing directory\n                    # named without a slash ("data") is the output directory.\n                    *) IFS=\', \' read -ra _fetch_ecos <<< "$2"\n                       if ! feed_resolve_types "${_fetch_ecos[@]}" 2>/dev/null && [ -d "$2" ]; then\n                           FEED_OUTPUT_DIR="$2" fetch_ghsa\n                       else fetch_ghsa "${_fetch_ecos[@]}"; fi ;;\n                esac || exit "$EXIT_ERROR"\n                exit 0\n                ;;\n            --fetch-runtime)\n                # Optional DIR argument (default: data): writes osv-runtime.purl.\n                check_dependencies curl jq unzip\n                local runtime_dir="data"\n                [ -z "${2:-}" ] || [[ "$2" == -* ]] || runtime_dir="$2"\n                FEED_OUTPUT_DIR="$runtime_dir" fetch_runtime || exit "$EXIT_ERROR"\n                exit 0\n                ;;\n            --no-runtime-check)\n                runtime_check=false\n                shift\n                ;;\n            --include-gitignored)\n                include_gitignored=true\n                shift\n                ;;\n            --only-package-json)\n                only_package_json=true\n                shift\n                ;;\n            --only-lockfiles)\n                only_lockfiles=true\n                shift\n                ;;\n            --lockfile-types)\n                lockfile_types="$2"\n                shift 2\n                ;;\n            --ecosystems)\n                cli_ecosystems="$2"\n                shift 2\n                ;;\n            --go-reachability)\n                go_reachability=true\n                shift\n                ;;\n            --sbom)\n                if [ ! -f "$2" ]; then\n                    echo -e "${RED}\u274C Error: SBOM file not found: $2${NC}"\n                    exit "$EXIT_ERROR"\n                fi\n                sbom_files+=("$2")\n                shift 2\n                ;;\n            -*)\n                echo -e "${RED}\u274C Unknown option: $1${NC}"\n                echo "Use --help for usage information"\n                exit "$EXIT_ERROR"\n                ;;\n            *)\n                # Positional argument - treat as target path\n                if [ -z "$target_path" ]; then\n                    target_path="$1"\n                    shift\n                else\n                    echo -e "${RED}\u274C Error: Multiple target paths specified${NC}"\n                    echo "Use --help for usage information"\n                    exit "$EXIT_ERROR"\n                fi\n                ;;\n        esac\n    done\n\n    # Validate mutually exclusive options\n    if [ "$only_package_json" = true ] && [ "$only_lockfiles" = true ]; then\n        echo -e "${RED}\u274C Error: --only-package-json and --only-lockfiles are mutually exclusive${NC}"\n        echo "Use --help for usage information"\n        exit "$EXIT_ERROR"\n    fi\n\n    # Validate lockfile-types only makes sense with lockfiles\n    if [ -n "$lockfile_types" ] && [ "$only_package_json" = true ]; then\n        echo -e "${RED}\u274C Error: --lockfile-types cannot be used with --only-package-json${NC}"\n        echo "Use --help for usage information"\n        exit "$EXIT_ERROR"\n    fi\n\n    # Validate --ecosystem against the supported purl types\n    case "$ecosystem" in\n        npm|pypi|golang|maven|cargo|gem|composer|nuget|pub|hex|swift|githubactions|runtime)\n            ;;\n        *)\n            echo -e "${RED}\u274C Error: Unsupported ecosystem \'$ecosystem\'${NC}"\n            echo "Valid ecosystems: npm, pypi, golang, maven, cargo, gem, composer, nuget, pub, hex, swift, githubactions, runtime"\n            exit "$EXIT_ERROR"\n            ;;\n    esac\n\n    # Build the ecosystem lookup tables from the registry (single source of\n    # truth for discovery, dispatch and default-feed resolution).\n    build_ecosystem_tables\n\n    # Validate the --ecosystems feed-loading override (aliases or purl types).\n    if [ -n "$cli_ecosystems" ]; then\n        validate_ecosystems_list "$cli_ecosystems" || exit "$EXIT_ERROR"\n    fi\n\n    check_dependencies\n\n    # --package-name: look the package up in the project through a virtual\n    # purl entry (NAME@VERSION, or every version when none is given) and, for\n    # an exact --package-version, check that version against the feeds. Only\n    # this package is reported; without another source, the default feed of\n    # --ecosystem is loaded.\n    local package_lookup_file=""\n    if [ -n "$name" ]; then\n        if ! package_lookup_file=$(mktemp); then\n            echo -e "${RED}\u274C Error: Unable to create a temporary file${NC}"\n            exit "$EXIT_ERROR"\n        fi\n        register_temp_file "$package_lookup_file"\n        printf \'pkg:%s/%s@%s\\n\' "$ecosystem" "$name" "${package_version:-*}" > "$package_lookup_file"\n        canonical_package_name "$ecosystem" "$name"\n        PACKAGE_FILTER="$ecosystem:$CANON_NAME"\n        cli_sources=true\n    fi\n\n    echo "\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557"\n    echo "\u2551       Package Vulnerability Checker                \u2551"\n    echo "\u255A\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255D"\n    echo ""\n\n    # Configuration must precede fetching and discovery: it supplies GitHub\n    # settings, exclusions and the default-feed ecosystem override.\n    # Options and GitHub settings always apply; the configured sources only\n    # when no source was given on the command line. --no-config skips the\n    # default file, but an explicit -c/--config is always read.\n    local sources_loaded=false config_to_use=""\n    if [ -n "$custom_config" ]; then\n        config_to_use="$custom_config"\n    elif [ "$use_config" = true ] && [ -f "$CONFIG_FILE" ]; then\n        config_to_use="$CONFIG_FILE"\n    fi\n    if [ -n "$config_to_use" ]; then\n        if [ ! -f "$config_to_use" ]; then\n            echo "Error: Configuration file not found: $config_to_use"\n            exit "$EXIT_ERROR"\n        fi\n        local config_sources=true\n        [ "$cli_sources" = false ] || config_sources=false\n        load_config_file "$config_to_use" "$config_sources" || exit "$EXIT_ERROR"\n        validate_ecosystems_list "$CONFIG_ECOSYSTEMS" || exit "$EXIT_ERROR"\n        [ "$LOADED_SOURCE_COUNT" -eq 0 ] || sources_loaded=true\n        if [ -n "$GITHUB_REPO" ] || [ -n "$GITHUB_ORG" ]; then\n            use_github=true\n        fi\n    fi\n\n    if { [ "$CREATE_GITHUB_ISSUE" = true ] || [ "$CREATE_SINGLE_ISSUE" = true ]; } && [ -z "$GITHUB_TOKEN" ]; then\n        echo -e "${RED}\u274C Error: --create-multiple-issues and --create-single-issue require a GitHub token${NC}"\n        echo "   Use --github-token or set the GITHUB_TOKEN environment variable"\n        exit "$EXIT_ERROR"\n    fi\n\n    # Fetch packages from GitHub if requested\n    if [ "$use_github" = true ]; then\n        fetch_github_packages || exit "$EXIT_ERROR"\n        \n        # If --github-only, exit after fetching\n        if [ "$GITHUB_ONLY" = true ]; then\n            echo -e "${GREEN}\u2705 GitHub packages fetched successfully. Use without --github-only to analyze.${NC}"\n            exit 0\n        fi\n    fi\n\n    # Runtime versions are checked unless --no-runtime-check or\n    # options.runtime_check=false; a --package-name lookup only checks a\n    # runtime when it names one (--ecosystem runtime).\n    [ -n "$runtime_check" ] || runtime_check="$CONFIG_RUNTIME_CHECK"\n    if [ -n "$name" ] && [ "$ecosystem" != runtime ]; then\n        runtime_check=false\n    fi\n\n    # Discover project files and detect ecosystems BEFORE loading feeds, so we\n    # only pull the default feeds the detected ecosystems actually need. Only\n    # skipped git-ignored files are reported here; the results are\n    # printed/analyzed after the lookup build.\n    discover_project_files\n\n    # A truncated project file is an incomplete scan, never a clean result.\n    # Validate strict JSON only: bun.lock is JSONC and has a separate grammar.\n    local project_input\n    while IFS= read -r project_input; do\n        [ -z "$project_input" ] && continue\n        # Unreadable files are reported when they are analyzed.\n        [ -r "$project_input" ] || continue\n        case "${project_input##*/}" in\n            package.json|package-lock.json|npm-shrinkwrap.json|Pipfile.lock|composer.lock|packages.lock.json|Package.resolved|deno.lock) ;;\n            *) [ -n "${SBOM_FILES[$project_input]+x}" ] || continue ;;\n        esac\n        if ! json_is_valid_file "$project_input"; then\n            echo -e "${RED}\u274C Invalid JSON in project file: $project_input${NC}"\n            exit "$EXIT_ERROR"\n        fi\n    done <<< "${LOCKFILES}${LOCKFILES:+$\'\\n\'}${PACKAGE_JSON_FILES}"\n\n    # Feed entries are pre-filtered on the names this project can contain\n    # (plus the runtime names when a runtime version file was found).\n    local -a token_names=()\n    [ -z "$name" ] || token_names+=("$name")\n    # shellcheck disable=SC2206 # space-separated list of plain names\n    [ -z "$RUNTIME_FILES" ] || token_names+=($RUNTIME_FEED_PACKAGES)\n    build_project_tokens "${token_names[@]}"\n\n    # 2. Explicit --source entries load unconditionally (no ecosystem filtering)\n    if [ ${#custom_sources[@]} -gt 0 ]; then\n        local source url format columns\n        for source in "${custom_sources[@]}"; do\n            IFS=\'|\' read -r url format columns <<< "$source"\n            load_data_source "$url" "$format" "Custom Source" "$columns" || exit "$EXIT_ERROR"\n        done\n        sources_loaded=true\n    fi\n\n    # 3. Default feeds (GHSA/OSV), resolved per detected ecosystem. Explicit\n    #    --default-source-* flags set $default_feeds; otherwise, when nothing has\n    #    loaded yet, fall back to the implicit default (GHSA).\n    local feeds_to_load="$default_feeds"\n    local implicit_default=false\n    if [ -z "$feeds_to_load" ] && [ "$sources_loaded" = false ]; then\n        feeds_to_load="ghsa"\n        implicit_default=true\n    fi\n\n    if [ -n "$feeds_to_load" ]; then\n        prepare_default_source_lookup\n        if [ "$implicit_default" = true ]; then\n            echo -e "${BLUE}\u2139\uFE0F  No data source specified, using default GHSA source${NC}"\n            echo ""\n        fi\n\n        # Ecosystems to load feeds for: --ecosystems > config > auto-detected;\n        # a --package-name lookup only needs its own ecosystem.\n        local feed_ecos\n        if [ -n "$name" ] && [ -z "$cli_ecosystems" ]; then\n            feed_ecos="$ecosystem"\n        else\n            feed_ecos=$(resolve_feed_ecosystems "$cli_ecosystems")\n        fi\n\n        local eco feed feed_file feed_path feed_label feeds_loaded=0 feed_entries=0\n        for eco in $feed_ecos; do\n            # Runtime advisories have a single feed of their own (step 3b).\n            [ "$eco" != runtime ] || continue\n            for feed in $feeds_to_load; do\n                feed_file=$(default_feed_filename "$feed" "$eco")\n                # NB: find_default_source returns non-zero when a feed is\n                # missing; `|| true` keeps `set -e` from aborting so we can warn\n                # and continue (a plain assignment would exit the script).\n                feed_path=$(find_default_source "$feed_file") || true\n                if [ -n "$feed_path" ]; then\n                    feed_label=$(printf \'%s\' "$feed" | tr \'[:lower:]\' \'[:upper:]\')\n                    echo -e "${GREEN}\u2713 Using ${feed_label} source: $feed_path${NC}"\n                    echo ""\n                    load_data_source "$feed_path" "purl" "Default ${feed_label} Source" "" || exit "$EXIT_ERROR"\n                    sources_loaded=true\n                    feeds_loaded=$((feeds_loaded + 1))\n                    feed_entries=$((feed_entries + LAST_SOURCE_ENTRY_COUNT))\n                else\n                    echo -e "${YELLOW}\u26A0\uFE0F  Warning: Unable to find ${feed} feed for ${eco} (${feed_file})${NC}"\n                fi\n            done\n        done\n\n        # A default feed always lists advisories: none at all means the feed\n        # files are empty or unreadable, and a clean result would be a lie.\n        if [ "$feeds_loaded" -gt 0 ] && [ "$feed_entries" -eq 0 ]; then\n            echo -e "${RED}\u274C Error: the default vulnerability feeds are empty or unreadable${NC}"\n            exit "$EXIT_ERROR"\n        fi\n    fi\n\n    # 3b. Runtime advisories (Node.js, PHP): one feed, loaded whenever the\n    #     project pins a runtime version, whatever the GHSA/OSV choice.\n    local runtime_feed_loaded=false\n    if { [ "$runtime_check" != false ] && [ -n "$RUNTIME_FILES" ]; } ||\n        { [ -n "$name" ] && [ "$ecosystem" = runtime ]; }; then\n        local runtime_feed\n        prepare_default_source_lookup\n        runtime_feed=$(find_default_source "osv-runtime.purl") || true\n        if [ -n "$runtime_feed" ]; then\n            echo -e "${GREEN}\u2713 Using runtime source: $runtime_feed${NC}"\n            echo ""\n            load_data_source "$runtime_feed" "purl" "Runtime advisories (Node.js, PHP)" "" || exit "$EXIT_ERROR"\n            sources_loaded=true\n            runtime_feed_loaded=true\n        else\n            echo -e "${YELLOW}\u26A0\uFE0F  Warning: Unable to find the runtime feed (osv-runtime.purl); runtime versions are not checked${NC}"\n        fi\n    fi\n\n    # 4. --package-name: check the exact version itself, then add the lookup\n    #    entry (loaded last so the version check cannot match it).\n    if [ -n "$name" ]; then\n        if [ -n "$package_version" ] && [[ "$package_version" != *[\\ \\<\\>=\\^~*,\\|]* ]]; then\n            check_vulnerability "$ecosystem" "$CANON_NAME" "$package_version" "--package-name" || true\n        fi\n        load_data_source "$package_lookup_file" "purl" "Package lookup: $name" "" || exit "$EXIT_ERROR"\n        sources_loaded=true\n    fi\n\n    if [ "$sources_loaded" = false ]; then\n        echo -e "${RED}\u274C Error: Unable to find any vulnerability data source${NC}"\n        echo ""\n        echo "By default, package-checker uses the built-in GHSA feed."\n        echo "If you see this message, no source could be found or loaded."\n        echo ""\n        echo "Tried the following locations for each detected ecosystem:"\n        echo "  - Next to the script: <script dir>/data/"\n        echo "  - Homebrew: \\$(brew --prefix)/share/package-checker/data/"\n        echo "  - Docker: /app/data/"\n        echo "  - Local: ./data/"\n        echo "  - Remote: https://raw.githubusercontent.com/maxgfr/package-checker.sh/refs/heads/main/data/"\n        echo ""\n        echo "You can explicitly specify a data source using:"\n        echo "  --default-source-ghsa    Use default GHSA source"\n        echo "  --default-source-osv     Use default OSV source"\n        echo "  --default-source-ghsa-osv         Use both GHSA and OSV sources"\n        echo "  --source <URL>           Use custom vulnerability database"\n        echo "  A .package-checker.config.json file"\n        echo ""\n        echo "Use --help for more information"\n        exit "$EXIT_ERROR"\n    fi\n\n    # Count unique vulnerable packages across every loaded source.\n    local total_packages=0 pkg\n    local -A unique_pkgs_temp=()\n    for pkg in "${!VULN_EXACT_LOOKUP[@]}" "${!VULN_RANGE_LOOKUP[@]}"; do\n        unique_pkgs_temp["$pkg"]=1\n    done\n    total_packages=${#unique_pkgs_temp[@]}\n    unset unique_pkgs_temp\n\n    if [ -n "${PREFILTER_TOKENS_FILE:-}" ]; then\n        echo -e "${BLUE}\u{1F4CA} Total unique vulnerable packages: $total_packages relevant to this project (of ${TOTAL_SOURCE_ENTRIES:-0} entries loaded)${NC}"\n    else\n        echo -e "${BLUE}\u{1F4CA} Total unique vulnerable packages: $total_packages${NC}"\n    fi\n    if [ "${TOTAL_SOURCE_ENTRIES:-0}" -eq 0 ]; then\n        echo -e "${YELLOW}\u26A0\uFE0F  The data sources contain no vulnerability entry${NC}"\n    fi\n\n    echo -e "${GREEN}\u2705 Lookup tables ready (${#VULN_EXACT_LOOKUP[@]} packages with exact versions, ${#VULN_RANGE_LOOKUP[@]} with ranges)${NC}"\n    echo ""\n\n    # Report the directory being scanned (files were discovered before feed\n    # loading; see discover_project_files).\n    if [ "$use_github" = true ] && [ -d "$GITHUB_OUTPUT_DIR" ]; then\n        echo -e "${BLUE}\u{1F4C2} Analyzing packages from GitHub: $SEARCH_DIR${NC}"\n        echo ""\n    elif [ -n "$target_path" ]; then\n        echo -e "${BLUE}\u{1F4C2} Scanning directory: $SEARCH_DIR${NC}"\n        echo ""\n    fi\n\n    # Search for lockfiles\n    echo "\u{1F50D} Searching for lockfiles and package.json files..."\n    echo ""\n\n    if [ -z "$LOCKFILES" ]; then\n        if [ "$only_package_json" = true ]; then\n            echo "   \u23E9 Skipping lockfiles (--only-package-json specified)"\n        else\n            echo "   \u2139\uFE0F  No lockfiles found"\n        fi\n    else\n        LOCKFILE_COUNT=$(echo "$LOCKFILES" | wc -l | tr -d \' \')\n        if [ -n "$lockfile_types" ]; then\n            echo "\u{1F4E6} Analyzing $LOCKFILE_COUNT lockfile(s) [types: $lockfile_types]..."\n        else\n            echo "\u{1F4E6} Analyzing $LOCKFILE_COUNT lockfile(s)..."\n        fi\n\n        while IFS= read -r lockfile; do\n            [ -z "$lockfile" ] && continue\n            if [ ! -r "$lockfile" ]; then\n                report_unreadable_file "$lockfile"\n                continue\n            fi\n            lockname="${lockfile##*/}"\n            local lock_parser="${LOCKFILE_PARSER[$lockname]:-}"\n            local checked_before="${CHECKED_PACKAGE_COUNT:-0}"\n            LOCKFILE_SKIPPED=0   # set by a parser that defers to another file\n            if [ -n "${SBOM_FILES[$lockfile]+x}" ]; then\n                analyze_cyclonedx_inventory "$lockfile"\n            elif [ -n "$lock_parser" ]; then\n                "$lock_parser" "$lockfile" "${LOCKFILE_ECO[$lockname]}"\n            else\n                # Path-discovered ecosystem (e.g. GitHub Actions workflows):\n                # no basename key \u2014 resolve the parser by path pattern.\n                local _pe _pe_parser _pe_eco _pe_alias\n                if _pe=$(path_ecosystem_match "$lockfile"); then\n                    IFS=\'|\' read -r _pe_parser _pe_eco _pe_alias <<< "$_pe"\n                    "$_pe_parser" "$lockfile" "$_pe_eco"\n                fi\n                # A workflow without a published action is ordinary.\n                lock_parser=""\n            fi\n            # A lockfile with content that yields no package at all is either\n            # empty of dependencies or in a shape the parser does not read:\n            # say so instead of letting "no vulnerabilities" imply a check.\n            if [ -n "$lock_parser" ] && [ "$LOCKFILE_SKIPPED" = 0 ] &&\n                [ "${CHECKED_PACKAGE_COUNT:-0}" = "$checked_before" ] &&\n                grep -q \'[^[:space:]]\' "$lockfile" 2>/dev/null; then\n                echo -e "${YELLOW}\u26A0\uFE0F  [$lockfile] No package could be read from this file (no dependency, or an unsupported format)${NC}"\n            fi\n        done <<< "$LOCKFILES"\n    fi\n\n    # Analyze package.json files (discovered before feed loading)\n    if [ "${SKIPPED_PACKAGE_JSON_COUNT:-0}" -gt 0 ]; then\n        echo "   \u23E9 Skipping $SKIPPED_PACKAGE_JSON_COUNT package.json file(s) covered by a lockfile"\n    fi\n    if [ -z "$PACKAGE_JSON_FILES" ]; then\n        if [ "$only_lockfiles" = true ]; then\n            echo "   \u23E9 Skipping package.json files (--only-lockfiles specified)"\n        elif [ "${SKIPPED_PACKAGE_JSON_COUNT:-0}" -eq 0 ]; then\n            echo "   \u2139\uFE0F  No package.json files found"\n        fi\n    else\n        PACKAGE_COUNT=$(echo "$PACKAGE_JSON_FILES" | wc -l | tr -d \' \')\n        echo "\u{1F4E6} Analyzing $PACKAGE_COUNT package.json file(s) (declared versions: no lockfile covers them)..."\n        \n        # Build regex pattern of dependency types to match\n        local dep_types_pattern=$(printf \'%s|\' "${CONFIG_DEPENDENCY_TYPES[@]}")\n        dep_types_pattern="${dep_types_pattern%|}"  # Remove trailing |\n        \n        while IFS= read -r package_file; do\n            if [ ! -r "$package_file" ]; then\n                report_unreadable_file "$package_file"\n                continue\n            fi\n            # Track vulnerabilities found in this file\n            local vuln_count_before=${#VULNERABLE_PACKAGES[@]}\n\n            # Use awk to extract all dependencies efficiently\n            local deps\n            deps=$(awk -v dep_pattern="$dep_types_pattern" \'\n            BEGIN { depth=0; active=0; pending=0 }\n            {\n                line = $0\n                for (i = 1; i <= length(line); i++) {\n                    c = substr(line, i, 1)\n                    if (c == "\\"") {\n                        token = ""\n                        for (i++; i <= length(line); i++) {\n                            c = substr(line, i, 1)\n                            if (c == "\\\\") {\n                                token = token c substr(line, ++i, 1)\n                            } else if (c == "\\"") {\n                                break\n                            } else token = token c\n                        }\n                        rest = substr(line, i + 1)\n                        if (rest ~ /^[[:space:]]*:/) {\n                            if (depth == 1) pending = (token ~ ("^(" dep_pattern ")$"))\n                            else if (active && depth == 2) pkg = token\n                        } else if (active && depth == 2 && pkg != "") {\n                            # Only semver specs name a version: git+, github:,\n                            # catalog:, patch:, file:, workspace:, npm: aliases,\n                            # URLs and dist-tags (latest, next) do not.\n                            ver = token\n                            gsub(/^[\\\\^~>=<v[:space:]]+/, "", ver)\n                            gsub(/[[:space:]].*/, "", ver)\n                            if (ver ~ /^[0-9]/ && ver !~ /:/) print pkg "|" ver\n                            pkg = ""\n                        } else if (depth == 1) {\n                            pending = 0\n                        }\n                    } else if (depth == 1 && c ~ /[^[:space:],:{}]/) {\n                        # A non-object value ("dependencies": null) closes the\n                        # pending dependency section without opening it.\n                        pending = 0\n                    } else if (c == "{") {\n                        if (depth == 1) { active = pending; pending = 0; pkg = "" }\n                        depth++\n                    } else if (c == "}") {\n                        if (depth == 2) { active = 0; pkg = "" }\n                        depth--\n                    }\n                }\n            }\n            \' "$package_file" 2>/dev/null | sort -u)\n\n            # Check each dependency against vulnerability database\n            while IFS=\'|\' read -r pkg_name version; do\n                [ -z "$pkg_name" ] || [ -z "$version" ] && continue\n                # O(1) lookups of the eco and wildcard namespaces\n                check_vulnerability "npm" "$pkg_name" "$version" "$package_file" || true\n            done <<< "$deps"\n\n            # Check if vulnerabilities were found in this file\n            local vuln_count_after=${#VULNERABLE_PACKAGES[@]}\n            if [ "$vuln_count_after" -eq "$vuln_count_before" ]; then\n                echo -e "${GREEN}\u2713 [$package_file] No vulnerabilities found${NC}"\n            fi\n        done <<< "$PACKAGE_JSON_FILES"\n    fi\n\n    # Runtime versions the project targets (.nvmrc, Dockerfile, composer.json...)\n    [ "$runtime_feed_loaded" = false ] || [ -z "$RUNTIME_FILES" ] || scan_runtimes\n\n    [ "$go_reachability" = false ] || go_reachability\n\n    echo ""\n    echo "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"\n    echo -e "${BLUE}\u{1F4CA} SUMMARY${NC}"\n    echo "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"\n    \n    if [ $FOUND_VULNERABLE -eq 0 ]; then\n        echo -e "${GREEN}\u2705 No vulnerable packages detected${NC}"\n    else\n        # Count unique vulnerable packages (unique eco:name@version identities)\n        local unique_vulns=$(printf \'%s\\n\' "${VULNERABLE_PACKAGES[@]}" | awk -F\'|\' \'{print $2":"$3}\' | sort -u | wc -l | tr -d \' \')\n        local total_occurrences=${#VULNERABLE_PACKAGES[@]}\n\n        echo -e "${RED}\u26A0\uFE0F  Found ${unique_vulns} vulnerable package(s) in ${total_occurrences} location(s)${NC}"\n        echo ""\n\n        # Group by package (group key = eco:name@version)\n        declare -A pkg_files\n        for vuln in "${VULNERABLE_PACKAGES[@]}"; do\n            IFS=\'|\' read -r file eco pkg_ver <<< "$vuln"\n            local group_key="${eco}:${pkg_ver}"\n            if [ -z "${pkg_files[$group_key]}" ]; then\n                pkg_files[$group_key]="$file"\n            else\n                pkg_files[$group_key]="${pkg_files[$group_key]}|$file"\n            fi\n        done\n\n        # Display grouped results (read line by line: a key may hold spaces\n        # or glob characters, e.g. an SBOM version "1.0 beta")\n        local -a group_keys=()\n        while IFS= read -r pkg; do\n            group_keys+=("$pkg")\n        done < <(printf \'%s\\n\' "${!pkg_files[@]}" | sort -u)\n        for pkg in "${group_keys[@]}"; do\n            # Strip the ecosystem namespace for display (split at FIRST \':\' only).\n            # npm packages print with no prefix (byte-identical to legacy output);\n            # other ecosystems get a "[eco] " label.\n            local disp_eco="${pkg%%:*}"\n            local disp_rest="${pkg#*:}"\n            if [ "$disp_eco" = "npm" ]; then\n                echo -e "${RED}   \u26A0\uFE0F  $disp_rest${NC}"\n            else\n                echo -e "${RED}   \u26A0\uFE0F  [$disp_eco] $disp_rest${NC}"\n            fi\n\n            IFS=\'|\' read -ra files <<< "${pkg_files[$pkg]}"\n            # Called in any location wins; "not called" needs every location.\n            if [ ${#VULN_REACHABILITY[@]} -gt 0 ]; then\n                local reach="not called"\n                for file in "${files[@]}"; do\n                    reachability_of "$file" "$pkg"\n                    case "$REACHABILITY" in\n                        called) reach=called; break ;;\n                        "") reach="" ;;\n                    esac\n                done\n                [ -z "$reach" ] || echo -e "      ${BLUE}Reachability: $reach (govulncheck)${NC}"\n            fi\n            print_advisories "${VULN_ADVISORIES[$pkg]:-}" && echo ""\n\n            for file in "${files[@]}"; do\n                echo -e "${YELLOW}      \u2514\u2500 $file${NC}"\n            done\n        done\n        \n        echo ""\n        echo -e "${YELLOW}\u{1F4A1} Recommendations:${NC}"\n        echo "   \u2022 Update vulnerable packages to patched versions"\n        echo "   \u2022 Run your package manager\'s audit command for more details"\n\n        # Create GitHub issues if requested\n        if [ "$CREATE_GITHUB_ISSUE" = true ]; then\n            echo ""\n            echo "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"\n            echo -e "${BLUE}\u{1F4DD} Creating GitHub Issues (1 issue per package)${NC}"\n            echo "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"\n            echo ""\n            create_package_issues\n        fi\n\n        # Create a single consolidated GitHub issue per repository if requested\n        if [ "$CREATE_SINGLE_ISSUE" = true ]; then\n            echo ""\n            echo "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"\n            echo -e "${BLUE}\u{1F4DD} Creating Single Consolidated GitHub Issue${NC}"\n            echo "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"\n            echo ""\n            create_consolidated_issues\n        fi\n    fi\n    if [ ${#RUNTIME_WARNINGS[@]} -gt 0 ]; then\n        echo ""\n        echo -e "${YELLOW}\u26A0\uFE0F  Runtime versions to review (warnings, not counted as findings):${NC}"\n        local runtime_warning\n        for runtime_warning in "${RUNTIME_WARNINGS[@]}"; do\n            echo -e "${YELLOW}   \u2022 $runtime_warning${NC}"\n        done\n    fi\n    echo "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"\n    echo ""\n\n    # Export results if requested (also when empty: see export_vulnerabilities_json)\n    if [ -n "$export_json_file" ]; then\n        echo ""\n        export_vulnerabilities_json "$export_json_file" || exit "$EXIT_ERROR"\n    fi\n\n    if [ -n "$export_csv_file" ]; then\n        echo ""\n        export_vulnerabilities_csv "$export_csv_file" || exit "$EXIT_ERROR"\n    fi\n\n    # An unreadable project file, or an organization repository that could\n    # not be fetched, makes a clean result incomplete.\n    if [ "$FOUND_VULNERABLE" -eq 0 ] && [ "$UNREADABLE_FILE_COUNT" -gt 0 ]; then\n        echo -e "${RED}\u274C Scan incomplete: $UNREADABLE_FILE_COUNT project file(s) could not be read${NC}"\n        exit "$EXIT_ERROR"\n    fi\n    if [ "$FOUND_VULNERABLE" -eq 0 ] && [ "$GITHUB_FAILED_REPOS" -gt 0 ]; then\n        echo -e "${RED}\u274C Scan incomplete: $GITHUB_FAILED_REPOS repository(ies) could not be fetched${NC}"\n        exit "$EXIT_ERROR"\n    fi\n    exit $FOUND_VULNERABLE\n}\n# Run main function only when executed directly (allows `source script.sh` in unit tests)\nif [[ "${BASH_SOURCE[0]:-}" == "$0" || -z "${BASH_SOURCE[0]:-}" ]]; then\n    main "$@"\nfi\n';
 
+// src/scan/installed.ts
+import { existsSync as existsSync10, readdirSync as readdirSync8, readFileSync as readFileSync12, statSync as statSync9 } from "fs";
+import { join as join12 } from "path";
+
 // src/scan/lockfiles.ts
-import { basename as basename3 } from "path";
+import { basename as basename4 } from "path";
 var LOCKFILES = {
   "package-lock.json": "npm",
   "npm-shrinkwrap.json": "npm",
@@ -11574,8 +13065,22 @@ var LOCKFILES = {
   "composer.lock": "packagist",
   "Gemfile.lock": "rubygems"
 };
+var ADVISORY_ONLY = /* @__PURE__ */ new Set([
+  "deno.lock",
+  "go.mod",
+  "pdm.lock",
+  "gradle.lockfile",
+  "pom.xml",
+  "packages.lock.json",
+  "pubspec.lock",
+  "mix.lock",
+  "Package.resolved"
+]);
+function advisoryOnlyKind(path) {
+  return ADVISORY_ONLY.has(basename4(path));
+}
 function lockfileKind(path) {
-  const name = basename3(path);
+  const name = basename4(path);
   if (LOCKFILES[name]) return name;
   if (/^requirements.*\.txt$/.test(name)) return "requirements.txt";
   return void 0;
@@ -11630,7 +13135,9 @@ function npmLock(text) {
   }
   const walkDeps = (deps) => {
     for (const [name, v] of Object.entries(deps ?? {})) {
-      if (v.version) out2.push({ ecosystem: "npm", name, version: v.version });
+      const alias = typeof v.version === "string" ? /^npm:((?:@[^/@]+\/)?[^@]+)@([^@]+)$/.exec(v.version) : null;
+      if (alias) out2.push({ ecosystem: "npm", name: alias[1], version: alias[2] });
+      else if (v.version) out2.push({ ecosystem: "npm", name, version: v.version });
       walkDeps(v.dependencies);
     }
   };
@@ -11648,7 +13155,10 @@ function yarnLock(text) {
   for (const block of text.split(/\n(?=\S)/)) {
     const header = /^"?((?:@[^/@\s]+\/)?[^@\s",]+)@/.exec(block);
     const version = /^\s+version:?\s+"?([^"\s]+)"?/m.exec(block);
-    if (header && version) out2.push({ ecosystem: "npm", name: header[1], version: version[1] });
+    if (!header || !version) continue;
+    out2.push({ ecosystem: "npm", name: header[1], version: version[1] });
+    const real = /^"?(?:@[^/@\s]+\/)?[^@\s",]+@npm:((?:@[^/@\s]+\/)?[^@\s",]+)@/.exec(block)?.[1] ?? /^\s+resolution:\s+"?((?:@[^/@\s]+\/)?[^@\s"]+)@/m.exec(block)?.[1];
+    if (real && real !== header[1]) out2.push({ ecosystem: "npm", name: real, version: version[1] });
   }
   return uniq(out2);
 }
@@ -11676,8 +13186,8 @@ function pipfileLock(text) {
 }
 function requirements(text) {
   const out2 = [];
-  for (const m of text.matchAll(/^\s*([A-Za-z0-9_.-]+)(?:\[[^\]]*\])?\s*==\s*([^\s;#]+)/gm))
-    out2.push({ ecosystem: "pypi", name: m[1], version: m[2] });
+  for (const m of text.matchAll(/^[ \t]*([A-Za-z0-9][A-Za-z0-9_.-]*)(?:\[[^\]]*\])?[ \t]*(?:==[ \t]*([^\s;#]+)|(?=[<>=!~;#]|[ \t]*$))/gm))
+    out2.push({ ecosystem: "pypi", name: m[1], version: m[2] ?? "*" });
   return uniq(out2);
 }
 function goSum(text) {
@@ -11704,21 +13214,134 @@ function gemfileLock(text) {
   return uniq(out2);
 }
 
+// src/scan/installed.ts
+var ls = (dir) => {
+  try {
+    return readdirSync8(dir);
+  } catch {
+    return [];
+  }
+};
+var readSmall2 = (p, max = 64 * 1024 * 1024) => {
+  try {
+    if (statSync9(p).size > max) return void 0;
+    return readFileSync12(p, "utf8");
+  } catch {
+    return void 0;
+  }
+};
+function sitePackages2(env2) {
+  return ls(join12(env2, "lib")).filter((n) => n.startsWith("python")).map((n) => join12(env2, "lib", n, "site-packages")).filter((d) => existsSync10(d));
+}
+function pythonPackages(site) {
+  const out2 = [];
+  for (const n of ls(site)) {
+    const m = /^(.+)-([^-]+)\.(?:dist|egg)-info$/.exec(n);
+    if (m) out2.push({ ecosystem: "pypi", name: m[1], version: m[2], where: join12(site, n) });
+  }
+  return out2;
+}
+function nodeModules(dir) {
+  const out2 = [];
+  const one = (p) => {
+    const text = readSmall2(join12(p, "package.json"), 1024 * 1024);
+    if (!text) return;
+    try {
+      const j = JSON.parse(text);
+      if (typeof j.name === "string" && typeof j.version === "string") out2.push({ ecosystem: "npm", name: j.name, version: j.version, where: p });
+    } catch {
+    }
+  };
+  for (const n of ls(dir)) {
+    if (n.startsWith(".")) continue;
+    if (n.startsWith("@")) for (const s of ls(join12(dir, n))) one(join12(dir, n, s));
+    else one(join12(dir, n));
+  }
+  return out2;
+}
+function globalInstallDirs(home, system = ["/opt/homebrew/lib/node_modules", "/usr/local/lib/node_modules"]) {
+  const nvm = join12(home, ".nvm/versions/node");
+  const node = [...system, ...ls(nvm).map((v) => join12(nvm, v, "lib/node_modules")), join12(home, ".bun/install/global/node_modules")];
+  const python = [];
+  for (const base2 of [join12(home, ".local/share/uv/tools"), join12(home, ".local/pipx/venvs")])
+    for (const tool of ls(base2)) python.push(...sitePackages2(join12(base2, tool)));
+  return { node: node.filter((d) => existsSync10(d)), python };
+}
+function installedPackages(projects, globals = { node: [], python: [] }) {
+  const packages = [];
+  const read2 = [];
+  for (const d of new Set(projects)) {
+    for (const [file, as] of [
+      [join12(d, "node_modules/.package-lock.json"), "package-lock.json"],
+      [join12(d, "node_modules/.pnpm/lock.yaml"), "pnpm-lock.yaml"]
+    ]) {
+      const text = readSmall2(file);
+      if (text === void 0) continue;
+      read2.push(file);
+      try {
+        for (const l of parseLockfile(as, text)) packages.push({ ...l, where: join12(d, "node_modules") });
+      } catch {
+      }
+    }
+    for (const venv of [".venv", "venv"])
+      for (const site of sitePackages2(join12(d, venv))) {
+        read2.push(site);
+        packages.push(...pythonPackages(site));
+      }
+  }
+  for (const dir of globals.node) {
+    read2.push(dir);
+    packages.push(...nodeModules(dir));
+  }
+  for (const site of globals.python) {
+    read2.push(site);
+    packages.push(...pythonPackages(site));
+  }
+  return { packages, read: read2 };
+}
+
 // src/scan/deps.ts
+function readCheckerLog(log, now = Date.now()) {
+  const text = log.replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g"), "");
+  const missingOsv = [];
+  const warnings = [];
+  const feeds = [];
+  for (const m of text.matchAll(/Unable to find (\w+) feed for (\S+)/g)) {
+    if (m[1] === "osv") missingOsv.push(m[2]);
+    else warnings.push(`the ${m[1].toUpperCase()} feed for ${m[2]} could not be loaded`);
+  }
+  if (/results may be incomplete/.test(text)) warnings.push("some directories could not be read");
+  const unreadable = (text.match(/Cannot read this file: it was not scanned/g) ?? []).length;
+  if (unreadable) warnings.push(`${unreadable} lockfile(s) could not be read`);
+  const ignored = /Skipping (\d+) git-ignored file/.exec(text);
+  if (ignored) warnings.push(`${ignored[1]} git-ignored lockfile(s) were skipped`);
+  for (const m of text.matchAll(/Using (\w+) source: (\S+)/g)) {
+    const source2 = m[2];
+    const f = { feed: m[1], source: source2 };
+    if (!/^https?:\/\//.test(source2))
+      try {
+        f.ageDays = Math.floor((now - statSync10(source2).mtimeMs) / 864e5);
+      } catch {
+      }
+    feeds.push(f);
+  }
+  return { missingOsv, warnings, feeds };
+}
 function materializeChecker(dir) {
   mkdirSync6(dir, { recursive: true });
-  const p = join7(dir, `package-checker-${PACKAGE_CHECKER_VERSION}.sh`);
-  if (!existsSync9(p) || statSync8(p).size !== Buffer.byteLength(PACKAGE_CHECKER_SCRIPT)) writeFileAtomic(p, PACKAGE_CHECKER_SCRIPT);
+  const p = join13(dir, `package-checker-${PACKAGE_CHECKER_VERSION}.sh`);
+  if (!existsSync11(p) || statSync10(p).size !== Buffer.byteLength(PACKAGE_CHECKER_SCRIPT)) writeFileAtomic(p, PACKAGE_CHECKER_SCRIPT);
   return p;
 }
 function defaultChecker(runner2, workDir) {
-  const script = materializeChecker(join7(workDir, "tools"));
+  const script = materializeChecker(join13(workDir, "tools"));
   let n = 0;
   return async (dir) => {
-    const out2 = join7(workDir, `package-checker-${++n}.json`);
+    const out2 = join13(workDir, `package-checker-${++n}.json`);
+    rmSync6(out2, { force: true });
     const res = await runner2(
       "bash",
-      [script, dir, "--default-source-ghsa-osv", "--only-lockfiles", "--no-config", "--no-runtime-check", "--export-json", out2],
+      [script, dir, "--default-source-ghsa-osv", "--only-lockfiles", "--include-gitignored", "--no-config", "--no-runtime-check", "--export-json", out2],
       {
         timeoutMs: 15 * 6e4,
         cwd: workDir
@@ -11727,27 +13350,41 @@ function defaultChecker(runner2, workDir) {
     if (res.missing) return { ok: false, vulnerabilities: [], error: "bash is not installed" };
     if (res.status !== 0 && res.status !== 1)
       return { ok: false, vulnerabilities: [], error: (res.stderr || res.stdout).trim().split("\n").slice(-1)[0]?.slice(0, 200) };
-    if (!existsSync9(out2)) return { ok: res.status === 0, vulnerabilities: [], error: res.status === 0 ? void 0 : "no JSON report written" };
-    const json2 = parseJsonOutput({ ok: true, status: 0, stdout: readFileSync11(out2, "utf8"), stderr: "" });
+    const log = readCheckerLog(`${res.stdout}
+${res.stderr}`);
+    if (log.missingOsv.length)
+      return { ok: false, vulnerabilities: [], error: `OSV feed unreachable for ${log.missingOsv.join(", ")}: malicious-package advisories not loaded` };
+    const extra = { warnings: log.warnings, feeds: log.feeds };
+    if (!existsSync11(out2)) return { ok: res.status === 0, vulnerabilities: [], error: res.status === 0 ? void 0 : "no JSON report written", ...extra };
+    const json2 = parseJsonOutput({ ok: true, status: 0, stdout: readFileSync13(out2, "utf8"), stderr: "" });
     if (!json2) return { ok: false, vulnerabilities: [], error: "unreadable JSON report" };
-    return { ok: true, vulnerabilities: (json2.vulnerabilities ?? []).map((v) => ({ ...v, file: isAbsolute3(v.file) ? v.file : resolve2(workDir, v.file) })) };
+    return {
+      ok: true,
+      vulnerabilities: (json2.vulnerabilities ?? []).map((v) => ({ ...v, file: isAbsolute3(v.file) ? v.file : resolve2(workDir, v.file) })),
+      ...extra
+    };
   };
+}
+var rootOf = (d, roots) => roots.filter((r) => d === r || d.startsWith(r.endsWith(sep2) ? r : r + sep2)).sort((a, b) => b.length - a.length)[0];
+function rootLevelLockfiles(lockfiles, roots) {
+  return lockfiles.filter((f) => rootOf(dirname(f), roots) === dirname(f));
 }
 function checkerGroups(lockfiles, roots) {
   const groups = /* @__PURE__ */ new Set();
   for (const f of lockfiles) {
     const d = dirname(f);
-    const root = roots.filter((r) => d === r || d.startsWith(r.endsWith(sep2) ? r : r + sep2)).sort((a, b) => b.length - a.length)[0];
+    const root = rootOf(d, roots);
     if (!root) {
       groups.add(d);
       continue;
     }
     const rel = relative(root, d).split(sep2).filter(Boolean);
-    groups.add(rel.length ? join7(root, ...rel.slice(0, 2)) : root);
+    if (rel.length) groups.add(join13(root, ...rel.slice(0, 2)));
   }
   const list = [...groups].sort();
   return list.filter((g) => !list.some((o) => o !== g && g.startsWith(o + sep2)));
 }
+var MANIFESTS = /* @__PURE__ */ new Set(["package.json", "pyproject.toml", "Pipfile", "Gemfile", "setup.py", "setup.cfg"]);
 async function scanDeps(iocs, tree, run, opts = {}) {
   const result = { surface: "deps", scanned: true, stats: {}, startedAt: (opts.now ?? /* @__PURE__ */ new Date()).toISOString() };
   const findings = [];
@@ -11757,40 +13394,107 @@ async function scanDeps(iocs, tree, run, opts = {}) {
   let lockfiles = 0;
   let unreadable = 0;
   const lockfilePaths = /* @__PURE__ */ new Set();
+  const advisoryOnly = /* @__PURE__ */ new Set();
+  const manifests = [];
+  const shown = (l) => l.version === "*" ? `${l.name} (unpinned)` : `${l.name}@${l.version}`;
+  const hit3 = (p, l, title) => {
+    for (const m of pkgs) {
+      if (!packageHit(m.indicator, l.ecosystem, l.name, l.version)) continue;
+      findings.push({
+        surface: "deps",
+        severity: "compromised",
+        subject: p,
+        title: `${title}, named by the campaign`,
+        campaign: m.campaign.id,
+        source: m.indicator.source,
+        indicator: { type: "package", value: m.indicator.value },
+        evidence: { kind: "file", ref: p, excerpt: `${l.ecosystem} ${l.name}@${l.version}` },
+        key: `deps|${p}|${l.ecosystem}|${l.name}|${l.version}`
+      });
+    }
+  };
   for (const p of tree.files) {
-    if (!lockfileKind(p)) continue;
-    let locked;
+    if (MANIFESTS.has(basename5(p))) manifests.push(p);
+    if (!lockfileKind(p)) {
+      if (advisoryOnlyKind(p)) advisoryOnly.add(p);
+      continue;
+    }
+    let locked2;
     try {
-      if (statSync8(p).size > 64 * 1024 * 1024) throw new Error("too large");
-      locked = parseLockfile(p, readFileSync11(p, "utf8"));
+      if (statSync10(p).size > 64 * 1024 * 1024) throw new Error("too large");
+      locked2 = parseLockfile(p, readFileSync13(p, "utf8"));
     } catch {
       unreadable++;
       continue;
     }
     lockfiles++;
     lockfilePaths.add(p);
-    for (const l of locked) {
+    for (const l of locked2) {
       const k = `${l.ecosystem}|${l.name}|${l.version}`;
       const set = where.get(k) ?? /* @__PURE__ */ new Set();
       set.add(p);
       where.set(k, set);
-      for (const m of pkgs) {
-        if (!packageHit(m.indicator, l.ecosystem, l.name, l.version)) continue;
-        findings.push({
-          surface: "deps",
-          severity: "compromised",
-          subject: p,
-          title: `${p} locks ${l.name}@${l.version}, named by the campaign`,
-          campaign: m.campaign.id,
-          source: m.indicator.source,
-          indicator: { type: "package", value: m.indicator.value },
-          evidence: { kind: "file", ref: p, excerpt: `${l.ecosystem} ${l.name}@${l.version}` },
-          key: `deps|${p}|${l.ecosystem}|${l.name}|${l.version}`
-        });
-      }
+      hit3(p, l, `${p} ${l.version === "*" ? "requires" : "locks"} ${shown(l)}`);
     }
   }
   result.stats.lockfiles = lockfiles;
+  if (advisoryOnly.size) result.stats.advisoryOnlyLockfiles = advisoryOnly.size;
+  const lockDirs = new Set([...lockfilePaths, ...advisoryOnly].map((p) => dirname(p)));
+  const locked = (d) => {
+    for (let x = d; ; x = dirname(x)) {
+      if (lockDirs.has(x)) return true;
+      if (dirname(x) === x) return false;
+    }
+  };
+  const orphans = manifests.filter((m) => !locked(dirname(m)));
+  if (pkgs.length && orphans.length) {
+    let unread = 0;
+    for (const m of orphans) {
+      if (basename5(m) !== "package.json") {
+        unread++;
+        continue;
+      }
+      try {
+        const j = JSON.parse(readFileSync13(m, "utf8"));
+        for (const field of ["dependencies", "devDependencies", "optionalDependencies"])
+          for (const name of Object.keys(j?.[field] ?? {})) hit3(m, { ecosystem: "npm", name, version: "*" }, `${m} depends on ${name} (no lockfile)`);
+      } catch {
+        unread++;
+      }
+    }
+    if (unread)
+      gaps.push({
+        surface: "deps",
+        what: `${unread} manifest(s) with no lockfile (pyproject.toml, Pipfile, Gemfile, setup.py)`,
+        why: "only lockfiles and package.json are matched against the campaign's packages",
+        fix: "check those projects' dependencies by hand, or lock them"
+      });
+  }
+  if (pkgs.length) {
+    const projects = [...lockDirs, ...manifests.map((m) => dirname(m)), ...tree.gitDirs];
+    const globals = opts.globalDirs ?? (opts.home ? globalInstallDirs(opts.home) : void 0);
+    const inst = installedPackages(projects, globals);
+    result.stats.installedPackages = inst.packages.length;
+    for (const l of inst.packages) hit3(l.where, l, `${l.name}@${l.version} is installed in ${l.where}`);
+  }
+  if (!opts.home && !opts.globalDirs)
+    gaps.push({
+      surface: "deps",
+      what: "global installs (npm -g, nvm, bun, uv tools, pipx)",
+      why: "not read in this scan"
+    });
+  const unsupported = /* @__PURE__ */ new Map();
+  for (const m of pkgs) {
+    const e = normEco(m.indicator.ecosystem ?? "");
+    if (!SUPPORTED_ECOSYSTEMS.includes(e)) unsupported.set(e || "(none)", (unsupported.get(e || "(none)") ?? 0) + 1);
+  }
+  if (unsupported.size)
+    gaps.push({
+      surface: "deps",
+      what: `package indicator(s) in ecosystems ultraguard cannot check: ${[...unsupported].map(([e, n]) => `${e} (${n})`).join(", ")}`,
+      why: `no reader for these ecosystems (supported: ${SUPPORTED_ECOSYSTEMS.join(", ")})`,
+      fix: "check them by hand"
+    });
   if (tree.capped)
     gaps.push({
       surface: "deps",
@@ -11799,31 +13503,76 @@ async function scanDeps(iocs, tree, run, opts = {}) {
       fix: "re-run with --roots narrowed to your code folders"
     });
   if (tree.unreadable) gaps.push({ surface: "deps", what: `lockfiles in ${tree.unreadable} unreadable directories`, why: "permission denied" });
+  const deeper = tree.pruned?.["(deeper than --depth)"] ?? 0;
+  if (deeper)
+    gaps.push({
+      surface: "deps",
+      what: `lockfiles deeper than --depth in ${deeper} folder(s)`,
+      why: "the walk stops at --depth",
+      fix: "re-run with a larger --depth, or --roots narrowed to your code folders"
+    });
+  if (lockfiles + advisoryOnly.size === 0)
+    gaps.push({
+      surface: "deps",
+      what: `no lockfile found under ${opts.roots?.length ? opts.roots.join(", ") : "the walk roots"}`,
+      why: "nothing to compare with the package indicators and the advisory feeds",
+      fix: "pass --roots <the folders that hold your code>"
+    });
   result.stats.packages = where.size;
   if (unreadable) gaps.push({ surface: "deps", what: `${unreadable} lockfiles`, why: "could not be parsed or were over 64 MB" });
-  if (opts.checker !== false && lockfiles > 0) {
-    const workDir = run ? join7(run.dir, "package-checker") : join7(tmpdir(), `ultraguard-pc-${process.pid}`);
+  if (opts.checker !== false && lockfiles + advisoryOnly.size > 0) {
+    const workDir = run ? join13(run.dir, "package-checker") : join13(tmpdir4(), `ultraguard-pc-${process.pid}`);
     mkdirSync6(workDir, { recursive: true });
     const checker2 = opts.checker ?? (opts.runner ? defaultChecker(opts.runner, workDir) : void 0);
     if (!checker2) gaps.push({ surface: "deps", what: "the OSV and GHSA advisory feeds", why: "no command runner" });
     else {
-      const groups = checkerGroups([...lockfilePaths], opts.roots ?? []);
+      const all = [...lockfilePaths, ...advisoryOnly];
+      const roots = opts.roots ?? [];
+      const staged = /* @__PURE__ */ new Map();
+      for (const [i, f] of rootLevelLockfiles(all, roots).entries()) {
+        const d = join13(workDir, "root-lockfiles", String(i + 1));
+        try {
+          rmSync6(d, { recursive: true, force: true });
+          mkdirSync6(d, { recursive: true });
+          copyFileSync(f, join13(d, basename5(f)));
+          staged.set(d, f);
+        } catch {
+          gaps.push({ surface: "deps", what: `advisories for ${f}`, why: "the lockfile could not be copied for package-checker" });
+        }
+      }
+      const groups = [...checkerGroups(all, roots), ...staged.keys()];
       const vulns = [];
       let failed = 0;
+      let feedAge;
       for (const g of groups) {
         const r = await checker2(g);
+        const label = staged.get(g) ?? `the lockfiles under ${g}`;
         if (!r.ok) {
           failed++;
           gaps.push({
             surface: "deps",
-            what: `advisories for the lockfiles under ${g}`,
+            what: `advisories for ${label}`,
             why: `package-checker failed: ${r.error ?? "unknown error"}`,
-            fix: "re-run when online"
+            fix: /bash 4/i.test(r.error ?? "") ? "brew install bash (package-checker needs Bash 4 or newer), then re-run" : "re-run when online"
           });
           continue;
         }
-        vulns.push(...r.vulnerabilities);
+        for (const w of r.warnings ?? []) gaps.push({ surface: "deps", what: `advisories for ${label}`, why: `package-checker: ${w}` });
+        for (const f of r.feeds ?? [])
+          if (f.ageDays !== void 0) {
+            feedAge = Math.max(feedAge ?? 0, f.ageDays);
+            if (f.ageDays > 2)
+              gaps.push({
+                surface: "deps",
+                what: `advisories newer than ${f.ageDays} days (${f.feed} feed read from ${f.source})`,
+                why: "package-checker used a local copy of its feed instead of downloading the current one",
+                fix: "brew upgrade package-checker (or remove that copy), then re-run scan deps"
+              });
+          }
+        const orig = staged.get(g);
+        vulns.push(...orig ? r.vulnerabilities.map((v) => ({ ...v, file: orig })) : r.vulnerabilities);
       }
+      if (feedAge !== void 0) result.stats.feedAgeDays = feedAge;
       const seen = /* @__PURE__ */ new Set();
       const unique = vulns.filter((v) => {
         const k = `${v.file}|${v.ecosystem}|${v.name}|${v.version}`;
@@ -11880,8 +13629,8 @@ async function scanDeps(iocs, tree, run, opts = {}) {
   } else if (opts.checker === false) gaps.push({ surface: "deps", what: "the OSV and GHSA advisory feeds (malicious packages)", why: "--no-osv" });
   gaps.push({
     surface: "deps",
-    what: "globally installed packages (npm -g, pipx, cargo install) and Docker images",
-    why: "only lockfiles under the roots are read"
+    what: "cargo install binaries, Docker images, and the yarn, pnpm, bun and uv download caches",
+    why: "only lockfiles, package.json, node_modules, virtualenvs and global install folders are read"
   });
   result.finishedAt = (/* @__PURE__ */ new Date()).toISOString();
   return { result, findings, gaps };
@@ -11893,9 +13642,13 @@ var activityPeriod = (since, now) => {
   const days = (now.getTime() - Date.parse(since)) / 864e5;
   return days <= 1 ? "day" : days <= 7 ? "week" : days <= 31 ? "month" : days <= 92 ? "quarter" : "year";
 };
+var elapsed = (a, b) => {
+  const s = Math.max(0, (Date.parse(b) - Date.parse(a)) / 1e3);
+  return s < 120 ? `${Math.round(s)} s` : s < 7200 ? `${Math.round(s / 60)} min` : s < 172800 ? `${Math.round(s / 3600)} h` : `${Math.round(s / 86400)} days`;
+};
 var laterOf = (a, b) => a && b ? a > b ? a : b : a ?? b ?? void 0;
 var DOCS_ONLY = /\.(md|mdx|rst|adoc)$|(^|\/)(README|CHANGELOG|LICENSE|NOTICE|AUTHORS)(\.(md|txt|rst))?$/i;
-function hit(m, base2) {
+function hit2(m, base2) {
   return {
     severity: m.indicator.weak ? "suspicious" : "compromised",
     ...base2,
@@ -11905,12 +13658,16 @@ function hit(m, base2) {
     key: `${base2.surface}|${base2.subject}|${m.indicator.type}:${m.indicator.value}|${base2.evidence.ref}`
   };
 }
+var COST_ACTIVE = 16;
+var COST_INACTIVE = 1;
+var basePath = (p) => p.split("?")[0] ?? p;
+var REPO_PATH = /^(repos\/|repositories\/|user\/repos|search\/code)/;
 function firstMatch(ms, value, at) {
   if (!value) return void 0;
   return ms.find((m) => inWindow(m, at) && m.test(value));
 }
 async function scanGithub(iocs, runner2, opts = {}) {
-  const gh = new Gh(runner2);
+  const gh = new Gh(runner2, void 0, opts.sleep);
   const now = opts.now ?? /* @__PURE__ */ new Date();
   const since = windowStart(iocs);
   const sinceDay = since.slice(0, 10);
@@ -11930,8 +13687,13 @@ async function scanGithub(iocs, runner2, opts = {}) {
     content: matchers(iocs, "string", "ip", "domain", "url"),
     cache: matchers(iocs, "cache_key_prefix"),
     artifact: matchers(iocs, "artifact_prefix"),
-    actor: matchers(iocs, "actor")
+    actor: matchers(iocs, "actor"),
+    repoName: matchers(iocs, "repo_name"),
+    repoDesc: matchers(iocs, "repo_description"),
+    runner: matchers(iocs, "runner_name")
   };
+  const literalBranches = [...new Set(M.branch.filter((m) => !m.indicator.regex).map((m) => m.indicator.value))];
+  const period = activityPeriod(since, now);
   const me = await gh.api("user");
   if (!me.ok || !me.data) {
     const why = me.status === 0 ? me.error ?? "gh failed" : `HTTP ${me.status}`;
@@ -11943,8 +13705,19 @@ async function scanGithub(iocs, runner2, opts = {}) {
     };
   }
   const login = me.data.login;
-  accountRes.scanned = true;
-  reposRes.scanned = true;
+  const reported = /* @__PURE__ */ new Set(["user", "rate_limit"]);
+  const listGap = (gaps, surface, what, res, base2, fix) => {
+    reported.add(base2);
+    if (!res.ok) gaps.push({ surface, what, why: res.error ?? `HTTP ${res.status}`, ...fix ? { fix } : {} });
+    else if (res.partial)
+      gaps.push({
+        surface,
+        what: `${what} past the first ${res.data?.length ?? 0}`,
+        why: `page ${res.partial.page} failed: ${res.partial.error ?? "error"}`,
+        fix: res.partial.rateLimited ? "re-run scan github in a minute (search calls reset each minute, the rest each hour: gh api rate_limit)" : fix ?? "re-run scan github"
+      });
+  };
+  const accountReads = [];
   const scopeOf = (actor) => actor ? actor.toLowerCase() === login.toLowerCase() ? "own" : "other" : void 0;
   const scopes = await gh.scopes();
   if (scopes && !scopes.includes("repo"))
@@ -11962,16 +13735,32 @@ async function scanGithub(iocs, runner2, opts = {}) {
   });
   if (M.pr.length) {
     const q = encodeURIComponent(`author:${login} type:pr created:>=${sinceDay}`);
-    const prs = await gh.paged(`search/issues?q=${q}`, { pick: (b) => b.items ?? [], maxPages: 10 });
+    let incomplete = false;
+    const prs = await gh.paged(`search/issues?q=${q}`, {
+      pick: (b) => {
+        incomplete ||= !!b.incomplete_results;
+        return b.items ?? [];
+      },
+      maxPages: 10
+    });
+    accountReads.push(prs.ok);
     accountRes.stats.prsSearched = prs.data?.length ?? 0;
-    if (!prs.ok) accG.push({ surface: "github:account", what: "pull requests you opened", why: prs.error ?? `HTTP ${prs.status}` });
-    if (prs.truncated) accG.push({ surface: "github:account", what: "pull requests past the first 1,000", why: "search caps at 1,000 results" });
+    listGap(accG, "github:account", "pull requests you opened", prs, "search/issues");
+    if (prs.truncated && !prs.partial)
+      accG.push({ surface: "github:account", what: "pull requests past the first 1,000", why: "search caps at 1,000 results" });
+    if (incomplete)
+      accG.push({
+        surface: "github:account",
+        what: "part of the pull requests you opened",
+        why: "GitHub search timed out (incomplete_results)",
+        fix: "re-run scan github"
+      });
     for (const pr of prs.data ?? []) {
       const m = firstMatch(M.pr, pr.title, pr.created_at);
       if (!m) continue;
       const repo = String(pr.repository_url ?? "").replace("https://api.github.com/repos/", "");
       accF.push(
-        hit(m, {
+        hit2(m, {
           surface: "github:account",
           subject: repo,
           title: `Your account opened PR "${pr.title}" in ${repo}`,
@@ -11984,11 +13773,26 @@ async function scanGithub(iocs, runner2, opts = {}) {
     }
   }
   if (M.commit.length) {
-    const q = encodeURIComponent(`author:${login} author-date:>=${sinceDay}`);
-    const commits = await gh.paged(`search/commits?q=${q}`, { pick: (b) => b.items ?? [], maxPages: 10 });
+    const q = encodeURIComponent(`author:${login} committer-date:>=${sinceDay}`);
+    let incomplete = false;
+    const commits = await gh.paged(`search/commits?q=${q}`, {
+      pick: (b) => {
+        incomplete ||= !!b.incomplete_results;
+        return b.items ?? [];
+      },
+      maxPages: 10
+    });
+    accountReads.push(commits.ok);
     accountRes.stats.commitsSearched = commits.data?.length ?? 0;
-    if (!commits.ok) accG.push({ surface: "github:account", what: "commits you authored", why: commits.error ?? `HTTP ${commits.status}` });
-    if (commits.truncated)
+    listGap(accG, "github:account", "commits you authored", commits, "search/commits");
+    if (incomplete)
+      accG.push({
+        surface: "github:account",
+        what: "part of the commits you authored",
+        why: "GitHub search timed out (incomplete_results)",
+        fix: "re-run scan github"
+      });
+    if (commits.truncated && !commits.partial)
       accG.push({
         surface: "github:account",
         what: "commits you authored past the first 1,000",
@@ -12000,7 +13804,7 @@ async function scanGithub(iocs, runner2, opts = {}) {
       if (!m) continue;
       const repo = c.repository?.full_name ?? "?";
       accF.push(
-        hit(m, {
+        hit2(m, {
           surface: "github:account",
           subject: repo,
           title: `Your account authored commit "${msg}" in ${repo}`,
@@ -12012,17 +13816,49 @@ async function scanGithub(iocs, runner2, opts = {}) {
       );
     }
   }
-  if (M.branch.length) {
+  {
     const events = await gh.paged(`users/${login}/events`, { maxPages: 3 });
+    accountReads.push(events.ok);
     accountRes.stats.events = events.data?.length ?? 0;
+    listGap(accG, "github:account", "your public events (branches and repositories you created, repositories made public)", events, `users/${login}/events`);
     for (const e of events.data ?? []) {
       if (e.created_at < since) continue;
+      const repoName = String(e.repo?.name ?? "?");
+      if (e.type === "CreateEvent" && e.payload?.ref_type === "repository" || e.type === "PublicEvent") {
+        const verb = e.type === "PublicEvent" ? "made public" : "created";
+        const m2 = firstMatch(M.repoName, repoName.split("/").pop(), e.created_at);
+        if (m2)
+          accF.push(
+            hit2(m2, {
+              surface: "github:account",
+              subject: repoName,
+              title: `Your account ${verb} repository ${repoName}`,
+              actor: login,
+              scope: "own",
+              at: e.created_at,
+              evidence: { kind: "api", ref: `users/${login}/events`, excerpt: `${e.type} ${repoName}` }
+            })
+          );
+        else if (e.type === "PublicEvent" && e.created_at >= reviewSince)
+          accF.push({
+            surface: "github:account",
+            severity: "suspicious",
+            subject: repoName,
+            title: `Your account made repository ${repoName} public at ${e.created_at}: is it yours, and meant to be public?`,
+            actor: login,
+            scope: "own",
+            at: e.created_at,
+            evidence: { kind: "api", ref: `users/${login}/events`, excerpt: `PublicEvent ${repoName}` },
+            key: `github:account|public|${repoName}|${e.id ?? e.created_at}`
+          });
+        continue;
+      }
       const ref = String(e.payload?.ref ?? "").replace(/^refs\/heads\//, "");
       if (!ref || e.type !== "CreateEvent" && e.type !== "PushEvent") continue;
       const m = firstMatch(M.branch, ref, e.created_at);
       if (!m) continue;
       accF.push(
-        hit(m, {
+        hit2(m, {
           surface: "github:account",
           subject: e.repo?.name ?? "?",
           title: `Your account ${e.type === "CreateEvent" ? "created" : "pushed to"} branch ${ref} in ${e.repo?.name}`,
@@ -12034,24 +13870,38 @@ async function scanGithub(iocs, runner2, opts = {}) {
       );
     }
   }
+  const keySince = reviewStart(iocs, now, 180);
+  if (keySince > since)
+    for (const [surface, gaps] of [
+      ["github:account", accG],
+      ["github:repos", repG]
+    ])
+      gaps.push({
+        surface,
+        what: `keys, webhooks and deploy keys added between ${sinceDay} and ${keySince.slice(0, 10)}`,
+        why: "not listed: the review of changes that match no indicator stops 180 days back"
+      });
   for (const [path, label] of [
     ["user/keys", "SSH key"],
     ["user/gpg_keys", "GPG key"]
   ]) {
-    const keys = await gh.api(path);
+    const keys = await gh.paged(path, { maxPages: 5 });
+    accountReads.push(keys.ok);
+    reported.add(path);
+    if (keys.partial) listGap(accG, "github:account", `${label}s added to your account`, keys, path);
     if (!keys.ok) {
       const scope = path === "user/keys" ? "read:public_key" : "read:gpg_key";
       accG.push({
         surface: "github:account",
         what: `${label}s added to your account`,
-        why: keys.status === 404 || keys.status === 403 ? `the token lacks the ${scope} scope (${keys.error ?? `HTTP ${keys.status}`})` : keys.error ?? `HTTP ${keys.status}`,
+        why: keys.status === 404 || keys.status === 403 && !/rate limit/i.test(keys.error ?? "") ? `the token lacks the ${scope} scope (${keys.error ?? `HTTP ${keys.status}`})` : keys.error ?? `HTTP ${keys.status}`,
         fix: `gh auth refresh -s ${scope}`
       });
       continue;
     }
     accountRes.stats[path === "user/keys" ? "sshKeys" : "gpgKeys"] = keys.data?.length ?? 0;
     for (const k of keys.data ?? []) {
-      if (!k.created_at || k.created_at < reviewSince) continue;
+      if (!k.created_at || k.created_at < keySince) continue;
       accF.push({
         surface: "github:account",
         severity: "suspicious",
@@ -12063,41 +13913,252 @@ async function scanGithub(iocs, runner2, opts = {}) {
       });
     }
   }
+  accountRes.scanned = accountReads.some(Boolean);
+  if (!accountRes.scanned)
+    accG.push({
+      surface: "github:account",
+      what: "your account",
+      why: "every account read failed: nothing was looked at",
+      fix: "check gh auth status and gh api rate_limit, then re-run scan github"
+    });
   accountRes.finishedAt = (/* @__PURE__ */ new Date()).toISOString();
   let repos;
+  let allListed;
+  let listed = true;
   if (opts.repos?.length) {
     const got = await mapPool(opts.repos, 8, (r) => gh.api(`repos/${r}`));
     repos = got.filter((g) => g.ok && g.data).map((g) => g.data);
-    for (const [i, g] of got.entries()) if (!g.ok) repG.push({ surface: "github:repos", what: opts.repos[i], why: g.error ?? `HTTP ${g.status}` });
+    for (const [i, g] of got.entries())
+      if (!g.ok) {
+        reported.add(`repos/${opts.repos[i]}`);
+        repG.push({ surface: "github:repos", what: opts.repos[i], why: g.error ?? `HTTP ${g.status}` });
+      }
+    listed = repos.length > 0;
   } else {
     const list = await gh.paged("user/repos?affiliation=owner,collaborator,organization_member", { maxPages: 50 });
-    if (!list.ok) repG.push({ surface: "github:repos", what: "the list of your repositories", why: list.error ?? `HTTP ${list.status}` });
-    repos = (list.data ?? []).filter((r) => r.permissions?.push && !r.archived);
+    listGap(repG, "github:repos", "the list of your repositories", list, "user/repos");
+    listed = list.ok;
+    allListed = list.data ?? [];
+    repos = allListed.filter((r) => r.permissions?.push && !r.archived);
+    repos.sort((a, b) => String(b.pushed_at ?? "").localeCompare(String(a.pushed_at ?? "")));
   }
+  const isActive = (r) => !!r.pushed_at && r.pushed_at >= since;
+  const seenRepos = opts.repos?.length ? repos : allListed ?? [];
+  for (const x of seenRepos) {
+    const name = x.name ?? x.full_name.split("/").pop() ?? "";
+    const m = firstMatch(M.repoName, name, x.created_at) ?? firstMatch(M.repoDesc, x.description, x.created_at);
+    if (!m) continue;
+    const mine = (x.owner?.login ?? x.full_name.split("/")[0])?.toLowerCase() === login.toLowerCase();
+    (mine ? accF : repF).push(
+      hit2(m, {
+        surface: mine ? "github:account" : "github:repos",
+        subject: x.full_name,
+        title: `Repository ${x.full_name}${x.description ? ` ("${firstLine(x.description).slice(0, 120)}")` : ""}, created ${x.created_at ?? "?"}`,
+        at: x.created_at,
+        evidence: { kind: "url", ref: `https://github.com/${x.full_name}` }
+      })
+    );
+  }
+  const created = seenRepos.filter(
+    (x) => (x.owner?.login ?? x.full_name.split("/")[0])?.toLowerCase() === login.toLowerCase() && x.created_at && x.created_at >= reviewSince
+  );
+  if (created.length)
+    accF.push({
+      surface: "github:account",
+      severity: "info",
+      subject: login,
+      title: `${created.length} repositories created on your account since ${reviewSince.slice(0, 10)}: ${created.slice(0, 8).map((x) => x.full_name).join(", ")}${created.length > 8 ? ", ..." : ""}`,
+      evidence: { kind: "api", ref: "user/repos?sort=created" },
+      key: `github:account|new-repos|${created.map((x) => x.full_name).sort().join(",")}`
+    });
   if (opts.maxRepos && repos.length > opts.maxRepos) {
-    repG.push({ surface: "github:repos", what: `${repos.length - opts.maxRepos} repositories past --max-repos`, why: "capped by the caller" });
+    const skipped = repos.slice(opts.maxRepos);
+    repG.push({
+      surface: "github:repos",
+      what: `${skipped.length} repositories past --max-repos (${skipped.filter(isActive).length} pushed to since ${sinceDay})`,
+      why: "capped by the caller"
+    });
     repos = repos.slice(0, opts.maxRepos);
   }
   reposRes.stats.repos = repos.length;
   let inactive = 0;
   let noAdmin = 0;
   let quietGaps = 0;
+  let inactiveRan = 0;
   const contentCapped = [];
+  const pkgCapped = [];
+  const treeCut = [];
   const rate = await gh.api("rate_limit");
   const remaining = rate.data?.resources?.core?.remaining;
-  if (remaining !== void 0 && remaining < repos.length * 6)
+  const resetEpoch = rate.data?.resources?.core?.reset;
+  const resetAt = resetEpoch ? new Date(resetEpoch * 1e3).toISOString() : void 0;
+  const activeCount = repos.filter(isActive).length;
+  const perActive = COST_ACTIVE + literalBranches.length * 2;
+  const perInactive = COST_INACTIVE + (M.content.length || M.workflow.length ? 1 : 0);
+  const admins = repos.filter((x) => x.permissions?.admin).length;
+  const cost = activeCount * perActive + (repos.length - activeCount) * perInactive + admins * 3;
+  if (remaining !== void 0 && remaining < cost)
     repG.push({
       surface: "github:repos",
       what: "part of the repositories may hit the API rate limit",
-      why: `${remaining} REST calls left this hour for ${repos.length} repositories (about 5 each)`,
-      fix: "wait for the hourly reset, or narrow with --repos"
+      why: `${remaining} REST calls left this hour; ${repos.length} repositories need up to ${cost} (about ${perActive} per repository pushed since ${sinceDay}, ${perInactive} per other, 3 more per one you administer)`,
+      fix: `wait for the reset${resetAt ? ` at ${resetAt}` : ""}, or narrow with --repos`
     });
   const truncated = [];
+  const notStarted = [];
+  const poolStart = gh.log.length;
   await mapPool(repos, opts.concurrency ?? 8, async (repo) => {
     const r = repo.full_name;
+    if (gh.coreRateLimited > 0) {
+      notStarted.push(r);
+      return;
+    }
     const add2 = (f) => repF.push(f);
-    const active2 = !!repo.pushed_at && repo.pushed_at >= since;
-    if (M.pr.length || M.branch.length) {
+    const active2 = isActive(repo);
+    let actorOnlyCount = 0;
+    const actorOnly = (what, actor, at, ref) => {
+      const m = firstMatch(M.actor, actor, at);
+      if (!m || actorOnlyCount >= 5 || at && at < since) return;
+      actorOnlyCount++;
+      add2(
+        hit2(m, {
+          severity: "suspicious",
+          surface: "github:repos",
+          subject: r,
+          title: `${what} by ${actor} (named compromised by ${m.indicator.source})`,
+          actor,
+          scope: scopeOf(actor),
+          at,
+          evidence: { kind: "url", ref }
+        })
+      );
+    };
+    const blobUrl = (path) => `https://github.com/${r}/blob/${encodeURIComponent(repo.default_branch)}/${path.split("/").map(encodeURIComponent).join("/")}`;
+    const treeOf = async () => {
+      const t = await gh.api(`repos/${r}/git/trees/${encodeURIComponent(repo.default_branch)}?recursive=1`);
+      const paths = (t.data?.tree ?? []).filter((e) => e.type === "blob").map((e) => e.path);
+      if (!t.data?.truncated) return paths;
+      treeCut.push(r);
+      for (const dir of [".github/workflows", ""]) {
+        const list = await gh.api(`repos/${r}/contents/${dir}`);
+        for (const e of Array.isArray(list.data) ? list.data : []) if (e.type === "file" && !paths.includes(e.path)) paths.push(e.path);
+      }
+      return paths;
+    };
+    const isWorkflow = (p) => /^\.github\/workflows\/[^/]+$/.test(p);
+    const scanWorkflows = async (paths, note = "") => {
+      const runnable = paths.filter((p) => isWorkflow(p) || /^\.github\/actions\/(.+\/)?action\.ya?ml$/.test(p));
+      for (const p of runnable) {
+        const m = firstMatch(M.workflow, p) ?? firstMatch(M.file, p);
+        if (m)
+          add2(
+            hit2(m, {
+              surface: "github:repos",
+              subject: r,
+              title: `Workflow file ${p} on ${repo.default_branch}${note}`,
+              evidence: { kind: "url", ref: blobUrl(p) }
+            })
+          );
+      }
+      if (!M.content.length) return;
+      if (runnable.length > 25) contentCapped.push(`${r} (${runnable.length} workflow files)`);
+      for (const p of runnable.slice(0, 25)) {
+        const body = await gh.api(`repos/${r}/contents/${p.split("/").map(encodeURIComponent).join("/")}`);
+        const text = body.data?.content ? Buffer.from(body.data.content, "base64").toString("utf8") : "";
+        const lines = text.split("\n");
+        for (const m of M.content) {
+          const ln = lines.findIndex((l) => m.test(l));
+          if (ln < 0) continue;
+          add2(
+            hit2(m, {
+              surface: "github:repos",
+              subject: r,
+              title: `${p} contains "${m.indicator.value}"${note}`,
+              evidence: { kind: "url", ref: `${blobUrl(p)}#L${ln + 1}`, excerpt: lines[ln]?.trim().slice(0, 200) }
+            })
+          );
+        }
+      }
+    };
+    const scanFiles = async (paths) => {
+      await scanWorkflows(paths);
+      for (const p of paths) {
+        if (/^\.github\//.test(p) && (isWorkflow(p) || /action\.ya?ml$/.test(p))) continue;
+        const m = firstMatch(M.file, p) ?? (p.startsWith(".github/") ? firstMatch(M.workflow, p) : void 0);
+        if (m) add2(hit2(m, { surface: "github:repos", subject: r, title: `File ${p} on ${repo.default_branch}`, evidence: { kind: "url", ref: blobUrl(p) } }));
+      }
+      if (!M.file.length && !M.content.length) return;
+      const pkgs = paths.filter((p) => /(^|\/)package\.json$/.test(p) && !/(^|\/)node_modules\//.test(p));
+      if (pkgs.length > 20) pkgCapped.push(`${r} (${pkgs.length} package.json files)`);
+      for (const p of pkgs.slice(0, 20)) {
+        const pkg = await gh.api(`repos/${r}/contents/${p.split("/").map(encodeURIComponent).join("/")}`);
+        const text = pkg.data?.content ? Buffer.from(pkg.data.content, "base64").toString("utf8") : "";
+        try {
+          const scripts = JSON.parse(text).scripts ?? {};
+          for (const hook of ["preinstall", "install", "postinstall", "prepare"]) {
+            const cmd = scripts[hook];
+            if (!cmd) continue;
+            const m = M.file.find((x) => cmd.split(/[\s;&|]+/).some((tok) => x.test(tok))) ?? firstMatch(M.content, cmd);
+            if (m)
+              add2(
+                hit2(m, {
+                  surface: "github:repos",
+                  subject: r,
+                  title: `${p} "${hook}" runs "${cmd}"`,
+                  evidence: { kind: "url", ref: pkg.data?.html_url ?? blobUrl(p), excerpt: cmd }
+                })
+              );
+          }
+        } catch {
+        }
+      }
+    };
+    if (repo.permissions?.admin) {
+      for (const [path, label] of [
+        ["hooks", "Webhook"],
+        ["keys", "Deploy key"]
+      ]) {
+        const items = await gh.paged(`repos/${r}/${path}`, { maxPages: 5 });
+        for (const it of items.data ?? []) {
+          if (!it.created_at || it.created_at < keySince) continue;
+          add2({
+            surface: "github:repos",
+            severity: "suspicious",
+            subject: r,
+            title: `${label} added in the window: ${label === "Webhook" ? it.config?.url : it.title}`,
+            at: it.created_at,
+            evidence: { kind: "api", ref: `repos/${r}/${path}/${it.id}` },
+            key: `github:repos|${r}|${path}|${it.id}`
+          });
+        }
+      }
+      const runners = await gh.paged(`repos/${r}/actions/runners`, { pick: (b) => b.runners ?? [], maxPages: 3 });
+      const plain2 = [];
+      for (const rn of runners.data ?? []) {
+        const name = String(rn.name ?? "");
+        const m = firstMatch(M.runner, name) ?? M.content.find((x) => x.indicator.type === "string" && x.indicator.value.trim().toLowerCase() === name.trim().toLowerCase());
+        if (m)
+          add2(
+            hit2(m, {
+              surface: "github:repos",
+              subject: r,
+              title: `Self-hosted runner "${name}" is registered (${rn.os ?? "?"}, ${rn.status ?? "?"})`,
+              evidence: { kind: "api", ref: `repos/${r}/actions/runners/${rn.id}` }
+            })
+          );
+        else plain2.push(`${name} (${rn.os ?? "?"}, ${rn.status ?? "?"})`);
+      }
+      if (plain2.length)
+        add2({
+          surface: "github:repos",
+          severity: "info",
+          subject: r,
+          title: `Self-hosted runner(s) registered: ${plain2.slice(0, 5).join(", ")}${plain2.length > 5 ? ", ..." : ""}`,
+          evidence: { kind: "api", ref: `repos/${r}/actions/runners` },
+          key: `github:repos|${r}|runners|${(runners.data ?? []).map((x) => x.id).join(",")}`
+        });
+    } else noAdmin++;
+    if (M.pr.length || M.branch.length || M.actor.length) {
       const prs = await gh.paged(`repos/${r}/pulls?state=all&sort=created&direction=desc`, {
         maxPages: 3,
         stop: (page) => page.some((p) => p.created_at < since)
@@ -12105,10 +14166,13 @@ async function scanGithub(iocs, runner2, opts = {}) {
       for (const pr of prs.data ?? []) {
         if (pr.created_at < since) continue;
         const m = firstMatch(M.pr, pr.title, pr.created_at) ?? firstMatch(M.branch, pr.head?.ref, pr.created_at);
-        if (!m) continue;
         const actor = pr.user?.login;
+        if (!m) {
+          actorOnly(`PR #${pr.number} "${pr.title}" (branch ${pr.head?.ref})`, actor, pr.created_at, pr.html_url);
+          continue;
+        }
         add2(
-          hit(m, {
+          hit2(m, {
             surface: "github:repos",
             subject: r,
             title: `PR #${pr.number} "${pr.title}" (branch ${pr.head?.ref}) by ${actor}`,
@@ -12122,40 +14186,15 @@ async function scanGithub(iocs, runner2, opts = {}) {
     }
     if (!active2) {
       inactive++;
+      if (M.content.length || M.workflow.length) {
+        const ran = await gh.api(`repos/${r}/actions/runs?created=>=${sinceDay}&per_page=1`);
+        const n = Number(ran.data?.total_count ?? 0);
+        if (n > 0) {
+          inactiveRan++;
+          await scanWorkflows(await treeOf(), ` (${n} run(s) since ${sinceDay})`);
+        }
+      }
       return;
-    }
-    if (M.branch.length) {
-      const branches = await gh.paged(`repos/${r}/branches`, { maxPages: 10 });
-      for (const b of branches.data ?? []) {
-        const m = firstMatch(M.branch, b.name);
-        if (m)
-          add2(
-            hit(m, { surface: "github:repos", subject: r, title: `Branch ${b.name} exists`, evidence: { kind: "api", ref: `repos/${r}/branches/${b.name}` } })
-          );
-      }
-      const activity = await gh.paged(`repos/${r}/activity?time_period=${activityPeriod(since, now)}`, { maxPages: 3 });
-      for (const ev of activity.data ?? []) {
-        const name = String(ev.ref ?? "").replace(/^refs\/heads\//, "");
-        if (!name || ev.timestamp && ev.timestamp < since) continue;
-        const m = firstMatch(M.branch, name, ev.timestamp);
-        if (!m) continue;
-        const actor = ev.actor?.login;
-        add2(
-          hit(m, {
-            surface: "github:repos",
-            subject: r,
-            title: `Branch ${name}: ${String(ev.activity_type ?? "activity").replace(/_/g, " ")} by ${actor ?? "?"}`,
-            actor,
-            scope: scopeOf(actor),
-            at: ev.timestamp,
-            evidence: {
-              kind: "api",
-              ref: `repos/${r}/activity?ref=${encodeURIComponent(name)}`,
-              excerpt: `${ev.activity_type} ${ev.before ?? ""}..${ev.after ?? ""}`
-            }
-          })
-        );
-      }
     }
     const changed = /* @__PURE__ */ new Map();
     const commitOf = (sha) => {
@@ -12165,51 +14204,199 @@ async function scanGithub(iocs, runner2, opts = {}) {
           gh.api(`repos/${r}/commits/${sha}`).then(
             (d) => d.ok ? {
               files: (d.data?.files ?? []).map((f) => `${f.status} ${f.filename}`),
-              author: d.data?.author?.login
+              author: d.data?.author?.login,
+              message: firstLine(d.data?.commit?.message)
             } : void 0
           )
         );
       return changed.get(sha);
     };
     const filesOf = async (sha) => (await commitOf(sha))?.files;
-    const onDefault = async (sha) => {
-      const cmp = await gh.api(`repos/${r}/compare/${sha}...${repo.default_branch}`);
+    const fileName = (f) => f.split(" ").slice(1).join(" ");
+    const onDefault = async (sha, tip = repo.default_branch) => {
+      const cmp = await gh.api(`repos/${r}/compare/${sha}...${tip}`);
       return cmp.ok && (cmp.data?.status === "identical" || cmp.data?.status === "ahead");
+    };
+    let defaultLog;
+    const defaultActivity = () => defaultLog ??= gh.cursor(`repos/${r}/activity?ref=${encodeURIComponent(`refs/heads/${repo.default_branch}`)}&time_period=${period}`, {
+      maxPages: 5,
+      stop: (page) => page.some((e) => e.timestamp && e.timestamp < since)
+    }).then((x) => x.ok ? x.data : void 0);
+    const pusherOf = async (sha) => (await defaultActivity())?.find((e) => e.after === sha && e.activity_type !== "branch_deletion")?.actor?.login;
+    const tipAt = async (at) => {
+      if (!at) return void 0;
+      return (await defaultActivity())?.find((e) => e.timestamp && e.timestamp <= at && e.after && !/^0+$/.test(e.after))?.after;
     };
     const describe = (files) => {
       if (!files) return { text: "" };
-      if (files.length && files.every((f) => DOCS_ONLY.test(f.split(" ").slice(1).join(" "))))
-        return { text: "; the commit only changes docs (a probe)", kind: "probe" };
+      if (files.length && files.every((f) => DOCS_ONLY.test(fileName(f)))) return { text: "; the commit only changes docs (a probe)", kind: "probe" };
       return {
-        text: files.length ? `; the commit changes ${files.slice(0, 4).map((f) => f.split(" ").slice(1).join(" ")).join(", ")}${files.length > 4 ? ", ..." : ""}` : "",
+        text: files.length ? `; the commit changes ${files.slice(0, 4).map(fileName).join(", ")}${files.length > 4 ? ", ..." : ""}` : "",
         kind: "attacker"
       };
     };
-    const describeRun = async (sha, actor) => {
+    const describeRun = async (sha, actor, at) => {
       if (!sha) return { text: "" };
       const c = await commitOf(sha);
-      if (c?.author && actor && !/\[bot\]$/i.test(c.author) && c.author.toLowerCase() !== actor.toLowerCase() && await onDefault(sha))
-        return { text: `; it ran ${repo.default_branch}'s own code (commit by ${c.author}, no attacker change)`, kind: "own-code" };
-      return describe(c?.files);
+      const carried = describe(c?.files);
+      const iocInside = c?.files.some((f) => firstMatch(M.file, fileName(f)) || firstMatch(M.workflow, fileName(f))) || !!firstMatch(M.commit, c?.message);
+      if (c?.author && actor && !iocInside && !/\[bot\]$/i.test(c.author) && c.author.toLowerCase() !== actor.toLowerCase()) {
+        const tip = await tipAt(at);
+        if (tip && await onDefault(sha, tip))
+          return {
+            text: `; it ran ${repo.default_branch}'s own code (commit by ${c.author}, already on ${repo.default_branch} when the run started)`,
+            kind: "own-code"
+          };
+      }
+      return carried;
     };
-    if (M.commit.length || M.file.length) {
+    if (M.branch.length) {
+      const branches = await gh.paged(`repos/${r}/branches`, { maxPages: 10 });
+      for (const b of branches.data ?? []) {
+        const m = firstMatch(M.branch, b.name);
+        if (m)
+          add2(
+            hit2(m, { surface: "github:repos", subject: r, title: `Branch ${b.name} exists`, evidence: { kind: "api", ref: `repos/${r}/branches/${b.name}` } })
+          );
+      }
+      const lists = await Promise.all([
+        ...literalBranches.map(
+          (b) => gh.cursor(`repos/${r}/activity?ref=${encodeURIComponent(`refs/heads/${b}`)}&time_period=${period}`, { maxPages: 2 })
+        ),
+        ...M.branch.some((m) => m.indicator.regex) ? [
+          gh.cursor(`repos/${r}/activity?activity_type=branch_creation&time_period=${period}`, {
+            maxPages: 5,
+            stop: (page) => page.some((e) => e.timestamp && e.timestamp < since)
+          })
+        ] : []
+      ]);
+      const seen = /* @__PURE__ */ new Set();
+      const byBranch = /* @__PURE__ */ new Map();
+      for (const ev of lists.flatMap((l) => l.data ?? [])) {
+        const id = String(ev.id ?? `${ev.ref}|${ev.timestamp}|${ev.activity_type}|${ev.after}`);
+        if (seen.has(id)) continue;
+        seen.add(id);
+        const name = String(ev.ref ?? "").replace(/^refs\/heads\//, "");
+        if (!name || ev.timestamp && ev.timestamp < since) continue;
+        const m = firstMatch(M.branch, name, ev.timestamp);
+        if (!m) continue;
+        const g = byBranch.get(name) ?? { m, events: [] };
+        g.events.push(ev);
+        byBranch.set(name, g);
+      }
+      for (const [name, { m, events }] of byBranch) {
+        events.sort((a, b) => String(a.timestamp ?? "").localeCompare(String(b.timestamp ?? "")));
+        const writes = events.filter((e) => e.activity_type !== "branch_deletion");
+        const deletion = events.find((e) => e.activity_type === "branch_deletion");
+        const first = writes[0];
+        const actor = first?.actor?.login;
+        let title = first ? `Branch ${name}: ${first.activity_type === "branch_creation" ? "created" : "pushed"} by ${actor ?? "?"} at ${first.timestamp}${writes.length > 1 ? `, pushed ${writes.length - 1} more time(s)` : ""}` : `Branch ${name}: deleted by ${deletion?.actor?.login ?? "?"} (creation not in the activity log)`;
+        if (first && deletion)
+          title += `, deleted by ${deletion.actor?.login ?? "?"}${deletion.actor?.login === actor ? "" : " (cleanup)"} ${elapsed(first.timestamp, deletion.timestamp)} later`;
+        let ciRun;
+        const shas = [...new Set(writes.map((e) => String(e.after ?? "")).filter((x) => x && !/^0+$/.test(x)))].slice(0, 3);
+        for (const sha of shas) {
+          if (await onDefault(sha)) {
+            title += `; it points at a commit already on ${repo.default_branch}: no commit pushed`;
+            continue;
+          }
+          const files = await filesOf(sha);
+          if (!files) {
+            title += `; its commit ${sha.slice(0, 8)} is no longer readable`;
+            continue;
+          }
+          const c = describe(files);
+          title += c.text;
+          if (c.kind === "attacker" || c.kind && !ciRun) ciRun = c.kind;
+        }
+        add2(
+          hit2(m, {
+            surface: "github:repos",
+            subject: r,
+            title,
+            ...ciRun ? { ciRun } : {},
+            actor,
+            scope: scopeOf(actor),
+            at: first?.timestamp ?? deletion?.timestamp,
+            evidence: {
+              kind: "api",
+              ref: `repos/${r}/activity?ref=${encodeURIComponent(name)}`,
+              excerpt: events.map(
+                (e) => `${e.timestamp} ${e.activity_type} by ${e.actor?.login ?? "?"} ${String(e.before ?? "").slice(0, 8)}..${String(e.after ?? "").slice(0, 8)}`
+              ).join("; ").slice(0, 600)
+            }
+          })
+        );
+      }
+    }
+    for (const e of await defaultActivity() ?? []) {
+      if (e.activity_type !== "force_push" || !e.timestamp || e.timestamp < reviewSince) continue;
+      const actor = e.actor?.login;
+      const range = `${String(e.before ?? "").slice(0, 8)}..${String(e.after ?? "").slice(0, 8)}`;
+      if (M.content.length && e.before && e.after) {
+        const cmp = await gh.api(`repos/${r}/compare/${e.before}...${e.after}`);
+        for (const f of cmp.data?.files ?? []) {
+          const added = (f.patch ?? "").split("\n").filter((l) => l.startsWith("+") && !l.startsWith("+++"));
+          for (const m of M.content) {
+            const line = added.find((l) => m.test(l));
+            if (!line || !inWindow(m, e.timestamp)) continue;
+            add2(
+              hit2(m, {
+                surface: "github:repos",
+                subject: r,
+                title: `Force push to ${repo.default_branch} by ${actor ?? "?"} added "${m.indicator.value}" to ${f.filename}`,
+                actor,
+                scope: scopeOf(actor),
+                at: e.timestamp,
+                ciRun: "attacker",
+                evidence: { kind: "url", ref: `https://github.com/${r}/blob/${e.after}/${f.filename}`, excerpt: line.slice(1).trim().slice(0, 200) }
+              })
+            );
+          }
+        }
+      }
+      add2({
+        surface: "github:repos",
+        severity: "suspicious",
+        subject: r,
+        title: `Force push to ${repo.default_branch} by ${actor ?? "?"} at ${e.timestamp} (${range}): history was rewritten`,
+        actor,
+        scope: scopeOf(actor),
+        at: e.timestamp,
+        evidence: { kind: "api", ref: `repos/${r}/activity?ref=refs/heads/${repo.default_branch}`, excerpt: `force_push ${e.before}..${e.after}` },
+        key: `github:repos|${r}|force-push|${e.id ?? e.after}`
+      });
+    }
+    for (const e of await defaultActivity() ?? [])
+      if (e.activity_type === "push" || e.activity_type === "force_push")
+        actorOnly(
+          `Push to ${repo.default_branch} (${String(e.after ?? "").slice(0, 8)})`,
+          e.actor?.login,
+          e.timestamp,
+          `https://github.com/${r}/commit/${e.after}`
+        );
+    if (M.commit.length) {
       const commits = await gh.paged(`repos/${r}/commits?since=${since}`, { maxPages: 3 });
-      if (commits.truncated) truncated.push(`${r} commits`);
+      if (commits.truncated && !commits.partial) truncated.push(`${r} commits`);
       for (const c of commits.data ?? []) {
         const msg = firstLine(c.commit?.message);
         const landed = laterOf(c.commit?.author?.date, c.commit?.committer?.date);
         const m = firstMatch(M.commit, msg, landed);
         if (!m) continue;
-        const actor = c.author?.login ?? c.commit?.author?.name;
+        const authorLogin = c.author?.login;
+        const pusher = await pusherOf(c.sha);
+        const actor = pusher ?? authorLogin;
+        const authored = authorLogin ?? `${c.commit?.author?.name ?? "?"} (author not linked to an account)`;
         const files = await filesOf(c.sha);
         const carried = describe(files);
         const excerpt = `sha=${c.sha}${files ? `; ${files.join(", ")}` : ""}`.slice(0, 600);
         add2(
-          hit(m, {
+          hit2(m, {
             surface: "github:repos",
             subject: r,
-            title: `Commit ${String(c.sha).slice(0, 8)} "${msg}" on ${repo.default_branch} by ${actor}${carried.text}`,
-            ciRun: carried.kind,
+            title: `Commit ${String(c.sha).slice(0, 8)} "${msg}" on ${repo.default_branch}, authored as ${authored}${pusher ? `, pushed by ${pusher}` : ""}${carried.text}${files ? "" : "; its changed files could not be read"}`,
+            // A commit on the default branch ran in CI; when its files cannot be read, assume the payload.
+            ciRun: carried.kind ?? "attacker",
             actor,
             scope: scopeOf(actor),
             at: c.commit?.author?.date,
@@ -12219,18 +14406,34 @@ async function scanGithub(iocs, runner2, opts = {}) {
       }
     }
     const runs = await gh.paged(`repos/${r}/actions/runs?created=>=${sinceDay}`, { pick: (b) => b.workflow_runs ?? [], maxPages: 3 });
-    if (runs.truncated) truncated.push(`${r} workflow runs`);
+    if (runs.truncated && !runs.partial) truncated.push(`${r} workflow runs`);
+    const runList = [...runs.data ?? []];
+    const runIds = new Set(runList.map((x) => x.id ?? x.html_url));
+    for (const b of literalBranches) {
+      const more = await gh.paged(`repos/${r}/actions/runs?branch=${encodeURIComponent(b)}&created=>=${sinceDay}`, {
+        pick: (x) => x.workflow_runs ?? [],
+        maxPages: 3
+      });
+      for (const x of more.data ?? [])
+        if (!runIds.has(x.id ?? x.html_url)) {
+          runIds.add(x.id ?? x.html_url);
+          runList.push(x);
+        }
+    }
     const byWorkflow = /* @__PURE__ */ new Map();
-    for (const run of runs.data ?? []) {
+    for (const run of runList) {
       const w = byWorkflow.get(run.workflow_id) ?? { numbers: [], name: run.name };
       w.numbers.push(run.run_number);
       byWorkflow.set(run.workflow_id, w);
       const m = firstMatch(M.branch, run.head_branch, run.created_at) ?? firstMatch(M.commit, firstLine(run.display_title), run.created_at) ?? firstMatch(M.pr, run.display_title, run.created_at);
-      if (!m) continue;
       const actor = run.triggering_actor?.login ?? run.actor?.login;
-      const carried = await describeRun(run.head_sha, actor);
+      if (!m) {
+        actorOnly(`Workflow "${run.name}" ran on ${run.head_branch} ("${firstLine(run.display_title)}")`, actor, run.created_at, run.html_url);
+        continue;
+      }
+      const carried = await describeRun(run.head_sha, actor, run.created_at);
       add2(
-        hit(m, {
+        hit2(m, {
           surface: "github:repos",
           subject: r,
           title: `Workflow "${run.name}" ran on ${run.head_branch} ("${firstLine(run.display_title)}"), ${run.conclusion ?? run.status}, triggered by ${actor}${carried.text}`,
@@ -12260,7 +14463,7 @@ async function scanGithub(iocs, runner2, opts = {}) {
           const m = firstMatch(M.cache, c.key);
           if (m)
             add2(
-              hit(m, {
+              hit2(m, {
                 surface: "github:repos",
                 subject: r,
                 title: `Actions cache "${c.key}"`,
@@ -12277,7 +14480,7 @@ async function scanGithub(iocs, runner2, opts = {}) {
         const m = firstMatch(M.artifact, a.name);
         if (m)
           add2(
-            hit(m, {
+            hit2(m, {
               surface: "github:repos",
               subject: r,
               title: `Workflow artifact "${a.name}"`,
@@ -12287,90 +14490,7 @@ async function scanGithub(iocs, runner2, opts = {}) {
           );
       }
     }
-    const wf = await gh.api(`repos/${r}/contents/.github/workflows`);
-    for (const f of Array.isArray(wf.data) ? wf.data : []) {
-      const m = firstMatch(M.workflow, f.path) ?? firstMatch(M.file, f.path);
-      if (m)
-        add2(
-          hit(m, {
-            surface: "github:repos",
-            subject: r,
-            title: `Workflow file ${f.path} on ${repo.default_branch}`,
-            evidence: { kind: "url", ref: f.html_url }
-          })
-        );
-    }
-    if (M.content.length && Array.isArray(wf.data)) {
-      if (wf.data.length > 25) contentCapped.push(`${r} (${wf.data.length} workflow files)`);
-      for (const f of wf.data.slice(0, 25)) {
-        const body = await gh.api(`repos/${r}/contents/${String(f.path).split("/").map(encodeURIComponent).join("/")}`);
-        const text = body.data?.content ? Buffer.from(body.data.content, "base64").toString("utf8") : "";
-        const lines = text.split("\n");
-        for (const m of M.content) {
-          const ln = lines.findIndex((l) => m.test(l));
-          if (ln < 0) continue;
-          add2(
-            hit(m, {
-              surface: "github:repos",
-              subject: r,
-              title: `${f.path} contains "${m.indicator.value}"`,
-              evidence: { kind: "url", ref: `${f.html_url}#L${ln + 1}`, excerpt: lines[ln]?.trim().slice(0, 200) }
-            })
-          );
-        }
-      }
-    }
-    if (M.file.length || M.content.length) {
-      const root = await gh.api(`repos/${r}/contents/`);
-      const names = Array.isArray(root.data) ? root.data : [];
-      for (const f of names) {
-        const m = firstMatch(M.file, f.path);
-        if (m)
-          add2(hit(m, { surface: "github:repos", subject: r, title: `File ${f.path} on ${repo.default_branch}`, evidence: { kind: "url", ref: f.html_url } }));
-      }
-      if (names.some((f) => f.name === "package.json")) {
-        const pkg = await gh.api(`repos/${r}/contents/package.json`);
-        const text = pkg.data?.content ? Buffer.from(pkg.data.content, "base64").toString("utf8") : "";
-        try {
-          const scripts = JSON.parse(text).scripts ?? {};
-          for (const hook of ["preinstall", "install", "postinstall", "prepare"]) {
-            const cmd = scripts[hook];
-            if (!cmd) continue;
-            const m = M.file.find((x) => cmd.split(/[\s;&|]+/).some((tok) => x.test(tok))) ?? firstMatch(M.content, cmd);
-            if (m)
-              add2(
-                hit(m, {
-                  surface: "github:repos",
-                  subject: r,
-                  title: `package.json "${hook}" runs "${cmd}"`,
-                  evidence: { kind: "url", ref: pkg.data.html_url, excerpt: cmd }
-                })
-              );
-          }
-        } catch {
-        }
-      }
-    }
-    if (repo.permissions?.admin) {
-      for (const [path, label] of [
-        ["hooks", "Webhook"],
-        ["keys", "Deploy key"]
-      ]) {
-        const items = await gh.api(`repos/${r}/${path}`);
-        for (const it of items.data ?? []) {
-          if (!it.created_at || it.created_at < reviewSince) continue;
-          add2({
-            surface: "github:repos",
-            severity: "suspicious",
-            subject: r,
-            title: `${label} added in the window: ${label === "Webhook" ? it.config?.url : it.title}`,
-            at: it.created_at,
-            evidence: { kind: "api", ref: `repos/${r}/${path}/${it.id}` },
-            key: `github:repos|${r}|${path}|${it.id}`
-          });
-        }
-      }
-    } else noAdmin++;
+    await scanFiles(await treeOf());
     if (runGaps.length && repF.some((f) => f.subject === r && f.severity === "compromised")) {
       for (const g of runGaps)
         add2({
@@ -12383,6 +14503,44 @@ async function scanGithub(iocs, runner2, opts = {}) {
         });
     } else if (runGaps.length) quietGaps++;
   });
+  const searchable = [...new Map(M.content.map((m) => [m.indicator.value.replace(/"/g, "").trim().toLowerCase(), m])).values()].filter(
+    (m) => m.indicator.value.replace(/"/g, "").trim().length >= 4
+  );
+  if (searchable.length && repos.length) {
+    const scanned = new Set(repos.map((x) => x.full_name.toLowerCase()));
+    const owners = [...new Set([login, ...repos.map((x) => x.full_name.split("/")[0])].map((o) => o.toLowerCase()))];
+    const queries = searchable.flatMap((m) => owners.map((owner) => ({ m, owner })));
+    const CODE_SEARCH_CAP = 10;
+    let refused = 0;
+    for (const { m, owner } of queries.slice(0, CODE_SEARCH_CAP)) {
+      const q = encodeURIComponent(`"${m.indicator.value.replace(/"/g, "")}" user:${owner}`);
+      const res = await gh.api(`search/code?q=${q}&per_page=100`);
+      reported.add("search/code");
+      if (!res.ok) {
+        refused++;
+        continue;
+      }
+      for (const it of res.data?.items ?? []) {
+        const repoName = it.repository?.full_name ?? "";
+        if (!scanned.has(repoName.toLowerCase())) continue;
+        if (repF.some((f) => f.subject === repoName && f.indicator?.value === m.indicator.value && f.title.startsWith(`${it.path} contains`))) continue;
+        repF.push(
+          hit2(m, {
+            ...DOCS_ONLY.test(it.path) ? { severity: "suspicious" } : {},
+            surface: "github:repos",
+            subject: repoName,
+            title: `${it.path} contains "${m.indicator.value}" (code search)`,
+            evidence: { kind: "url", ref: it.html_url }
+          })
+        );
+      }
+    }
+    repG.push({
+      surface: "github:repos",
+      what: "string, IP, domain and URL indicators in files other than workflows and install hooks",
+      why: `searched with GitHub code search (${Math.min(queries.length, CODE_SEARCH_CAP) - refused} of ${queries.length} queries answered${queries.length > CODE_SEARCH_CAP ? `, capped at ${CODE_SEARCH_CAP} a run` : ""}): it covers indexed default branches only, so new repositories, other branches and files over 384 KB are not searched`
+    });
+  }
   for (const f of repF) {
     const m = f.actor ? firstMatch(M.actor, f.actor) : void 0;
     if (m && !f.title.includes("(named compromised")) f.title += ` (named compromised by ${m.indicator.source})`;
@@ -12393,13 +14551,31 @@ async function scanGithub(iocs, runner2, opts = {}) {
       what: `missing workflow run numbers in ${quietGaps} repositories with no IOC match`,
       why: "not reported as findings: alone they are usually retention or re-runs"
     });
-  if (gh.rateLimited)
-    for (const g of [accG, repG])
-      g.push({
-        surface: g === accG ? "github:account" : "github:repos",
-        what: `${gh.rateLimited} GitHub API calls`,
+  const poolLog = gh.log.slice(poolStart);
+  const unread = repos.map((x) => x.full_name).filter((r) => {
+    if (notStarted.includes(r)) return true;
+    const reads = poolLog.filter((l) => l.path.startsWith(`repos/${r}/`));
+    return reads.length > 0 && reads.every((l) => !l.answered);
+  });
+  reposRes.scanned = listed && !(repos.length > 0 && unread.length === repos.length);
+  if (unread.length)
+    repG.push({
+      surface: "github:repos",
+      what: `${unread.length} repositories not read: ${unread.slice(0, 10).join(", ")}${unread.length > 10 ? ", ..." : ""}`,
+      why: notStarted.length ? `the API rate limit ran out (${notStarted.length} not started)` : "every read of them failed",
+      fix: `re-run scan github --repos ${unread.slice(0, 20).join(",")}${resetAt ? ` after ${resetAt}` : ""}`
+    });
+  const limited = gh.failures.filter((f) => /rate limit/i.test(f.error ?? "") && !reported.has(basePath(f.path)));
+  for (const [surface, list] of [
+    ["github:account", limited.filter((f) => !REPO_PATH.test(f.path))],
+    ["github:repos", limited.filter((f) => REPO_PATH.test(f.path))]
+  ])
+    if (list.length)
+      (surface === "github:account" ? accG : repG).push({
+        surface,
+        what: `${list.length} GitHub API calls`,
         why: "the API rate limit refused them: what they would have read was not checked",
-        fix: "re-run scan github after the hourly reset (gh api rate_limit)"
+        fix: "re-run scan github (search calls reset each minute, the rest each hour: gh api rate_limit)"
       });
   reposRes.stats.inactiveSkipped = inactive;
   reposRes.stats.apiCalls = gh.calls;
@@ -12407,8 +14583,16 @@ async function scanGithub(iocs, runner2, opts = {}) {
     repG.push({
       surface: "github:repos",
       what: `${inactive} repositories with no push since ${sinceDay}`,
-      why: "only their pull requests were checked; their branches, commits and files cannot have changed without a push, but scheduled or manual runs, caches, artifacts, webhooks and deploy keys were not read"
+      why: `only their pull requests, webhooks and deploy keys${M.content.length || M.workflow.length ? `, and the workflow files of the ${inactiveRan} where a workflow ran in the window,` : ""} were checked; their branches, commits, runs, caches and artifacts were not read`
     });
+  if (treeCut.length)
+    repG.push({
+      surface: "github:repos",
+      what: `files of ${treeCut.join(", ")} past what GitHub returns in one tree`,
+      why: "the tree was cut (truncated): only its first part, the workflow folder and the root were compared with file indicators"
+    });
+  if (pkgCapped.length)
+    repG.push({ surface: "github:repos", what: `package.json files past the first 20 in ${pkgCapped.join(", ")}`, why: "their install hooks were not read" });
   if (contentCapped.length)
     repG.push({
       surface: "github:repos",
@@ -12416,13 +14600,16 @@ async function scanGithub(iocs, runner2, opts = {}) {
       why: "their contents were not read for string, IP, domain or URL indicators"
     });
   if (noAdmin)
-    repG.push({ surface: "github:repos", what: `webhooks and deploy keys of ${noAdmin} repositories`, why: "they need admin rights on the repository" });
+    repG.push({
+      surface: "github:repos",
+      what: `webhooks, deploy keys and self-hosted runners of ${noAdmin} repositories`,
+      why: "they need admin rights on the repository"
+    });
   if (truncated.length) repG.push({ surface: "github:repos", what: truncated.join("; "), why: "more than 300 items in the window: the oldest were not read" });
-  const handled = /* @__PURE__ */ new Set(["user/keys", "user/gpg_keys", "user", "rate_limit"]);
-  const failed = gh.failures.filter((f) => !handled.has(f.path) && !/rate limit/i.test(f.error ?? ""));
+  const failed = gh.failures.filter((f) => !reported.has(basePath(f.path)) && !/rate limit/i.test(f.error ?? ""));
   for (const [surface, list] of [
-    ["github:account", failed.filter((f) => !/^(repos\/|user\/repos)/.test(f.path))],
-    ["github:repos", failed.filter((f) => /^(repos\/|user\/repos)/.test(f.path))]
+    ["github:account", failed.filter((f) => !REPO_PATH.test(f.path))],
+    ["github:repos", failed.filter((f) => REPO_PATH.test(f.path))]
   ]) {
     if (!list.length) continue;
     const byStatus = /* @__PURE__ */ new Map();
@@ -12435,17 +14622,21 @@ async function scanGithub(iocs, runner2, opts = {}) {
       fix: "check the token's scopes and permissions (gh auth status), then re-run scan github"
     });
   }
-  const cut = gh.truncated.filter((p) => !/actions\/runs|\/commits\?/.test(p));
-  if (cut.length)
-    (cut.some((p) => p.startsWith("repos/") || p.startsWith("user/repos")) ? repG : accG).push({
-      surface: cut.some((p) => p.startsWith("repos/") || p.startsWith("user/repos")) ? "github:repos" : "github:account",
-      what: `${cut.length} list(s) cut by the page cap: ${cut.slice(0, 5).map((p) => p.split("?")[0]).join(", ")}`,
-      why: "their oldest items were not read"
-    });
+  const cut = gh.truncated.filter((p) => !/actions\/runs|\/commits\?|^search\//.test(p));
+  for (const [surface, list] of [
+    ["github:account", cut.filter((p) => !REPO_PATH.test(p))],
+    ["github:repos", cut.filter((p) => REPO_PATH.test(p))]
+  ])
+    if (list.length)
+      (surface === "github:account" ? accG : repG).push({
+        surface,
+        what: `${list.length} list(s) cut by the page cap: ${list.slice(0, 5).map(basePath).join(", ")}`,
+        why: "their oldest items were not read"
+      });
   repG.push({
     surface: "github:repos",
     what: "branches other than the default branch, for commits and files",
-    why: "commits and files are read on the default branch; attacker branches are caught by name, runs and PRs"
+    why: "commits and the whole file tree are read on the default branch; attacker branches are caught by name, activity log, runs and PRs"
   });
   reposRes.finishedAt = (/* @__PURE__ */ new Date()).toISOString();
   const hitRepos = [...new Set(repF.filter((f) => f.severity === "compromised").map((f) => f.subject))].sort();
@@ -12458,482 +14649,19 @@ async function scanGithub(iocs, runner2, opts = {}) {
 }
 
 // src/scan/host.ts
-import { createHash as createHash3 } from "crypto";
-import { existsSync as existsSync12, readdirSync as readdirSync9, readFileSync as readFileSync14, statSync as statSync11 } from "fs";
-import { homedir as homedir3, platform, tmpdir as tmpdir4 } from "os";
-import { basename as basename6, join as join14 } from "path";
+import { createHash as createHash4 } from "crypto";
+import { closeSync as closeSync4, existsSync as existsSync13, lstatSync, openSync as openSync4, readdirSync as readdirSync10, readFileSync as readFileSync15, readSync as readSync3, realpathSync as realpathSync3, statSync as statSync12 } from "fs";
+import { homedir as homedir3, platform, tmpdir as tmpdir5 } from "os";
+import { basename as basename7, dirname as dirname3, join as join15 } from "path";
 
 // src/scan/agents.ts
-import { existsSync as existsSync11, readdirSync as readdirSync8, readFileSync as readFileSync13, statSync as statSync10 } from "fs";
-import { basename as basename5, join as join13 } from "path";
-
-// src/scan/hostintel.ts
-import { existsSync as existsSync10, readdirSync as readdirSync7, readFileSync as readFileSync12, statSync as statSync9 } from "fs";
-import { basename as basename4, join as join12 } from "path";
-var STRONG = [
-  [/\b(curl|wget)\b[^|;\n]*\|\s*(sudo\s+)?(ba|z|da)?sh\b/i, "downloads and runs a script"],
-  [/\b(curl|wget)\b[^\n]*(-o|--output|>)\s*\S*\s*(&&|;)\s*(chmod|\.\/|sh|bash|zsh|python|node)/i, "downloads then executes a file"],
-  [/\/dev\/(tcp|udp)\//, "opens a raw network socket (reverse shell pattern)"],
-  [/base64\s+(-d|-D|--decode)[^\n]*\|\s*(ba|z)?sh\b|\becho\s+[A-Za-z0-9+/=]{40,}\s*\|\s*base64/i, "decodes and runs an encoded payload"],
-  [/\b(python3?|perl|ruby|node)\s+-(c|e)\s+['"][^'"]*(socket|exec|eval|child_process|subprocess)/i, "runs inline interpreter code that spawns or connects"],
-  [/\bosascript\s+-e\b[^\n]*(do shell script|password)/i, "AppleScript that runs shell code or asks for a password"]
-];
-var TEMP_PATH = /^(\/tmp\/|\/private\/tmp\/|\/var\/tmp\/|\/private\/var\/tmp\/|\/dev\/shm\/|\/Users\/Shared\/)/;
-var KNOWN_HIDDEN = /* @__PURE__ */ new Set([
-  ".nvm",
-  ".volta",
-  ".local",
-  ".cargo",
-  ".rustup",
-  ".bun",
-  ".deno",
-  ".pyenv",
-  ".rbenv",
-  ".asdf",
-  ".sdkman",
-  ".vscode",
-  ".vscode-insiders",
-  ".cursor",
-  ".windsurf",
-  ".docker",
-  ".orbstack",
-  ".colima",
-  ".rd",
-  ".config",
-  ".npm",
-  ".pnpm",
-  ".yarn",
-  ".fnm",
-  ".gem",
-  ".go",
-  ".foundry",
-  ".claude",
-  ".codex",
-  ".agents",
-  ".lima",
-  ".ollama",
-  ".dotnet",
-  ".jenv",
-  ".nix-profile",
-  ".oh-my-zsh",
-  ".antigen",
-  ".zinit",
-  ".tmux",
-  ".gradle",
-  ".m2"
-]);
-function riskSignals(rawCommand, executable, home, opts = {}) {
-  const command2 = rawCommand.length > 4e3 ? rawCommand.slice(0, 4e3) : rawCommand;
-  const out2 = [];
-  for (const [re, label] of STRONG) if (re.test(command2)) out2.push(label);
-  for (const p of opts.location === false ? [] : [executable, ...command2.split(/\s+/)].filter(Boolean)) {
-    if (TEMP_PATH.test(p)) {
-      out2.push(`runs from a temporary or shared folder (${p})`);
-      break;
-    }
-    if (p.startsWith(`${home}/.`)) {
-      const top = p.slice(home.length + 1).split("/")[0] ?? "";
-      if (!KNOWN_HIDDEN.has(top)) {
-        out2.push(`runs from a hidden folder of your home (${p})`);
-        break;
-      }
-    }
-  }
-  return [...new Set(out2)];
-}
-function startupCommand(text) {
-  const args = /<key>ProgramArguments<\/key>\s*<array>([\s\S]*?)<\/array>/.exec(text)?.[1];
-  if (args) {
-    const parts = [...args.matchAll(/<string>([^<]*)<\/string>/g)].map((m) => decodeXml2(m[1] ?? ""));
-    const program2 = /<key>Program<\/key>\s*<string>([^<]+)<\/string>/.exec(text)?.[1];
-    const shellC = parts.length >= 3 && /\/(ba|z|da)?sh$/.test(parts[0] ?? "") && parts[1] === "-c";
-    const executable = program2 ?? (shellC ? (parts[2] ?? "").trim().split(/\s+/)[0]?.replace(/^["']|["']$/g, "") : parts[0]);
-    return { command: parts.join(" "), executable };
-  }
-  const program = /<key>Program<\/key>\s*<string>([^<]+)<\/string>/.exec(text)?.[1];
-  if (program) return { command: decodeXml2(program), executable: decodeXml2(program) };
-  const exec = /^ExecStart=[-@+!:]*(.*)$/m.exec(text)?.[1] ?? /^Exec=(.*)$/m.exec(text)?.[1];
-  if (exec) return { command: exec.trim(), executable: exec.trim().split(/\s+/)[0] };
-  return { command: "" };
-}
-function decodeXml2(s) {
-  return s.replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
-}
-async function signerOf(runner2, executable) {
-  const res = await runner2("codesign", ["-dv", "--verbose=2", executable], { timeoutMs: 15e3 });
-  if (res.missing) return void 0;
-  const text = `${res.stderr}
-${res.stdout}`;
-  if (/not signed at all|code object is not signed/i.test(text)) return { signed: false };
-  if (!res.ok && !/Authority=|Signature=adhoc/.test(text)) return void 0;
-  const authority = /^Authority=(.+)$/m.exec(text)?.[1]?.trim();
-  const team = /^TeamIdentifier=(.+)$/m.exec(text)?.[1]?.trim();
-  if (/Signature=adhoc/.test(text)) return { signed: false, signer: "ad-hoc signature (no identity)" };
-  return { signed: true, signer: authority, team: team && team !== "not set" ? team : void 0 };
-}
-var SHELL_STARTUP = [".zshrc", ".zprofile", ".zshenv", ".zlogin", ".bashrc", ".bash_profile", ".profile", ".config/fish/config.fish"];
-var SHELL_RISK = [
-  ...STRONG,
-  [/\b(DYLD_INSERT_LIBRARIES|LD_PRELOAD)\s*=/, "injects a library into every program"],
-  [/\bNODE_OPTIONS\s*=.*--(require|import|loader)\b/, "makes every Node.js process load a module"],
-  [/\bPYTHONSTARTUP\s*=|\bPERL5OPT\s*=|\bRUBYOPT\s*=.*-r/, "makes every interpreter load a file"],
-  [/^\s*alias\s+(sudo|ssh|git|gh|npm|su|passwd)=/, "redefines a security-sensitive command"],
-  [/^\s*(function\s+)?(sudo|ssh|git|gh)\s*\(\)/, "redefines a security-sensitive command"],
-  [/\bexport\s+PATH=["']?(\/tmp|\/private\/tmp|\/Users\/Shared)/, "puts a temporary folder first in PATH"]
-];
-function shellStartupFindings(home) {
-  const findings = [];
-  const lines = [];
-  for (const rel of SHELL_STARTUP) {
-    const p = join12(home, rel);
-    let text;
-    try {
-      if (statSync9(p).size > 2 * 1024 * 1024) continue;
-      text = readFileSync12(p, "utf8");
-    } catch {
-      continue;
-    }
-    text.split("\n").forEach((rawLine, i) => {
-      const line = rawLine.length > 4e3 ? rawLine.slice(0, 4e3) : rawLine;
-      if (/^\s*#/.test(line)) return;
-      for (const [re, signal] of SHELL_RISK) {
-        if (!re.test(line)) continue;
-        lines.push({ path: p, line: i + 1, signal, text: line.trim().slice(0, 200) });
-        findings.push({
-          surface: "host",
-          severity: "suspicious",
-          subject: p,
-          title: `${basename4(p)} line ${i + 1} ${signal}`,
-          evidence: { kind: "file", ref: `${p}:${i + 1}`, excerpt: line.trim().slice(0, 200) },
-          key: `host|${p}|${i + 1}|${signal}`
-        });
-        break;
-      }
-    });
-  }
-  return { findings, lines };
-}
-function readSmall(p) {
-  try {
-    if (statSync9(p).size > 1024 * 1024) return void 0;
-    return readFileSync12(p, "utf8");
-  } catch {
-    return void 0;
-  }
-}
-function configFindings(home, reviewSinceMs) {
-  const out2 = [];
-  const add2 = (p, title, excerpt, line) => out2.push({
-    surface: "host",
-    severity: "suspicious",
-    subject: p,
-    title,
-    evidence: { kind: "file", ref: line ? `${p}:${line}` : p, excerpt },
-    key: `host|${p}|${title}`
-  });
-  const lineOf = (text, re) => text.split("\n").findIndex((l) => re.test(l)) + 1;
-  const npmrc = readSmall(join12(home, ".npmrc"));
-  const reg = npmrc ? /^\s*registry\s*=\s*(\S+)/m.exec(npmrc)?.[1] : void 0;
-  if (npmrc && reg && !/^https:\/\/registry\.(npmjs\.org|yarnpkg\.com)\/?$/.test(reg))
-    add2(join12(home, ".npmrc"), `~/.npmrc sends every npm install to another registry: ${reg}`, `registry=${reg}`, lineOf(npmrc, /^\s*registry\s*=/));
-  for (const pip of [join12(home, ".pip/pip.conf"), join12(home, ".config/pip/pip.conf"), join12(home, "Library/Application Support/pip/pip.conf")]) {
-    const text = readSmall(pip);
-    const idx = text ? /^\s*index-url\s*=\s*(\S+)/m.exec(text)?.[1] : void 0;
-    if (text && idx && !/^https:\/\/pypi\.org\/simple\/?$/.test(idx))
-      add2(pip, `pip installs from another index: ${idx}`, `index-url = ${idx}`, lineOf(text, /index-url/));
-  }
-  const gitconfig = readSmall(join12(home, ".gitconfig"));
-  if (gitconfig) {
-    const hooks = /^\s*hooksPath\s*=\s*(.+)$/m.exec(gitconfig)?.[1]?.trim();
-    if (hooks) {
-      const dir = hooks.replace(/^~(?=\/)/, home);
-      let recent = [];
-      try {
-        recent = readdirSync7(dir).filter((f) => statSync9(join12(dir, f)).mtimeMs >= reviewSinceMs);
-      } catch {
-      }
-      add2(
-        join12(home, ".gitconfig"),
-        `git runs global hooks from ${hooks} in every repository${recent.length ? `; changed recently: ${recent.join(", ")}` : ""}`,
-        `hooksPath = ${hooks}`,
-        lineOf(gitconfig, /hooksPath/)
-      );
-    }
-    const sshCmd = /^\s*sshCommand\s*=\s*(.+)$/m.exec(gitconfig)?.[1]?.trim();
-    if (sshCmd && !/^ssh(\s|$)/.test(sshCmd))
-      add2(join12(home, ".gitconfig"), `git runs a custom SSH command: ${sshCmd}`, sshCmd, lineOf(gitconfig, /sshCommand/));
-  }
-  const ak = join12(home, ".ssh/authorized_keys");
-  try {
-    const st = statSync9(ak);
-    if (st.mtimeMs >= reviewSinceMs) {
-      const keys = (readSmall(ak) ?? "").split("\n").filter((l) => l.trim() && !l.startsWith("#"));
-      const comments = keys.map((k) => k.trim().split(/\s+/).slice(2).join(" ") || "(no comment)");
-      out2.push({
-        surface: "host",
-        severity: "suspicious",
-        subject: ak,
-        title: `~/.ssh/authorized_keys changed recently: ${keys.length} key(s) can log in to this machine (${comments.join(", ").slice(0, 120)})`,
-        at: st.mtime.toISOString(),
-        evidence: { kind: "file", ref: ak },
-        key: `host|${ak}|recent`
-      });
-    }
-  } catch {
-  }
-  return out2;
-}
-function recentExtensions(home, reviewSinceMs) {
-  const findings = [];
-  const list = [];
-  for (const rel of [".vscode/extensions", ".vscode-insiders/extensions", ".cursor/extensions", ".windsurf/extensions", ".vscode-oss/extensions"]) {
-    const dir = join12(home, rel);
-    const editor = rel.split("/")[0]?.replace(/^\./, "") ?? rel;
-    const manifest = readSmall(join12(dir, "extensions.json")) ?? (() => {
-      try {
-        return readFileSync12(join12(dir, "extensions.json"), "utf8");
-      } catch {
-        return void 0;
-      }
-    })();
-    let entries = [];
-    if (manifest) {
-      try {
-        entries = JSON.parse(manifest).map((e) => ({
-          id: e.identifier?.id,
-          version: e.version,
-          path: e.location?.path ?? join12(dir, e.relativeLocation ?? ""),
-          installed: e.metadata?.installedTimestamp,
-          updated: e.metadata?.updated,
-          source: e.metadata?.source,
-          publisher: e.metadata?.publisherDisplayName
-        }));
-      } catch {
-      }
-    } else {
-      let names = [];
-      try {
-        names = readdirSync7(dir);
-      } catch {
-        continue;
-      }
-      for (const name of names) {
-        if (name.startsWith(".") || !/-\d+\.\d+\.\d+/.test(name)) continue;
-        try {
-          const st = statSync9(join12(dir, name));
-          if (st.isDirectory()) entries.push({ id: name.replace(/-\d+\.\d+\.\d+.*$/, ""), version: "", path: join12(dir, name), installed: st.birthtimeMs });
-        } catch {
-        }
-      }
-    }
-    for (const e of entries) {
-      if (!e.id || !e.installed || e.installed < reviewSinceMs || e.updated) continue;
-      const installed2 = new Date(e.installed).toISOString();
-      list.push({ path: e.path, id: e.id, installed: installed2 });
-      const sideloaded = e.source === "vsix";
-      findings.push({
-        surface: "host",
-        severity: "suspicious",
-        subject: e.path,
-        title: `Editor extension ${e.id}${e.version ? `@${e.version}` : ""} was newly installed in ${editor}${e.publisher ? ` (publisher: ${e.publisher})` : ""}${sideloaded ? ", from a .vsix file, not the Marketplace" : ""}: check it is the one you meant`,
-        at: installed2,
-        evidence: { kind: "file", ref: e.path },
-        key: `host|${e.path}|new-ext`
-      });
-    }
-  }
-  return { findings, list };
-}
-async function processFindings(runner2, home, os = process.platform) {
-  const ps = await runner2("ps", os === "darwin" ? ["-axo", "pid=,comm="] : ["-eo", "pid=,args="], { timeoutMs: 1e4 });
-  if (!ps.ok) return [];
-  const out2 = [];
-  for (const line of ps.stdout.split("\n")) {
-    const m = os === "darwin" ? /^\s*(\d+)\s+(\/.+)$/.exec(line) : /^\s*(\d+)\s+(\/\S+)/.exec(line);
-    if (!m) continue;
-    const exe = m[2];
-    const signals = riskSignals("", exe, home);
-    if (!signals.length) continue;
-    out2.push({
-      surface: "host",
-      severity: "suspicious",
-      subject: exe,
-      title: `Running process ${basename4(exe)} (pid ${m[1]}) ${signals[0]}`,
-      evidence: { kind: "command", ref: "ps -axo pid=,comm=", excerpt: line.trim() },
-      key: `host|process|${exe}`
-    });
-  }
-  return out2;
-}
-function credentialInventory(home, envFiles) {
-  const out2 = [];
-  const has = (rel, kind, test) => {
-    const p = join12(home, rel);
-    if (!existsSync10(p)) return;
-    if (test) {
-      const text = readSmall(p);
-      if (!text || !test.test(text)) return;
-    }
-    out2.push({ path: p, kind });
-  };
-  has(".aws/credentials", "AWS access keys");
-  has(".aws/sso/cache", "AWS SSO tokens");
-  has(".config/gcloud/credentials.db", "Google Cloud credentials");
-  has(".config/gcloud/application_default_credentials.json", "Google Cloud application credentials");
-  has(".azure/msal_token_cache.json", "Azure tokens");
-  has(".azure/accessTokens.json", "Azure tokens");
-  has(".npmrc", "npm publish token", /_authToken\s*=/);
-  has(".yarnrc.yml", "yarn registry token", /npmAuthToken/);
-  has(".pypirc", "PyPI upload token", /password\s*=|token/i);
-  has(".cargo/credentials.toml", "crates.io token");
-  has(".gem/credentials", "RubyGems key");
-  has(".docker/config.json", "Docker registry logins", /"auths"\s*:\s*\{\s*"/);
-  has(".kube/config", "Kubernetes credentials");
-  has(".config/gh/hosts.yml", "GitHub CLI token", /oauth_token|user:/);
-  has(".git-credentials", "git HTTPS credentials (plain text)");
-  has(".netrc", "netrc logins (plain text)");
-  has(".vault-token", "HashiCorp Vault token");
-  has(".terraform.d/credentials.tfrc.json", "Terraform Cloud token");
-  try {
-    for (const f of readdirSync7(join12(home, ".ssh"))) {
-      if (/^id_[a-z0-9]+$/.test(f) || /\.pem$/.test(f)) out2.push({ path: join12(home, ".ssh", f), kind: "SSH private key" });
-    }
-  } catch {
-  }
-  if (existsSync10(join12(home, ".gnupg/private-keys-v1.d"))) out2.push({ path: join12(home, ".gnupg"), kind: "GPG private keys" });
-  for (const p of envFiles.slice(0, 200)) out2.push({ path: p, kind: ".env file (project secrets)" });
-  return out2;
-}
-function npmCacheHits(home, pkgs) {
-  const dir = join12(home, ".npm/_cacache/index-v5");
-  if (!pkgs.length || !existsSync10(dir)) return [];
-  const wanted = pkgs.map((p) => ({ ...p, base: p.name.split("/").pop() }));
-  const out2 = [];
-  const stack = [dir];
-  let files = 0;
-  while (stack.length && files < 2e5) {
-    const d = stack.pop();
-    let names = [];
-    try {
-      names = readdirSync7(d);
-    } catch {
-      continue;
-    }
-    for (const n of names) {
-      const p = join12(d, n);
-      let st;
-      try {
-        st = statSync9(p);
-      } catch {
-        continue;
-      }
-      if (st.isDirectory()) {
-        stack.push(p);
-        continue;
-      }
-      files++;
-      if (st.size > 4 * 1024 * 1024) continue;
-      let text;
-      try {
-        text = readFileSync12(p, "utf8");
-      } catch {
-        continue;
-      }
-      if (!text.includes(".tgz")) continue;
-      for (const w of wanted) {
-        if (!text.includes(`/-/${w.base}-`)) continue;
-        for (const line of text.split("\n")) {
-          const m = /"key":"[^"]*?(https:\/\/[^"]+\/-\/([^"/]+)-(\d[^"/]*)\.tgz)"/.exec(line);
-          if (!m || m[2] !== w.base) continue;
-          const url = decodeURIComponent(m[1]);
-          if (!url.includes(`/${w.name}/-/`) && !url.includes(`/${w.name.replace("/", "%2f")}/-/`)) continue;
-          const version = m[3];
-          if (w.versions?.length && !w.versions.some((v) => v.replace(/^v/, "") === version)) continue;
-          const time = /"time":(\d+)/.exec(line)?.[1];
-          const at = time ? new Date(Number(time)).toISOString() : void 0;
-          out2.push({
-            surface: "host",
-            severity: "exposed",
-            subject: "~/.npm/_cacache",
-            title: `npm downloaded ${w.name}@${version}${at ? ` on ${at.slice(0, 16).replace("T", " ")}` : ""}, named by the campaign: its install scripts likely ran on this machine`,
-            at,
-            campaign: w.campaign,
-            source: w.source,
-            indicator: { type: "package", value: w.value },
-            evidence: { kind: "file", ref: p, excerpt: url },
-            key: `host|npm-cache|${w.name}|${version}`
-          });
-        }
-      }
-    }
-  }
-  return out2;
-}
-var INTERPRETERS = /^(sh|bash|zsh|dash|ksh|fish|python[\d.]*|node|perl|ruby|osascript|deno|bun)$/;
-function interpretedScript(command2, executable, home) {
-  const parts = command2.split(/\s+/).filter(Boolean);
-  const exe = basename4(executable ?? parts[0] ?? "");
-  if (!INTERPRETERS.test(exe)) return { signals: [] };
-  const script = parts.slice(1).find((a) => a.startsWith("/") && existsSync10(a) && statSync9(a).isFile());
-  if (!script) return { signals: [] };
-  let text = "";
-  try {
-    if (statSync9(script).size <= 256 * 1024) text = readFileSync12(script, "utf8");
-  } catch {
-  }
-  const signals = new Set(riskSignals("", script, home).map((s) => `its script ${s}`));
-  for (const l of text.split("\n").slice(0, 5e3))
-    if (l.trim() && !/^\s*#/.test(l)) for (const s of riskSignals(l, void 0, home)) signals.add(`its script ${basename4(script)} ${s}`);
-  return { script, signals: [...signals] };
-}
-var HOOK_MANAGERS = /husky|lefthook|pre-commit|overcommit|git-lfs|simple-git-hooks|yorkie|lint-staged/;
-function gitHookFindings(clones, home, reviewSinceMs) {
-  const out2 = [];
-  for (const repo of clones) {
-    const dir = join12(repo, ".git/hooks");
-    let names = [];
-    try {
-      names = readdirSync7(dir);
-    } catch {
-      continue;
-    }
-    for (const n of names) {
-      if (n.endsWith(".sample")) continue;
-      const p = join12(dir, n);
-      let st;
-      let text = "";
-      try {
-        st = statSync9(p);
-        if (!st.isFile()) continue;
-        if (st.size <= 256 * 1024) text = readFileSync12(p, "utf8");
-      } catch {
-        continue;
-      }
-      const signals = /* @__PURE__ */ new Set();
-      for (const l of text.split("\n").slice(0, 5e3)) if (l.trim() && !/^\s*#/.test(l)) for (const s of riskSignals(l, void 0, home)) signals.add(s);
-      const managed = HOOK_MANAGERS.test(text);
-      const recent = st.mtimeMs >= reviewSinceMs;
-      if (!signals.size && (managed || !recent)) continue;
-      out2.push({
-        surface: "host",
-        severity: "suspicious",
-        subject: p,
-        title: `Git hook ${n} in ${repo}${signals.size ? ` ${[...signals].join("; ")}` : " was written recently and is not from a known hook manager"}: it runs on every ${n.replace(/^(pre|post)-/, "")}`,
-        at: st.mtime.toISOString(),
-        evidence: { kind: "file", ref: p },
-        key: `host|git-hook|${p}`
-      });
-    }
-  }
-  return out2;
-}
-
-// src/scan/agents.ts
+import { closeSync as closeSync3, existsSync as existsSync12, openSync as openSync3, readdirSync as readdirSync9, readFileSync as readFileSync14, readSync as readSync2, statSync as statSync11 } from "fs";
+import { basename as basename6, dirname as dirname2, join as join14, resolve as resolve4 } from "path";
 var MAX = 2 * 1024 * 1024;
 function readJson3(p) {
   try {
-    if (statSync10(p).size > MAX) return void 0;
-    const text = readFileSync13(p, "utf8");
+    if (statSync11(p).size > MAX) return void 0;
+    const text = readFileSync14(p, "utf8");
     try {
       return JSON.parse(text);
     } catch {
@@ -12943,10 +14671,29 @@ function readJson3(p) {
     return void 0;
   }
 }
+function isBinaryExecutable(p) {
+  const head = readHead(p, 4, "latin1");
+  if (!head || head.length < 4) return false;
+  const magic = Buffer.from(head, "latin1").readUInt32BE(0);
+  return [4277009102, 4277009103, 3472551422, 3489328638, 3405691582, 3199925962, 2135247942].includes(magic);
+}
+function readHead(p, bytes, encoding = "utf8") {
+  let fd;
+  try {
+    fd = openSync3(p, "r");
+    const buf = Buffer.alloc(bytes);
+    const n = readSync2(fd, buf, 0, bytes, 0);
+    return buf.subarray(0, n).toString(encoding);
+  } catch {
+    return void 0;
+  } finally {
+    if (fd !== void 0) closeSync3(fd);
+  }
+}
 function readText(p) {
   try {
-    if (statSync10(p).size > MAX) return void 0;
-    return readFileSync13(p, "utf8");
+    if (statSync11(p).size > MAX) return void 0;
+    return readFileSync14(p, "utf8");
   } catch {
     return void 0;
   }
@@ -12967,7 +14714,25 @@ function agentConfigPaths(home) {
     "Library/Application Support/Code/User/settings.json",
     ".config/Code/User/mcp.json",
     ".config/Code/User/settings.json"
-  ].map((r) => join13(home, r)).filter((p) => existsSync11(p));
+  ].map((r) => join14(home, r)).filter((p) => existsSync12(p));
+}
+function pluginConfigPaths(home) {
+  const out2 = [];
+  const cache = join14(home, ".claude/plugins/cache");
+  for (const market of listDir(cache))
+    for (const plugin of listDir(join14(cache, market)))
+      for (const version of listDir(join14(cache, market, plugin)).slice(0, 20)) {
+        const root = join14(cache, market, plugin, version);
+        for (const rel of ["hooks/hooks.json", ".mcp.json"]) if (existsSync12(join14(root, rel))) out2.push({ path: join14(root, rel), root });
+      }
+  return out2.slice(0, 500);
+}
+function listDir(d) {
+  try {
+    return readdirSync9(d).filter((n) => !n.startsWith("."));
+  } catch {
+    return [];
+  }
 }
 function projectConfigPaths(repo) {
   return [
@@ -12978,14 +14743,45 @@ function projectConfigPaths(repo) {
     ".cursor/hooks.json",
     ".vscode/mcp.json",
     ".gemini/settings.json"
-  ].map((r) => join13(repo, r)).filter((p) => existsSync11(p));
+  ].map((r) => join14(repo, r)).filter((p) => existsSync12(p));
 }
-function launcherPackage(command2, args = []) {
-  const cmd = basename5(command2 ?? "");
+var FLAG_WITH_VALUE = /* @__PURE__ */ new Set([
+  "--registry",
+  "-p",
+  "--package",
+  "--python",
+  "--from",
+  "--with",
+  "-c",
+  "--call",
+  "--cache",
+  "--userconfig",
+  "--index-url",
+  "--extra-index-url"
+]);
+function launcherPackage(command2, args = [], depth = 0) {
+  if (typeof command2 !== "string") return void 0;
+  const cmd = basename6(command2);
+  if (cmd === "env" && depth < 3) {
+    const i = args.findIndex((a) => !/^-|^[A-Za-z_][A-Za-z0-9_]*=/.test(a));
+    return i < 0 ? void 0 : launcherPackage(args[i], args.slice(i + 1), depth + 1);
+  }
+  if (/^(ba|z|da)?sh$/.test(cmd) && depth < 3) {
+    const line = args[args.indexOf("-c") + 1];
+    if (!args.includes("-c") || !line) return void 0;
+    const words = line.trim().split(/\s+/).map((w) => w.replace(/^["']|["']$/g, ""));
+    return launcherPackage(words[0], words.slice(1), depth + 1);
+  }
   let rest = args;
   let eco;
-  if (cmd === "npx" || cmd === "bunx") eco = "npm";
+  if (cmd === "npx" || cmd === "bunx" || cmd === "pnpx") eco = "npm";
   else if ((cmd === "pnpm" || cmd === "yarn") && args[0] === "dlx") {
+    eco = "npm";
+    rest = args.slice(1);
+  } else if (cmd === "npm" && (args[0] === "exec" || args[0] === "x")) {
+    eco = "npm";
+    rest = args.slice(1);
+  } else if (cmd === "bun" && args[0] === "x") {
     eco = "npm";
     rest = args.slice(1);
   } else if (cmd === "uvx" || cmd === "pipx") {
@@ -12996,7 +14792,17 @@ function launcherPackage(command2, args = []) {
     rest = args.slice(2);
   }
   if (!eco) return void 0;
-  const spec = rest.find((a) => !a.startsWith("-"));
+  let spec;
+  for (let i = 0; i < rest.length; i++) {
+    const a = rest[i];
+    if (a === "--") continue;
+    if (a.startsWith("-")) {
+      if (FLAG_WITH_VALUE.has(a)) i++;
+      continue;
+    }
+    spec = a;
+    break;
+  }
   if (!spec) return void 0;
   if (eco === "npm") {
     const m2 = /^(@[^/@]+\/[^@]+|[^@]+)(?:@(.+))?$/.exec(spec);
@@ -13025,8 +14831,15 @@ function mcpFrom(j, config) {
     if (!servers || typeof servers !== "object") return;
     for (const [name, s] of Object.entries(servers)) {
       if (!s || typeof s !== "object") continue;
-      const args = Array.isArray(s.args) ? s.args.map(String) : [];
-      out2.push({ config, name, command: s.command, args, url: s.url ?? s.serverUrl, package: launcherPackage(s.command, args) });
+      let command2 = typeof s.command === "string" ? s.command : void 0;
+      let args = Array.isArray(s.args) ? s.args.map(String) : [];
+      if (Array.isArray(s.command) && s.command.length) {
+        command2 = String(s.command[0] ?? "");
+        args = [...s.command.slice(1).map(String), ...args];
+      }
+      const url = typeof s.url === "string" ? s.url : typeof s.serverUrl === "string" ? s.serverUrl : void 0;
+      const env2 = s.env && typeof s.env === "object" && !Array.isArray(s.env) ? s.env : void 0;
+      out2.push({ config, name, command: command2, args, url, env: env2, package: launcherPackage(command2, args) });
     }
   };
   add2(j?.mcpServers);
@@ -13044,42 +14857,114 @@ function mcpFromToml(text, config) {
     const argsRaw = /^\s*args\s*=\s*\[([^\]]*)\]/m.exec(block)?.[1] ?? "";
     const args = [...argsRaw.matchAll(/"([^"]*)"/g)].map((m) => m[1]);
     const url = /^\s*url\s*=\s*"([^"]*)"/m.exec(block)?.[1];
-    out2.push({ config, name, command: command2, args, url, package: launcherPackage(command2, args) });
+    const envBlock = new RegExp(`^\\[mcp_servers\\.${escapeRegExp(name)}\\.env\\]([^\\[]*)`, "m").exec(text)?.[1] ?? "";
+    const env2 = Object.fromEntries([...envBlock.matchAll(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*"([^"]*)"/gm)].map((m) => [m[1], m[2]]));
+    out2.push({ config, name, command: command2, args, url, env: env2, package: launcherPackage(command2, args) });
   }
   return out2;
 }
 var BASE_URL_KEYS = /^(ANTHROPIC_BASE_URL|ANTHROPIC_BEDROCK_BASE_URL|OPENAI_BASE_URL|OPENAI_API_BASE|GOOGLE_GEMINI_BASE_URL|GEMINI_BASE_URL)$/;
-var VENDOR_HOST = /^https:\/\/([a-z0-9-]+\.)*(anthropic\.com|openai\.com|googleapis\.com|azure\.com|amazonaws\.com)(\/|$)/i;
-var INVISIBLE2 = /[\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]|[\u{E0000}-\u{E007F}]/u;
-var INSTRUCTION_FILES = ["CLAUDE.md", "AGENTS.md", "GEMINI.md", ".cursorrules", ".windsurfrules", ".github/copilot-instructions.md"];
-function scanAgents(home, clones, m) {
+var INVISIBLE2 = /[\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]|[\u{E0000}-\u{E007F}]|[\uFE00-\uFE0F\u{E0100}-\u{E01EF}]{3,}/u;
+var EMOJI_JOINER = new RegExp("(?<=\\p{Extended_Pictographic}|\\uFE0F|[\\u{1F3FB}-\\u{1F3FF}])\\u200D(?=\\p{Extended_Pictographic})", "gu");
+var FLAG_TAGS = /\u{1F3F4}[\u{E0020}-\u{E007E}]+\u{E007F}/gu;
+var withoutEmoji = (s) => s.replace(EMOJI_JOINER, "").replace(FLAG_TAGS, "");
+function codePoints(text) {
+  const counts = /* @__PURE__ */ new Map();
+  let count = 0;
+  for (const m of text.matchAll(new RegExp(INVISIBLE2.source, "gu")))
+    for (const ch of m[0]) {
+      count++;
+      const cp = `U+${(ch.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, "0")}`;
+      counts.set(cp, (counts.get(cp) ?? 0) + 1);
+    }
+  const summary = [...counts].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([cp, n]) => `${cp} x${n}`).join(", ");
+  return { count, summary };
+}
+var INSTRUCTION_FILES = [
+  "CLAUDE.md",
+  "CLAUDE.local.md",
+  ".claude/CLAUDE.md",
+  "AGENTS.md",
+  "GEMINI.md",
+  ".cursorrules",
+  ".windsurfrules",
+  ".clinerules",
+  ".github/copilot-instructions.md"
+];
+var NESTED_INSTRUCTIONS = /* @__PURE__ */ new Set(["CLAUDE.md", "AGENTS.md", "GEMINI.md", "CLAUDE.local.md"]);
+function steeringFiles(dir) {
+  return [...ruleFiles(join14(dir, ".cursor/rules")), ...ruleFiles(join14(dir, ".claude/rules")), ...ruleFiles(join14(dir, ".github/instructions"))];
+}
+function commandingFiles(dir) {
+  return [
+    ...ruleFiles(join14(dir, ".claude/commands")),
+    ...ruleFiles(join14(dir, ".claude/agents")),
+    ...listDir(join14(dir, ".claude/skills")).slice(0, 200).map((s) => join14(dir, ".claude/skills", s, "SKILL.md"))
+  ];
+}
+function projectRoot(config, clones) {
+  return clones.filter((c) => config.startsWith(`${c}/`)).sort((a, b) => b.length - a.length)[0];
+}
+function hookScript(command2, home, project, pluginRoot) {
+  const expanded = command2.replace(/\$\{?CLAUDE_PROJECT_DIR\}?/g, project ?? "\0").replace(/\$\{?CLAUDE_PLUGIN_ROOT\}?/g, pluginRoot ?? "\0").replace(/["']/g, "");
+  for (const raw of expanded.split(/\s+/)) {
+    if (!raw || raw.includes("\0")) continue;
+    const t = pathToken(raw, home);
+    const base2 = pluginRoot ?? project;
+    const p = t.startsWith("/") ? t : base2 && t.includes("/") && !t.startsWith("-") && !/^\w+:\/\//.test(t) ? resolve4(base2, t) : void 0;
+    if (!p) continue;
+    try {
+      if (statSync11(p).isFile()) return p;
+    } catch {
+    }
+  }
+  return void 0;
+}
+function scanAgents(home, clones, m, opts = {}) {
   const findings = [];
   const inventory = { configs: [], commands: [], mcpServers: [] };
-  const configs = [...agentConfigPaths(home), ...clones.flatMap(projectConfigPaths)];
+  const plugins = pluginConfigPaths(home);
+  const pluginRootOf = new Map(plugins.map((x) => [x.path, x.root]));
+  const configs = [...agentConfigPaths(home), ...plugins.map((x) => x.path), ...clones.flatMap(projectConfigPaths)];
   const add2 = (f) => findings.push({ surface: "host", ...f });
+  const iocHit = (subject, title, ioc, ref = subject) => add2({
+    severity: "compromised",
+    subject,
+    title,
+    campaign: ioc.campaign.id,
+    source: ioc.indicator.source,
+    indicator: { type: ioc.indicator.type, value: ioc.indicator.value },
+    evidence: { kind: "file", ref },
+    key: `host|agent|${subject}|${ioc.indicator.value}`
+  });
+  const baseUrls = (p, env2, where = "") => {
+    for (const [k, v] of Object.entries(env2))
+      if (BASE_URL_KEYS.test(k) && typeof v === "string" && v.trim() && !isVendorAiUrl(v))
+        add2({
+          severity: "suspicious",
+          subject: p,
+          title: `AI agent config ${p}${where} sends ${k} to ${v}: prompts, code and keys go there; check you set it`,
+          evidence: { kind: "file", ref: p, excerpt: `${k}=${v}` },
+          key: `host|agent-baseurl|${p}|${where}|${k}`
+        });
+  };
   for (const p of configs) {
     inventory.configs.push(p);
     const isToml = p.endsWith(".toml");
     const text = readText(p) ?? "";
     const j = isToml ? void 0 : readJson3(p);
+    const project = projectRoot(p, clones);
     const ioc = m.content.find((x) => x.test(text));
-    if (ioc)
-      add2({
-        severity: "compromised",
-        subject: p,
-        title: `AI agent config ${p} contains "${ioc.indicator.value}"`,
-        campaign: ioc.campaign.id,
-        source: ioc.indicator.source,
-        indicator: { type: ioc.indicator.type, value: ioc.indicator.value },
-        evidence: { kind: "file", ref: p },
-        key: `host|agent|${p}|${ioc.indicator.value}`
-      });
+    if (ioc) iocHit(p, `AI agent config ${p} contains "${ioc.indicator.value}"`, ioc);
     for (const c of j ? configCommands(j) : []) {
       inventory.commands.push({ config: p, ...c });
-      const script = c.command.trim().split(/\s+/).find((t) => t.startsWith("/") || t.startsWith("~/"));
-      const signals = [
-        .../* @__PURE__ */ new Set([...riskSignals(c.command, void 0, home, { location: false }), ...scriptSignals(script?.replace(/^~(?=\/)/, home), home)])
-      ];
+      const script = hookScript(c.command, home, project, pluginRootOf.get(p));
+      const s = scriptSignals(script, home, m.content);
+      if (s.ioc && script) {
+        iocHit(script, `AI agent ${c.where} in ${p} runs ${script}, which contains "${s.ioc.indicator.value}"`, s.ioc);
+        continue;
+      }
+      const signals = [.../* @__PURE__ */ new Set([...riskSignals(c.command, void 0, home, { location: false }), ...s.signals])];
       if (signals.length)
         add2({
           severity: "suspicious",
@@ -13089,27 +14974,45 @@ function scanAgents(home, clones, m) {
           key: `host|agent-cmd|${p}|${c.where}|${c.command.slice(0, 80)}`
         });
     }
-    const env2 = j?.env && typeof j.env === "object" ? j.env : {};
-    for (const [k, v] of Object.entries(env2))
-      if (BASE_URL_KEYS.test(k) && typeof v === "string" && !VENDOR_HOST.test(v))
+    baseUrls(p, j?.env && typeof j.env === "object" ? j.env : {});
+    if (isToml) {
+      for (const mm of text.matchAll(/^\s*(openai_base_url|base_url)\s*=\s*"([^"]*)"/gm))
+        if (mm[2] && !isVendorAiUrl(mm[2]))
+          add2({
+            severity: "suspicious",
+            subject: p,
+            title: `AI agent config ${p} sends ${mm[1]} to ${mm[2]}: prompts, code and keys go there; check you set it`,
+            evidence: { kind: "file", ref: p, excerpt: `${mm[1]} = ${mm[2]}` },
+            key: `host|agent-baseurl|${p}|${mm[1]}|${mm[2]}`
+          });
+    }
+    if (project && j) {
+      if (j.permissions?.defaultMode === "bypassPermissions" || j.enableAllProjectMcpServers === true)
         add2({
           severity: "suspicious",
           subject: p,
-          title: `AI agent config ${p} sends ${k} to ${v}: prompts, code and keys go there; check you set it`,
-          evidence: { kind: "file", ref: p, excerpt: `${k}=${v}` },
-          key: `host|agent-baseurl|${p}|${k}`
+          title: `Project agent config ${p} ${j.permissions?.defaultMode === "bypassPermissions" ? "turns off permission prompts (bypassPermissions)" : "trusts every MCP server the repository ships (enableAllProjectMcpServers)"}`,
+          evidence: { kind: "file", ref: p },
+          key: `host|agent-trust|${p}`
         });
+    }
     const servers = isToml ? mcpFromToml(text, p) : j ? mcpFrom(j, p) : [];
     for (const s of servers) {
-      inventory.mcpServers.push(s);
+      inventory.mcpServers.push({ ...s, env: void 0 });
+      if (s.env) baseUrls(p, s.env, ` (MCP server "${s.name}")`);
       const line = [s.command, ...s.args ?? []].filter(Boolean).join(" ");
       const signals = line ? riskSignals(line, s.command, home) : [];
-      const pkgHit = s.package ? m.pkg.find((x) => packageHit(x.indicator, s.package.ecosystem, s.package.name, s.package.version ?? x.indicator.versions?.[0] ?? "")) : void 0;
+      const pkgHit = s.package ? m.pkg.find((x) => packageHit(x.indicator, s.package.ecosystem, s.package.name, s.package.version ?? x.indicator.versions?.[0] ?? "")) : (
+        // Backstop: a launcher this parser does not know still names the package on its command line.
+        m.pkg.find(
+          (x) => ["npm", "pypi"].includes((x.indicator.ecosystem ?? "").toLowerCase()) && line.split(/[\s"'=]+/).some((t) => t.replace(/@[^@/]*$/, "") === x.indicator.value)
+        )
+      );
       if (pkgHit)
         add2({
           severity: s.package?.version ? "compromised" : "exposed",
           subject: p,
-          title: `MCP server "${s.name}" in ${p} runs ${s.package?.name}${s.package?.version ? `@${s.package.version}` : " (unpinned: the latest version at each start)"}, named by the campaign`,
+          title: `MCP server "${s.name}" in ${p} runs ${s.package?.name ?? pkgHit.indicator.value}${s.package?.version ? `@${s.package.version}` : " (unpinned: the latest version at each start)"}, named by the campaign`,
           campaign: pkgHit.campaign.id,
           source: pkgHit.indicator.source,
           indicator: { type: "package", value: pkgHit.indicator.value },
@@ -13136,40 +15039,93 @@ function scanAgents(home, clones, m) {
       key: "host|mcp-unpinned"
     });
   let instructionFiles = 0;
-  const dirs = [join13(home, ".claude"), ...clones];
-  for (const d of dirs) {
-    const files = [...INSTRUCTION_FILES.map((f) => join13(d, f)), ...ruleFiles(join13(d, ".cursor/rules"))];
-    for (const p of files) {
-      const text = existsSync11(p) ? readText(p) : void 0;
-      if (text === void 0) continue;
-      instructionFiles++;
-      const lines = text.split("\n");
-      const ln = lines.findIndex((l, i) => INVISIBLE2.test(i === 0 ? l.replace(/^\uFEFF/, "") : l));
-      if (ln < 0) continue;
-      const count = [...text.matchAll(new RegExp(INVISIBLE2.source, "gu"))].length;
+  const steering = /* @__PURE__ */ new Set();
+  const commanding = /* @__PURE__ */ new Set();
+  for (const d of [join14(home, ".claude"), ...clones]) {
+    for (const f of [...INSTRUCTION_FILES.map((x) => join14(d, x)), ...steeringFiles(d)]) steering.add(f);
+    for (const f of commandingFiles(d)) commanding.add(f);
+  }
+  for (const f of [join14(home, ".codex/AGENTS.md"), join14(home, ".gemini/GEMINI.md")]) steering.add(f);
+  for (const root of [join14(home, ".claude/skills"), join14(home, ".agents/skills")])
+    for (const s of listDir(root).slice(0, 200)) commanding.add(join14(root, s, "SKILL.md"));
+  for (const f of (opts.files ?? []).filter((x) => NESTED_INSTRUCTIONS.has(basename6(x))).slice(0, 2e3)) steering.add(f);
+  for (const p of [...steering, ...commanding]) {
+    const text = existsSync12(p) ? readText(p) : void 0;
+    if (text === void 0) continue;
+    instructionFiles++;
+    const ioc = m.content.find((x) => x.test(text));
+    if (ioc) {
+      iocHit(p, `Agent instruction file ${p} contains "${ioc.indicator.value}"`, ioc);
+      continue;
+    }
+    const lines = text.split("\n");
+    const visible = (l, i) => withoutEmoji(i === 0 ? l.replace(/^\uFEFF/, "") : l);
+    const ln = lines.findIndex((l, i) => INVISIBLE2.test(visible(l, i)));
+    if (ln >= 0) {
+      const { count, summary } = codePoints(lines.map(visible).join("\n"));
       add2({
         severity: "suspicious",
         subject: p,
-        title: `Agent instruction file ${p} holds ${count} invisible character(s) (zero-width, bidi or tag characters), a known prompt-injection trick: read it with a hex viewer`,
+        title: `Agent instruction file ${p} holds ${count} invisible character(s) (${summary}: zero-width, bidi, tag characters or variation selectors), a known prompt-injection trick: read it with a hex viewer`,
         evidence: { kind: "file", ref: `${p}:${ln + 1}` },
         key: `host|invisible|${p}`
       });
+      continue;
+    }
+    if (commanding.has(p)) {
+      const i = lines.findIndex((l) => riskSignals(l, void 0, home, { location: false }).length > 0);
+      if (i >= 0)
+        add2({
+          severity: "suspicious",
+          subject: p,
+          title: `Agent skill or command ${p} line ${i + 1} ${riskSignals(lines[i] ?? "", void 0, home, { location: false }).join("; ")}: the agent may run it`,
+          evidence: { kind: "file", ref: `${p}:${i + 1}`, excerpt: (lines[i] ?? "").trim().slice(0, 200) },
+          key: `host|agent-skill|${p}`
+        });
     }
   }
   return { findings, inventory, instructionFiles };
 }
-function scriptSignals(path, home) {
-  if (!path) return [];
-  const text = readText(path);
-  if (!text) return [];
+var WASM_B64 = /AGFzbQ[A-Za-z0-9+/]{1000,}={0,2}/g;
+var BLOB = /[A-Za-z0-9+/=]{10000,}|[0-9a-fA-F]{10000,}/;
+function scriptSignals(path, home, content = [], depth = 0) {
+  if (!path) return { signals: [] };
+  let size = 0;
+  try {
+    size = statSync11(path).size;
+  } catch {
+    return { signals: [] };
+  }
+  if (isBinaryExecutable(path)) return { signals: [] };
+  const text = size > MAX ? readHead(path, MAX) : readText(path);
+  if (!text) return { signals: [] };
+  const ioc = content.find((x) => x.test(text));
+  if (ioc) return { signals: [], ioc };
   const out2 = /* @__PURE__ */ new Set();
-  for (const l of text.split("\n").slice(0, 5e3))
-    if (l.trim() && !/^\s*#/.test(l)) for (const s of riskSignals(l, void 0, home, { location: false })) out2.add(`its script ${basename5(path)} ${s}`);
-  return [...out2];
+  const lines = text.split("\n");
+  for (const l of lines.slice(0, 5e3))
+    if (l.trim() && !/^\s*#/.test(l)) for (const s of riskSignals(l, void 0, home, { location: false })) out2.add(`its script ${basename6(path)} ${s}`);
+  const plain2 = text.replace(WASM_B64, "");
+  if (plain2.split("\n").some((l) => l.length >= 2e4) || BLOB.test(plain2)) out2.add(`its script ${basename6(path)} holds a large encoded blob`);
+  if (depth === 0)
+    for (const mm of [...text.matchAll(/(?:require\(|import\(|from\s+|import\s+)\s*["'](\.{1,2}\/[^"']+)["']/g)].slice(0, 20)) {
+      const base2 = resolve4(dirname2(path), mm[1]);
+      const target = [base2, `${base2}.js`, `${base2}.mjs`, `${base2}.cjs`, `${base2}.ts`].find((x) => {
+        try {
+          return statSync11(x).isFile();
+        } catch {
+          return false;
+        }
+      });
+      const sub = scriptSignals(target, home, content, 1);
+      if (sub.ioc) return { signals: [...out2], ioc: sub.ioc };
+      for (const x of sub.signals) out2.add(x);
+    }
+  return { signals: [...out2] };
 }
 function ruleFiles(dir) {
   try {
-    return readdirSync8(dir).filter((f) => /\.(mdc|md)$/.test(f)).slice(0, 200).map((f) => join13(dir, f));
+    return readdirSync9(dir).filter((f) => /\.(mdc|md)$/.test(f)).slice(0, 200).map((f) => join14(dir, f));
   } catch {
     return [];
   }
@@ -13177,19 +15133,31 @@ function ruleFiles(dir) {
 
 // src/scan/host.ts
 var hasControlChar = (s) => [...s].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127);
-var MAX_HASH_BYTES = 50 * 1024 * 1024;
-function sha256File(p) {
+function sha256File(p, max = Number.POSITIVE_INFINITY) {
+  let fd;
   try {
-    if (statSync11(p).size > MAX_HASH_BYTES) return void 0;
-    return createHash3("sha256").update(readFileSync14(p)).digest("hex");
+    const st = statSync12(p);
+    if (!st.isFile() || st.size > max) return void 0;
+    fd = openSync4(p, "r");
+    const h = createHash4("sha256");
+    const buf = Buffer.alloc(1024 * 1024);
+    for (; ; ) {
+      const n = readSync3(fd, buf, 0, buf.length, null);
+      if (n <= 0) break;
+      h.update(buf.subarray(0, n));
+    }
+    return h.digest("hex");
   } catch {
     return void 0;
+  } finally {
+    if (fd !== void 0) closeSync4(fd);
   }
 }
-function readText2(p, max = 2 * 1024 * 1024) {
+var MAX_TEXT = 2 * 1024 * 1024;
+function readText2(p, max = MAX_TEXT) {
   try {
-    if (statSync11(p).size > max) return void 0;
-    return readFileSync14(p, "utf8");
+    if (statSync12(p).size > max) return void 0;
+    return readFileSync15(p, "utf8");
   } catch {
     return void 0;
   }
@@ -13206,17 +15174,64 @@ function hitOf(m, f) {
   };
 }
 function startupDirs(home, os) {
-  if (os === "darwin") return [join14(home, "Library/LaunchAgents"), "/Library/LaunchAgents", "/Library/LaunchDaemons"];
-  return [join14(home, ".config/systemd/user"), join14(home, ".config/autostart"), "/etc/systemd/system", "/etc/cron.d", "/etc/xdg/autostart"];
+  if (os === "darwin") return [join15(home, "Library/LaunchAgents"), "/Library/LaunchAgents", "/Library/LaunchDaemons"];
+  return [
+    join15(home, ".config/systemd/user"),
+    join15(home, ".local/share/systemd/user"),
+    join15(home, ".config/autostart"),
+    join15(home, ".config/environment.d"),
+    "/etc/systemd/system",
+    "/etc/cron.d",
+    "/etc/cron.hourly",
+    "/etc/cron.daily",
+    "/etc/cron.weekly",
+    "/etc/cron.monthly",
+    "/etc/xdg/autostart",
+    "/etc/profile.d",
+    // Single files.
+    "/etc/crontab",
+    "/etc/rc.local",
+    "/etc/ld.so.preload"
+  ];
 }
+function defaultDropDirs(home) {
+  return [
+    ...dropFolders(home),
+    join15(home, "Library/Caches"),
+    "/Library/Caches",
+    join15(home, "Library/Application Support"),
+    join15(home, ".local/share"),
+    join15(home, ".local/bin"),
+    join15(home, ".config"),
+    join15(home, ".cache")
+  ];
+}
+var HOME_ANCHOR = /^(~|\$HOME|\$\{HOME\}|%USERPROFILE%)[/\\]/i;
+var realOr = (p) => {
+  try {
+    return realpathSync3(p);
+  } catch {
+    return p;
+  }
+};
+var readdirOr2 = (d) => {
+  try {
+    return readdirSync10(d);
+  } catch {
+    return [];
+  }
+};
 async function scanHost(iocs, tree, runner2, opts = {}) {
   const home = opts.home ?? homedir3();
   const os = opts.platform ?? platform();
+  const nowMs = (opts.now ?? /* @__PURE__ */ new Date()).getTime();
   const sinceMs = Date.parse(reviewStart(iocs, opts.now));
   const result = { surface: "host", scanned: true, stats: {}, startedAt: (opts.now ?? /* @__PURE__ */ new Date()).toISOString() };
   const findings = [];
   const gaps = [];
   const inventory = { startupItems: [], credentials: [], recentExtensions: [], shellStartup: [] };
+  const dropDirs = opts.dropDirs ?? defaultDropDirs(home);
+  const startupFolders = opts.startupDirs ?? startupDirs(home, os);
   const M = {
     file: matchers(iocs, "file", "workflow_file"),
     hash: matchers(iocs, "sha256"),
@@ -13226,24 +15241,103 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
     pkg: matchers(iocs, "package").filter((m) => (m.indicator.ecosystem ?? "").toLowerCase().startsWith("vs") || m.indicator.ecosystem === "openvsx")
   };
   const hashes = new Map(M.hash.map((m) => [m.indicator.value.toLowerCase(), m]));
-  result.stats.files = tree.files.length;
-  for (const p of tree.files) {
-    const m = M.file.find((x) => x.test(p));
-    if (!m) continue;
+  const hashed = /* @__PURE__ */ new Set();
+  const fileSeen = /* @__PURE__ */ new Set();
+  const reportFile = (p, m, isDir = false) => {
+    const real = realOr(p);
+    if (fileSeen.has(p) || fileSeen.has(real)) return;
+    fileSeen.add(p).add(real);
+    if (isDir) {
+      findings.push(
+        hitOf(m, {
+          subject: p,
+          severity: m.indicator.weak ? "suspicious" : "compromised",
+          title: `Folder ${p} matches "${m.indicator.value}"${m.indicator.weak ? " (a common name)" : ""}`,
+          evidence: { kind: "file", ref: p }
+        })
+      );
+      return;
+    }
     const digest = sha256File(p);
+    hashed.add(p);
     const hashHit = digest ? hashes.get(digest) : void 0;
     const campaignHashes = M.hash.filter((h) => h.campaign.id === m.campaign.id).length;
     const exactName = !/[*?]/.test(m.indicator.value) && !m.indicator.regex;
-    const nameOnly = !hashHit && (!!m.indicator.weak || exactName && campaignHashes > 0);
+    const nameOnly = !hashHit && (!!m.indicator.weak || exactName && campaignHashes > 0 && digest !== void 0);
+    const notHashed = digest === void 0 && campaignHashes ? " (sha256 not computed: the file could not be read)" : "";
     findings.push(
       hitOf(hashHit ?? m, {
         subject: p,
         severity: nameOnly ? "suspicious" : "compromised",
-        title: hashHit ? `File ${p} matches the sha256` : nameOnly ? `File ${p} is named like "${m.indicator.value}"${m.indicator.weak ? " (a common name)" : ""}${campaignHashes ? `, but its sha256 matches none of the campaign's ${campaignHashes} hash(es)` : ""}` : `File ${p} matches "${m.indicator.value}"`,
+        title: hashHit ? `File ${p} matches the sha256` : nameOnly ? `File ${p} is named like "${m.indicator.value}"${m.indicator.weak ? " (a common name)" : ""}${digest && campaignHashes ? `, but its sha256 matches none of the campaign's ${campaignHashes} hash(es)` : notHashed}` : `File ${p} matches "${m.indicator.value}"${notHashed}`,
         evidence: { kind: "file", ref: p, excerpt: digest ? `sha256=${digest}` : void 0 }
       })
     );
+  };
+  result.stats.files = tree.files.length;
+  for (const p of tree.files) {
+    const m = M.file.find((x) => x.test(p));
+    if (m) reportFile(p, m);
   }
+  const probe = (p, m) => {
+    const name = basename7(p);
+    if (/[*?]/.test(dirname3(p))) return;
+    const hits = /[*?]/.test(name) ? readdirOr2(dirname3(p)).filter((n) => globRegex(name).test(n)).slice(0, 50).map((n) => join15(dirname3(p), n)) : [p];
+    for (const h of hits) {
+      try {
+        const st = lstatSync(h);
+        if (st.isDirectory()) reportFile(h, m, true);
+        else if (st.isFile()) reportFile(h, m);
+      } catch {
+      }
+    }
+  };
+  let nameDirs;
+  for (const m of M.file) {
+    if (m.indicator.regex) continue;
+    const raw = m.indicator.value.trim().replace(/[/\\]+$/, "");
+    if (!raw) continue;
+    if (HOME_ANCHOR.test(raw)) probe(join15(home, raw.replace(HOME_ANCHOR, "").replace(/\\/g, "/")), m);
+    else if (raw.startsWith("/")) {
+      probe(raw, m);
+      const other = /^\/(Users|home)\/[^/]+\/(.+)$/.exec(raw);
+      if (other && !raw.startsWith(`${home}/`)) probe(join15(home, other[2]), m);
+      if (/^\/(tmp|var)\//.test(raw)) probe(`/private${raw}`, m);
+    } else if (raw.includes("/")) probe(join15(home, raw), m);
+    else {
+      nameDirs ??= [.../* @__PURE__ */ new Set([home, ...dropDirs, ...startupFolders])].flatMap((d) => [
+        d,
+        ...readdirOr2(d).slice(0, 2e3).map((n) => join15(d, n)).filter((x) => {
+          try {
+            return lstatSync(x).isDirectory();
+          } catch {
+            return false;
+          }
+        }).slice(0, 500)
+      ]);
+      for (const d of nameDirs) probe(join15(d, raw), m);
+    }
+  }
+  if (M.file.length)
+    for (const clone of tree.gitDirs) {
+      const nm = join15(clone, "node_modules");
+      const pkgs = readdirOr2(nm).slice(0, 5e3).flatMap((n) => n.startsWith("@") ? readdirOr2(join15(nm, n)).map((x) => join15(nm, n, x)) : [join15(nm, n)]);
+      const site = [".venv", "venv"].flatMap(
+        (v) => readdirOr2(join15(clone, v, "lib")).filter((x) => x.startsWith("python")).map((x) => join15(clone, v, "lib", x, "site-packages"))
+      );
+      for (const dir of [...pkgs.slice(0, 5e3), ...site])
+        for (const n of readdirOr2(dir).slice(0, 2e3)) {
+          const p = join15(dir, n);
+          const m = M.file.find((x) => x.test(p));
+          if (!m) continue;
+          try {
+            const st = lstatSync(p);
+            if (st.isFile()) reportFile(p, m);
+            else if (st.isDirectory()) reportFile(p, m, true);
+          } catch {
+          }
+        }
+    }
   if (tree.capped)
     gaps.push({
       surface: "host",
@@ -13257,33 +15351,40 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
       what: `${tree.unreadable} unreadable directories`,
       why: "permission denied (macOS privacy protection or another user's files)"
     });
-  if (hashes.size) gaps.push({ surface: "host", what: "sha256 of every file", why: "only files named like an IOC and startup items are hashed" });
   let oddNames = 0;
   for (const p of tree.files) {
-    if (!hasControlChar(basename6(p)) || basename6(p) === "Icon\r" || oddNames >= 50) continue;
+    if (!hasControlChar(basename7(p)) || basename7(p) === "Icon\r" || oddNames >= 50) continue;
     oddNames++;
     findings.push({
       surface: "host",
       severity: "suspicious",
       subject: p,
-      title: `File name with a control character (line break or similar), a trick to hide from tools: ${JSON.stringify(basename6(p))} in ${p.slice(0, p.length - basename6(p).length)}`,
+      title: `File name with a control character (line break or similar), a trick to hide from tools: ${JSON.stringify(basename7(p))} in ${p.slice(0, p.length - basename7(p).length)}`,
       evidence: { kind: "file", ref: JSON.stringify(p) },
       key: `host|odd-name|${p}`
     });
   }
   for (const dir of tree.vscodeDirs) {
-    const p = join14(dir, "tasks.json");
-    const text = existsSync12(p) ? readText2(p) : void 0;
+    const p = join15(dir, "tasks.json");
+    const text = existsSync13(p) ? readText2(p) : void 0;
     if (!text || !/"runOn"\s*:\s*"folderOpen"/.test(text)) continue;
     const line = text.split("\n").findIndex((l) => /folderOpen/.test(l)) + 1;
-    const cmd = /"command"\s*:\s*"([^"]+)"/.exec(text)?.[1];
+    const j = readJson3(p);
+    const tasks = Array.isArray(j?.tasks) ? j.tasks : void 0;
+    const auto = (tasks ?? []).filter((t) => t?.runOptions?.runOn === "folderOpen").map((t) => {
+      const args = Array.isArray(t.args) ? t.args.map((x) => typeof x === "string" ? x : x?.value ?? "") : [];
+      const cmd2 = [typeof t.command === "string" ? t.command : "", ...args].filter(Boolean).join(" ");
+      return { label: typeof t.label === "string" ? t.label : void 0, cmd: cmd2 };
+    });
+    const cmd = tasks ? auto.map((t) => `${t.label ? `${t.label}: ` : ""}${t.cmd || "(no command)"}`).join(" | ") : "(command not attributed: the file did not parse)";
+    const signals = [...new Set(auto.flatMap((t) => riskSignals(t.cmd, void 0, home)))];
     const m = M.content.find((x) => x.test(text));
     if (m)
       findings.push(
         hitOf(m, {
           subject: p,
           title: `VS Code task in ${p} runs on folder open and contains "${m.indicator.value}"`,
-          evidence: { kind: "file", ref: `${p}:${line}`, excerpt: cmd }
+          evidence: { kind: "file", ref: `${p}:${line}`, excerpt: cmd.slice(0, 300) }
         })
       );
     else
@@ -13291,107 +15392,168 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
         surface: "host",
         severity: "suspicious",
         subject: p,
-        title: `VS Code task runs automatically when the folder opens${cmd ? `: ${cmd}` : ""}`,
-        evidence: { kind: "file", ref: `${p}:${line}`, excerpt: cmd },
+        title: `VS Code task runs automatically when the folder opens: ${cmd.slice(0, 200)}${signals.length ? `; ${signals.join("; ")}` : ""}`,
+        evidence: { kind: "file", ref: `${p}:${line}`, excerpt: cmd.slice(0, 300) },
         key: `host|${p}|folderOpen`
       });
   }
   result.stats.vscodeDirs = tree.vscodeDirs.length;
   let startupCount = 0;
-  for (const dir of opts.startupDirs ?? startupDirs(home, os)) {
-    let names = [];
+  const startupFiles = [];
+  for (const dir of startupFolders) {
+    let st;
     try {
-      names = readdirSync9(dir);
+      st = statSync12(dir);
     } catch {
       continue;
     }
-    for (const name of names) {
-      const p = join14(dir, name);
-      let st;
-      try {
-        st = statSync11(p);
-      } catch {
-        continue;
-      }
-      if (!st.isFile()) continue;
-      startupCount++;
-      let text = readText2(p) ?? "";
-      if (text.startsWith("bplist") && os === "darwin" && !opts.skipLive) {
-        const xml = await runner2("plutil", ["-convert", "xml1", "-o", "-", p], { timeoutMs: 1e4 });
-        if (xml.ok) text = xml.stdout;
-      }
-      const m = M.content.find((x) => x.test(text)) ?? (hashes.size ? hashes.get(sha256File(p) ?? "") : void 0);
-      const { command: command2, executable } = startupCommand(text);
-      const item = { path: p, mtime: st.mtime.toISOString(), command: command2, executable, signals: riskSignals(command2, executable, home) };
-      if (!command2) {
-        for (const l of text.split("\n").slice(0, 2e3)) if (l.trim() && !/^\s*#/.test(l)) item.signals.push(...riskSignals(l, void 0, home));
-      }
-      const interp = interpretedScript(command2, executable, home);
-      if (interp.script) item.script = interp.script;
-      item.signals = [.../* @__PURE__ */ new Set([...item.signals, ...interp.signals])];
-      if (executable?.startsWith("/")) {
-        item.exists = existsSync12(executable);
-        if (!item.exists) item.signals.push("points to a program that no longer exists");
-        else if (os === "darwin" && !opts.skipLive) {
-          const sig = await signerOf(runner2, executable);
-          if (!sig) item.signer = "unreadable (codesign could not read it, often a root-only helper)";
-          else {
-            item.signed = sig.signed;
-            item.signer = sig.signer;
-            item.team = sig.team;
-            if (!sig.signed) item.signals.push(`is not signed by any developer${sig.signer ? ` (${sig.signer})` : ""}`);
+    if (st.isFile()) {
+      startupFiles.push(dir);
+      continue;
+    }
+    for (const name of readdirOr2(dir)) {
+      const p = join15(dir, name);
+      if (/\.(d|wants|requires)$/.test(name)) {
+        try {
+          if (statSync12(p).isDirectory()) {
+            for (const n of readdirOr2(p).slice(0, 200)) startupFiles.push(join15(p, n));
+            continue;
           }
+        } catch {
         }
       }
-      const label = /<key>Label<\/key>\s*<string>([^<]+)<\/string>/.exec(text)?.[1] ?? name.replace(/\.plist$/, "");
-      if (/^com\.apple\./i.test(label) && !(item.signer ?? "").startsWith("Software Signing") && !/^\/(System|usr\/libexec|usr\/sbin)\//.test(executable ?? ""))
-        item.signals.unshift(`is named like an Apple service (${label}) but is not Apple's`);
-      inventory.startupItems.push(item);
-      const recent = st.mtimeMs >= sinceMs;
-      const facts = [
-        command2 ? `runs ${command2.slice(0, 160)}` : "no program found",
-        item.signer ? `signed by ${item.signer}${item.team ? ` (team ${item.team})` : ""}` : void 0,
-        ...item.signals
-      ].filter(Boolean);
-      const strong = item.signals.some((s) => !s.startsWith("points to") && !s.startsWith("is not signed"));
-      if (m)
-        findings.push(
-          hitOf(m, {
-            subject: p,
-            title: `Startup item ${p} contains "${m.indicator.value}"`,
-            at: item.mtime,
-            evidence: { kind: "file", ref: p, excerpt: command2 }
-          })
-        );
-      else if (strong || recent)
+      startupFiles.push(p);
+    }
+  }
+  for (const p of startupFiles) {
+    const name = basename7(p);
+    let st;
+    try {
+      st = statSync12(p);
+    } catch {
+      continue;
+    }
+    if (!st.isFile()) continue;
+    startupCount++;
+    let text = readText2(p);
+    const unreadable = text === void 0 && st.size <= MAX_TEXT;
+    if (os === "darwin" && !opts.skipLive && !unreadable && (name.endsWith(".plist") || text?.startsWith("bplist"))) {
+      const xml = await runner2("plutil", ["-convert", "xml1", "-o", "-", p], { timeoutMs: 1e4 });
+      if (xml.ok && xml.stdout.trim()) text = xml.stdout;
+    }
+    const changed = changedMs(st, nowMs);
+    const at = new Date(changed).toISOString();
+    if (text === void 0) {
+      inventory.startupItems.push({ path: p, mtime: st.mtime.toISOString(), command: "", signals: [unreadable ? "unreadable" : "too large to read"] });
+      if (unreadable)
+        gaps.push({
+          surface: "host",
+          what: `startup item ${p}`,
+          why: "this user cannot read it",
+          fix: name.endsWith(".plist") ? `sudo plutil -p ${JSON.stringify(p)}` : `sudo cat ${JSON.stringify(p)}`
+        });
+      else
         findings.push({
           surface: "host",
           severity: "suspicious",
           subject: p,
-          title: `${strong ? "Risky startup item" : "Startup item"} ${basename6(p)}${recent ? " was written recently" : ""}: ${facts.join("; ")}`,
-          at: item.mtime,
-          evidence: { kind: "file", ref: p, excerpt: command2.slice(0, 300) },
+          title: `Startup item ${name} is ${(st.size / 1024 / 1024).toFixed(1)} MB and could not be read: a startup item is a few KB`,
+          at,
+          evidence: { kind: "file", ref: p },
           key: `host|${p}|startup`
         });
+      continue;
     }
+    const sc = startupCommand(text);
+    const { command: command2, executable } = sc;
+    const item = { path: p, mtime: st.mtime.toISOString(), command: command2, executable, signals: riskSignals(command2, executable, home) };
+    if (sc.unparsed) item.signals.push("its program could not be read (an encoding that hides the command)");
+    for (const c of sc.more ?? []) item.signals.push(...riskSignals(c, void 0, home));
+    if (name === "ld.so.preload" && text.trim()) item.signals.push(`preloads ${text.trim().split(/\s+/)[0]} into every program`);
+    if (!command2 && !sc.unparsed) {
+      for (const l of text.split("\n").slice(0, 2e3)) if (l.trim() && !/^\s*#/.test(l)) item.signals.push(...riskSignals(l, void 0, home));
+    }
+    const interp = interpretedScript(command2, executable, home, sc.args);
+    if (interp.script) item.script = interp.script;
+    item.signals = [.../* @__PURE__ */ new Set([...item.signals, ...interp.signals])];
+    if (executable?.startsWith("/")) {
+      item.exists = existsSync13(executable);
+      if (!item.exists) item.signals.push("points to a program that no longer exists");
+      else if (os === "darwin" && !opts.skipLive) {
+        const sig = await signerOf(runner2, executable);
+        if (!sig) item.signer = "unreadable (codesign could not read it, often a root-only helper)";
+        else {
+          item.signed = sig.signed;
+          item.signer = sig.signer;
+          item.team = sig.team;
+          if (sig.invalid) item.signals.push(`has an ${sig.signer}`);
+          else if (!sig.signed) item.signals.push(`is not signed by any developer${sig.signer ? ` (${sig.signer})` : ""}`);
+        }
+      }
+    }
+    const label = /<key>Label<\/key>\s*<string>([^<]+)<\/string>/.exec(text)?.[1] ?? name.replace(/\.plist$/, "");
+    const appleProgram = /^\/(System|usr\/libexec|usr\/sbin|Library\/Apple)\//.test(executable ?? "") && !INTERPRETERS.test(basename7(executable ?? ""));
+    if (/^com\.apple\./i.test(label) && !appleProgram) item.signals.unshift(`is named like an Apple service (${label}) but is not Apple's`);
+    inventory.startupItems.push(item);
+    const recent = changed >= sinceMs;
+    const facts = [
+      command2 ? `runs ${command2.slice(0, 160)}` : sc.unparsed ? void 0 : "no program found",
+      item.signer ? `signed by ${item.signer}${item.team ? ` (team ${item.team})` : ""}` : void 0,
+      ...item.signals
+    ].filter(Boolean);
+    const strong = item.signals.some((s) => !s.startsWith("points to") && !s.startsWith("is not signed"));
+    const hashOf = (f) => {
+      if (!f || !hashes.size) return void 0;
+      hashed.add(f);
+      return hashes.get(sha256File(f) ?? "");
+    };
+    const m = M.content.find((x) => x.test(text ?? "")) ?? (interp.text ? M.content.find((x) => x.test(interp.text ?? "")) : void 0) ?? (fileSeen.has(p) ? void 0 : M.file.find((x) => x.test(p))) ?? hashOf(p) ?? (item.exists ? hashOf(executable) : void 0) ?? hashOf(interp.script);
+    if (m)
+      findings.push(
+        hitOf(m, {
+          subject: p,
+          title: m.indicator.type === "sha256" ? `Startup item ${p}, or the program or script it runs, matches the sha256 ${m.indicator.value}` : `Startup item ${p} ${m.indicator.type === "file" || m.indicator.type === "workflow_file" ? "matches" : "contains"} "${m.indicator.value}"`,
+          at,
+          evidence: { kind: "file", ref: p, excerpt: command2 }
+        })
+      );
+    else if (strong || recent)
+      findings.push({
+        surface: "host",
+        severity: "suspicious",
+        subject: p,
+        title: `${strong ? "Risky startup item" : "Startup item"} ${name}${recent ? ` was written recently${backdated(st, nowMs)}` : ""}: ${facts.join("; ")}`,
+        at,
+        evidence: { kind: "file", ref: p, excerpt: command2.slice(0, 300) },
+        key: `host|${p}|startup`
+      });
   }
   result.stats.startupItems = startupCount;
-  const agents = scanAgents(home, tree.gitDirs, { content: M.content, pkg: matchers(iocs, "package") });
-  findings.push(...agents.findings);
-  inventory.agents = agents.inventory;
-  result.stats.agentConfigs = agents.inventory.configs.length;
-  result.stats.mcpServers = agents.inventory.mcpServers.length;
-  findings.push(...gitHookFindings(tree.gitDirs, home, sinceMs));
-  const npmPkgs = matchers(iocs, "package").filter((x) => (x.indicator.ecosystem ?? "").toLowerCase() === "npm").map((x) => ({ name: x.indicator.value, versions: x.indicator.versions, source: x.indicator.source, campaign: x.campaign.id, value: x.indicator.value }));
-  findings.push(...npmCacheHits(home, npmPkgs));
+  try {
+    const agents = scanAgents(home, tree.gitDirs, { content: M.content, pkg: matchers(iocs, "package") }, { files: tree.files });
+    findings.push(...agents.findings);
+    inventory.agents = agents.inventory;
+    result.stats.agentConfigs = agents.inventory.configs.length;
+    result.stats.mcpServers = agents.inventory.mcpServers.length;
+  } catch (e) {
+    gaps.push({
+      surface: "host",
+      what: "AI agent configs (hooks, MCP servers, instruction files)",
+      why: `the check failed: ${e.message.slice(0, 200)}`
+    });
+  }
+  findings.push(...gitHookFindings(tree.gitDirs, home, sinceMs, M.content, nowMs));
+  const npmPkgs = matchers(iocs, "package").filter((x) => normEco(x.indicator.ecosystem ?? "") === "npm").map((x) => ({ name: x.indicator.value, versions: x.indicator.versions, source: x.indicator.source, campaign: x.campaign.id, value: x.indicator.value }));
+  findings.push(...npmCacheHits(home, npmPkgs), ...packageStoreHits(home, npmPkgs));
+  findings.push(...pthFindings(home, tree.gitDirs, M.file, hashes, !opts.skipLive));
   const rc = shellStartupFindings(home);
   findings.push(...rc.findings);
   inventory.shellStartup = rc.lines;
-  findings.push(...configFindings(home, sinceMs));
-  const traces = [".zsh_history", ".bash_history", ".local/share/fish/fish_history", ".python_history", ...SHELL_STARTUP].map((f) => join14(home, f));
+  findings.push(...configFindings(home, sinceMs, nowMs));
+  const traces = [".zsh_history", ".bash_history", ".local/share/fish/fish_history", ".python_history", ...shellStartupFiles(home)].map((f) => join15(home, f));
   traces.push("/etc/hosts");
   for (const p of traces) {
-    const text = existsSync12(p) ? readText2(p, 20 * 1024 * 1024) : void 0;
+    const text = existsSync13(p) ? readText2(p, 20 * 1024 * 1024) : void 0;
     if (!text) continue;
     const lines = text.split("\n");
     for (const m of M.content) {
@@ -13413,43 +15575,91 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
     }
   }
   let extensions = 0;
-  for (const dir of [".vscode/extensions", ".vscode-insiders/extensions", ".cursor/extensions", ".windsurf/extensions", ".vscode-oss/extensions"].map(
-    (d) => join14(home, d)
-  )) {
-    let names = [];
-    try {
-      names = readdirSync9(dir);
-    } catch {
-      continue;
-    }
-    for (const name of names) {
+  for (const dir of extensionDirs2(home)) {
+    for (const name of readdirOr2(dir)) {
       const mm = /^(.+?)-(\d+\.\d+\.\d+)(-.+)?$/.exec(name);
-      if (!mm) continue;
+      if (!mm || !EXTENSION_ENTRY.test(name)) continue;
       extensions++;
       const [, id, version] = mm;
       const m = M.pkg.find(
         (x) => x.indicator.value.toLowerCase() === id.toLowerCase() && (!x.indicator.versions?.length || x.indicator.versions.some((v) => v.replace(/^v/, "") === version || v === `${version}${mm[3] ?? ""}`))
       );
-      if (m)
+      if (m) {
         findings.push(
-          hitOf(m, { subject: join14(dir, name), title: `Editor extension ${id}@${version} is installed`, evidence: { kind: "file", ref: join14(dir, name) } })
+          hitOf(m, { subject: join15(dir, name), title: `Editor extension ${id}@${version} is installed`, evidence: { kind: "file", ref: join15(dir, name) } })
         );
+        continue;
+      }
+      const entry = extensionEntryFile(join15(dir, name));
+      if (!entry) continue;
+      const c = M.content.find((x) => x.test(entry.text));
+      if (c)
+        findings.push(
+          hitOf(c, {
+            subject: entry.path,
+            title: `Editor extension ${id}@${version} code contains "${c.indicator.value}"`,
+            evidence: { kind: "file", ref: entry.path }
+          })
+        );
+      else if (SELECTOR_RUN.test(entry.text))
+        findings.push({
+          surface: "host",
+          severity: "suspicious",
+          subject: entry.path,
+          title: `Editor extension ${id}@${version} hides a run of invisible Unicode variation selectors in its code (the GlassWorm technique): read ${basename7(entry.path)} with a hex viewer`,
+          evidence: { kind: "file", ref: entry.path },
+          key: `host|${entry.path}|selectors`
+        });
     }
   }
   result.stats.extensions = extensions;
   const ext = recentExtensions(home, sinceMs);
   findings.push(...ext.findings);
   inventory.recentExtensions = ext.list;
+  const browserPkgs = matchers(iocs, "package").filter((x) => ["chrome", "firefox"].includes(normEco(x.indicator.ecosystem ?? "")));
+  const browsers = browserExtensions(home, os);
+  result.stats.browserExtensions = browsers.length;
+  for (const b of browsers) {
+    const eco = b.browser === "Firefox" ? "firefox" : "chrome";
+    const m = browserPkgs.find(
+      (x) => normEco(x.indicator.ecosystem ?? "") === eco && x.indicator.value.toLowerCase() === b.id.toLowerCase() && (!x.indicator.versions?.length || x.indicator.versions.some((v) => v.replace(/^v/, "") === b.version))
+    );
+    if (m)
+      findings.push(
+        hitOf(m, {
+          subject: b.path,
+          title: `${b.browser} extension ${b.id}@${b.version} is installed (profile ${b.profile})`,
+          evidence: { kind: "file", ref: b.path }
+        })
+      );
+  }
+  const newBrowser = browsers.filter((b) => b.installedMs && b.installedMs >= sinceMs && b.installedMs <= nowMs);
+  inventory.recentBrowserExtensions = newBrowser.map((b) => ({
+    browser: b.browser,
+    profile: b.profile,
+    id: b.id,
+    version: b.version,
+    installed: new Date(b.installedMs).toISOString()
+  }));
+  if (newBrowser.length)
+    findings.push({
+      surface: "host",
+      severity: "info",
+      subject: "browser extensions",
+      title: `${newBrowser.length} browser extension version(s) installed or updated in the review window (listed in host-inventory.json)`,
+      evidence: { kind: "file", ref: "host-inventory.json" },
+      key: "host|browser-ext-recent"
+    });
   if (opts.hitRepos?.length) {
     const wanted = new Set(opts.hitRepos.map((r) => r.toLowerCase()));
     for (const dir of tree.gitDirs) {
-      const cfg = readText2(join14(dir, ".git/config")) ?? "";
+      const cfg = readText2(join15(dir, ".git/config")) ?? "";
       const urls = [...cfg.matchAll(/url\s*=\s*(\S+)/g)].map((x) => x[1] ?? "");
       const repo = urls.map((u) => /github\.com[:/]([^/]+\/[^/]+?)(?:\.git)?\/?$/.exec(u)?.[1]?.toLowerCase()).find((r) => r && wanted.has(r));
       if (!repo) continue;
       let fetched;
       try {
-        fetched = statSync11(join14(dir, ".git/FETCH_HEAD")).mtime.toISOString();
+        fetched = statSync12(join15(dir, ".git/FETCH_HEAD")).mtime.toISOString();
       } catch {
       }
       findings.push({
@@ -13458,7 +15668,7 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
         subject: dir,
         title: `Local clone of ${repo}, a repository the GitHub scan found hit${fetched ? ` (last fetch ${fetched})` : ""}`,
         at: fetched,
-        evidence: { kind: "file", ref: join14(dir, ".git/config") },
+        evidence: { kind: "file", ref: join15(dir, ".git/config") },
         key: `host|${dir}|clone|${repo}`
       });
     }
@@ -13468,6 +15678,7 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
     const cron = await runner2("crontab", ["-l"], { timeoutMs: 1e4 });
     if (cron.ok) {
       const lines = cron.stdout.split("\n");
+      inventory.crontab = lines.filter((l) => l.trim() && !/^\s*#/.test(l)).map((l) => l.slice(0, 500));
       for (const m of M.content) {
         const ln = lines.findIndex((l) => m.test(l));
         if (ln >= 0)
@@ -13510,6 +15721,13 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
       }
       if (M.net.some((m) => m.indicator.type === "domain"))
         gaps.push({ surface: "host", what: "connections to IOC domains", why: "open sockets show addresses, not names; only IOC IPs are matched live" });
+      if (os === "darwin" && M.net.length && process.getuid?.() !== 0)
+        gaps.push({
+          surface: "host",
+          what: "connections of processes owned by other users (root daemons included)",
+          why: "lsof runs without root and lists this user's sockets only",
+          fix: "sudo lsof -nPi | grep <IOC address>"
+        });
     } else
       gaps.push({
         surface: "host",
@@ -13534,7 +15752,7 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
   } else gaps.push({ surface: "host", what: "crontab, open connections, processes and code signatures", why: "live checks were skipped" });
   inventory.credentials = credentialInventory(
     home,
-    tree.files.filter((f) => /^\.env(\.[\w-]+)?$/.test(basename6(f)) && !/\.(example|sample|template|dist)$/.test(f))
+    tree.files.filter((f) => /^\.env(\.[\w-]+)?$/.test(basename7(f)) && !/\.(example|sample|template|dist)$/.test(f))
   );
   if (inventory.credentials.length) {
     const kinds = [...new Set(inventory.credentials.map((c) => c.kind))];
@@ -13548,26 +15766,74 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
     });
   }
   result.stats.credentialFiles = inventory.credentials.length;
-  const listDir = opts.listDir ?? tmpdir4();
+  const listDir2 = opts.listDir ?? tmpdir5();
+  const exclude = [opts.listDir, opts.stateDir, opts.yara && existsSync13(opts.yara) && statSync12(opts.yara).isDirectory() ? opts.yara : void 0].filter(
+    (x) => !!x
+  );
   const flagged2 = findings.map((f) => f.subject).filter((s) => s.startsWith("/"));
+  const full = opts.av === "full";
+  let targetList;
+  const targets = () => {
+    targetList ??= avTargetList(home, inventory, flagged2, sinceMs, { exclude, folders: opts.dropDirs ? dropDirs : void 0, nowMs });
+    return targetList;
+  };
+  if (hashes.size) {
+    const skip = excludedBy(exclude);
+    let tooBig = 0;
+    const files = targets().targets.flatMap((t) => {
+      try {
+        return statSync12(t).isDirectory() ? readdirOr2(t).slice(0, 500).map((n) => join15(t, n)) : [t];
+      } catch {
+        return [];
+      }
+    });
+    for (const f of files) {
+      if (hashed.has(f) || skip(f)) continue;
+      hashed.add(f);
+      let size = 0;
+      try {
+        const st = statSync12(f);
+        if (!st.isFile()) continue;
+        size = st.size;
+      } catch {
+        continue;
+      }
+      if (size > 500 * 1024 * 1024) {
+        tooBig++;
+        continue;
+      }
+      const m = hashes.get(sha256File(f) ?? "");
+      if (m)
+        findings.push(
+          hitOf(m, { subject: f, title: `File ${f} matches the sha256`, evidence: { kind: "file", ref: f, excerpt: `sha256=${m.indicator.value}` } })
+        );
+    }
+    result.stats.hashed = hashed.size;
+    gaps.push({
+      surface: "host",
+      what: `sha256 of files outside startup programs, flagged files, recent temp and Downloads files and new extensions${tooBig ? ` (and ${tooBig} file(s) over 500 MB)` : ""}`,
+      why: "hashing every file on the disk takes hours"
+    });
+  }
   if (!opts.skipLive && opts.av !== "off") {
     const av = await antivirusPass(runner2, {
       home,
       inventory,
       flagged: flagged2,
       sinceMs,
-      listDir,
+      listDir: listDir2,
       now: opts.now,
-      full: opts.av === "full" ? opts.roots ?? [home] : void 0
+      exclude,
+      full: full ? opts.roots ?? [home] : void 0,
+      targets: full ? void 0 : targets()
     });
     findings.push(...av.findings);
     gaps.push(...av.gaps);
     Object.assign(result.stats, av.stats);
   } else if (opts.av === "off") gaps.push({ surface: "host", what: "the antivirus pass", why: "--no-av" });
-  const full = opts.av === "full";
-  const yaraTargets = () => full ? opts.roots ?? [home] : avTargets(home, inventory, flagged2, sinceMs);
+  const yaraTargets = () => full ? opts.roots ?? [home] : targets().targets;
   if (opts.yara) {
-    const y = await yaraPass(runner2, { rules: opts.yara, targets: yaraTargets(), recursive: full, listDir, source: opts.yaraSource });
+    const y = await yaraPass(runner2, { rules: opts.yara, targets: yaraTargets(), recursive: full, listDir: listDir2, source: opts.yaraSource, exclude });
     findings.push(...y.findings);
     gaps.push(...y.gaps);
     Object.assign(result.stats, y.stats);
@@ -13581,8 +15847,10 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
       label: c.label,
       targets: yaraTargets(),
       recursive: full,
-      listDir,
-      source: c.sourceId
+      listDir: listDir2,
+      source: c.sourceId,
+      // The rule text (.yar) sits next to the compiled set (.yarc): it holds every string the rules look for.
+      exclude: [...exclude, dirname3(c.source)]
     });
     findings.push(...y.findings);
     gaps.push(...y.gaps);
@@ -13603,9 +15871,9 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
     });
   gaps.push({
     surface: "host",
-    what: "login items registered in System Settings, browser extensions, kernel and system extensions",
-    why: "not read: the background task database needs an admin (sfltool dumpbtm), and browsers keep extensions per profile",
-    fix: "System Settings > General > Login Items; each browser's extensions page"
+    what: "login items registered in System Settings, Safari extensions, kernel and system extensions",
+    why: "not read: the background task database needs an admin (sfltool dumpbtm), and Safari keeps its extensions inside app bundles",
+    fix: "System Settings > General > Login Items; Safari > Settings > Extensions"
   });
   const pruned = Object.entries(tree.pruned ?? {}).sort((a, b) => b[1] - a[1]);
   gaps.push({
@@ -13618,9 +15886,122 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
   return { result, findings, gaps, inventory };
 }
 
+// src/scan/registry.ts
+var REGISTRY = "https://registry.npmjs.org";
+var SEARCH_PAGE = 250;
+var MAX_PACKAGES = 500;
+var INSTALL_SCRIPTS = ["preinstall", "install", "postinstall", "prepare"];
+var defaultRegistryGet = (url) => httpJson("GET", url, void 0, { timeoutMs: 3e4 });
+async function npmLogin(opts) {
+  if (opts.user) return { user: opts.user };
+  const r = await opts.runner("npm", ["whoami", `--registry=${REGISTRY}/`], { timeoutMs: 2e4 });
+  if (r.missing) return { why: "npm is not installed" };
+  const user = r.stdout.trim().split("\n").pop()?.trim();
+  if (!r.ok || !user) return { why: "npm is not logged in here (npm whoami failed)" };
+  return { user };
+}
+async function scanNpmPublishes(iocs, opts) {
+  const findings = [];
+  const gaps = [];
+  const stats = {};
+  const get = opts.get ?? defaultRegistryGet;
+  const campaigns = iocs.campaigns;
+  if (!campaigns.length) return { findings, gaps, stats };
+  const login = await npmLogin(opts);
+  if (!login.user) {
+    gaps.push({
+      surface: "deps",
+      what: "new versions of npm packages you maintain (a worm republishing them)",
+      why: login.why ?? "no npm login",
+      fix: "pass --npm-user <your npm username> (or skip if you publish nothing to npm)"
+    });
+    return { findings, gaps, stats };
+  }
+  const user = login.user;
+  const names = [];
+  for (let from2 = 0; from2 < MAX_PACKAGES; from2 += SEARCH_PAGE) {
+    const res = await get(`${REGISTRY}/-/v1/search?text=maintainer:${encodeURIComponent(user)}&size=${SEARCH_PAGE}&from=${from2}`);
+    if (!res.ok) {
+      gaps.push({
+        surface: "deps",
+        what: `npm packages maintained by ${user}`,
+        why: `the registry search failed: ${res.error ?? `HTTP ${res.status}`}`,
+        fix: "re-run scan deps later"
+      });
+      return { findings, gaps, stats, user };
+    }
+    const objects = res.data?.objects ?? [];
+    for (const o of objects) if (typeof o?.package?.name === "string") names.push(o.package.name);
+    if (objects.length < SEARCH_PAGE) break;
+    if (from2 + SEARCH_PAGE >= MAX_PACKAGES)
+      gaps.push({ surface: "deps", what: `npm packages of ${user} past the first ${MAX_PACKAGES}`, why: "the scan caps the package list" });
+  }
+  stats.npmPackages = names.length;
+  let unread = 0;
+  const fromCi = [];
+  await mapPool(names, opts.concurrency ?? 8, async (name) => {
+    const res = await get(`${REGISTRY}/${name.startsWith("@") ? `@${encodeURIComponent(name.slice(1))}` : encodeURIComponent(name)}`);
+    if (!res.ok || !res.data?.time) {
+      unread++;
+      return;
+    }
+    const time = res.data.time;
+    for (const [version, at] of Object.entries(time)) {
+      if (version === "created" || version === "modified") continue;
+      const t = Date.parse(at);
+      if (Number.isNaN(t)) continue;
+      const camp = campaigns.find((c) => t >= Date.parse(c.since) && (!c.until || t <= Date.parse(c.until) + 864e5));
+      if (!camp) continue;
+      const meta = res.data.versions?.[version] ?? {};
+      const scripts = INSTALL_SCRIPTS.filter((s) => typeof meta.scripts?.[s] === "string");
+      const publisher = typeof meta._npmUser?.name === "string" ? meta._npmUser.name : void 0;
+      const named2 = camp.indicators.find((i) => packageHit(i, "npm", name, version));
+      const trusted = !!meta._npmUser?.trustedPublisher && !!meta.dist?.attestations?.provenance;
+      if (trusted && !named2) {
+        fromCi.push(`${name}@${version}`);
+        continue;
+      }
+      const by = publisher ? ` by ${publisher}${publisher.toLowerCase() === user.toLowerCase() ? " (your npm account)" : ""}` : "";
+      const withScript = scripts.length ? ` with an install script (${scripts.map((s) => `${s}: ${String(meta.scripts[s]).slice(0, 120)}`).join("; ")})` : "";
+      findings.push({
+        surface: "deps",
+        severity: named2 ? "compromised" : "suspicious",
+        subject: `npm:${name}`,
+        title: named2 ? `Your npm package ${name}@${version} was published${by} during the campaign, and the campaign names it` : `Your npm package ${name}@${version} was published${by} during the campaign window${withScript}: confirm you published it`,
+        at,
+        actor: publisher,
+        scope: publisher && publisher.toLowerCase() === user.toLowerCase() ? "own" : publisher ? "other" : void 0,
+        campaign: camp.id,
+        source: named2?.source,
+        indicator: named2 ? { type: "package", value: named2.value } : void 0,
+        evidence: { kind: "url", ref: `https://www.npmjs.com/package/${name}/v/${version}`, excerpt: `published ${at}${withScript}` },
+        key: `deps|npm-publish|${name}|${version}`
+      });
+    }
+  });
+  stats.npmPublishesInWindow = findings.length + fromCi.length;
+  if (fromCi.length)
+    findings.push({
+      surface: "deps",
+      severity: "info",
+      subject: `npm:${user}`,
+      title: `${fromCi.length} version(s) of your npm packages were published during the campaign window from CI, through trusted publishing with provenance (${fromCi.slice(0, 5).join(", ")}${fromCi.length > 5 ? ", ..." : ""}): not a stolen token; check the workflow runs that published them if the campaign targets CI`,
+      evidence: { kind: "url", ref: `https://www.npmjs.com/~${user}`, excerpt: fromCi.join(", ") },
+      key: `deps|npm-publish-ci|${user}`
+    });
+  if (unread)
+    gaps.push({
+      surface: "deps",
+      what: `${unread} of ${names.length} npm package(s) maintained by ${user}`,
+      why: "the registry did not answer for them",
+      fix: "re-run scan deps later"
+    });
+  return { findings, gaps, stats, user };
+}
+
 // src/scan/walk.ts
-import { lstatSync, readdirSync as readdirSync10 } from "fs";
-import { join as join15 } from "path";
+import { lstatSync as lstatSync3, readdirSync as readdirSync11 } from "fs";
+import { join as join16 } from "path";
 var PRUNE = /* @__PURE__ */ new Set([
   "node_modules",
   ".git",
@@ -13657,7 +16038,7 @@ function walk(roots, opts = {}) {
     const { dir, depth } = stack.pop();
     let names;
     try {
-      names = readdirSync10(dir);
+      names = readdirSync11(dir);
     } catch {
       out2.unreadable++;
       continue;
@@ -13667,7 +16048,7 @@ function walk(roots, opts = {}) {
         out2.capped = true;
         return out2;
       }
-      const p = join15(dir, name);
+      const p = join16(dir, name);
       if (name === ".git") {
         out2.gitDirs.push(dir);
         continue;
@@ -13675,7 +16056,7 @@ function walk(roots, opts = {}) {
       if (name === ".vscode") out2.vscodeDirs.push(p);
       let st;
       try {
-        st = lstatSync(p);
+        st = lstatSync3(p);
       } catch {
         out2.unreadable++;
         continue;
@@ -13703,11 +16084,12 @@ var VERSION = "1.5.0";
 // src/watch.ts
 import { mkdirSync as mkdirSync7 } from "fs";
 import { homedir as homedir4 } from "os";
-import { join as join16 } from "path";
+import { join as join17 } from "path";
+var MAX_ATTEMPTS = 3;
 var EXIT_ALERT = 10;
 var EXIT_INCOMPLETE = 20;
 function stateDir(flag) {
-  return flag ?? env("HOME") ?? join16(homedir4(), ".ultraguard");
+  return flag ?? env("HOME") ?? join17(homedir4(), ".ultraguard");
 }
 function loadState(dir) {
   mkdirSync7(dir, { recursive: true });
@@ -13716,12 +16098,30 @@ function loadState(dir) {
 }
 async function watchPlan(dir, run, hits, opts = {}) {
   const now = opts.now ?? /* @__PURE__ */ new Date();
-  const { state } = loadState(dir);
+  const { store, state } = loadState(dir);
   const done = new Set(state.handled.map((h) => safeCanonical(h.url)));
   const fresh = hits.filter((h) => !done.has(safeCanonical(h.url)));
   const days = opts.resweepDays ?? 7;
   const resweep = state.campaigns.length > 0 && (!state.lastFullSweep || now.getTime() - Date.parse(state.lastFullSweep) >= days * 864e5);
-  if (fresh.length) await intel(run, fresh, opts.fetcher, now);
+  const fetched = fresh.length ? await intel(run, fresh, opts.fetcher, now) : [];
+  const tries = new Map((state.failed ?? []).map((f) => [safeCanonical(f.url), f]));
+  const failed = [];
+  for (const s of fetched) {
+    const k = safeCanonical(s.url);
+    if (!s.error) {
+      tries.delete(k);
+      continue;
+    }
+    const attempts = (tries.get(k)?.attempts ?? 0) + 1;
+    const givenUp = attempts >= MAX_ATTEMPTS;
+    failed.push({ url: s.url, error: s.error, attempts, givenUp });
+    if (givenUp) {
+      tries.delete(k);
+      state.handled.push({ url: s.url, at: now.toISOString() });
+    } else tries.set(k, { url: s.url, attempts, last: now.toISOString(), error: s.error });
+  }
+  if (fetched.length) store.write("state.json", { ...state, failed: [...tries.values()] });
+  const ok = fetched.filter((s) => !s.error).length;
   if (resweep) {
     const carried = [];
     for (const c of state.campaigns) {
@@ -13735,11 +16135,12 @@ async function watchPlan(dir, run, hits, opts = {}) {
     run.write("iocs.carried.json", { campaigns: carried });
   }
   const result = {
-    newSources: fresh.length,
+    newSources: ok,
+    failed,
     skipped: hits.length - fresh.length,
     resweep,
     since: state.lastSweep,
-    nothingNew: fresh.length === 0 && !resweep
+    nothingNew: ok === 0 && !resweep
   };
   run.write("watch.json", result);
   return result;
@@ -13753,7 +16154,15 @@ async function watchCommit(dir, run, opts = {}) {
   const byId = new Map(state.campaigns.map((c) => [c.id, c]));
   for (const c of run.iocs()?.campaigns ?? []) byId.set(c.id, { ...c, sourceUrls: Object.fromEntries(c.sources.map((s) => [s, urlOf[s] ?? ""])) });
   const findingsNow = run.findings();
-  const incompleteNow = verdicts(findingsNow, run.gaps(), run.surfaces()).some((v) => v.verdict === "UNKNOWN");
+  const results = run.surfaces();
+  const requested = run.meta().requested;
+  const blocking = (v) => {
+    if (v.verdict !== "UNKNOWN") return false;
+    const r = results.find((x) => x.surface === v.surface);
+    if (r?.notApplicable) return false;
+    return !(requested && !r && !requested.includes(v.surface));
+  };
+  const incompleteNow = verdicts(findingsNow, run.gaps(), results).some(blocking);
   const handled = new Map(state.handled.map((h) => [safeCanonical(h.url), h]));
   if (!incompleteNow) {
     for (const s of sources) if (s.origin === "web" && !s.error) handled.set(safeCanonical(s.url), { url: s.url, at: now.toISOString() });
@@ -13761,24 +16170,27 @@ async function watchCommit(dir, run, opts = {}) {
   const findings = run.findings();
   const alerted = new Set(state.alerted);
   const newFindings = findings.filter((f) => f.severity !== "info" && !alerted.has(f.key));
-  for (const f of newFindings) alerted.add(f.key);
-  const vs = verdicts(findings, run.gaps(), run.surfaces());
-  const incomplete = vs.some((v) => v.verdict === "UNKNOWN");
+  const vs = verdicts(findings, run.gaps(), results);
+  const incomplete = vs.some(blocking);
   const alert = newFindings.length > 0;
-  const next = {
-    handled: [...handled.values()],
-    campaigns: [...byId.values()],
-    alerted: [...alerted],
-    lastSweep: now.toISOString(),
-    lastFullSweep: !incompleteNow && (plan?.resweep || !state.lastFullSweep) ? now.toISOString() : state.lastFullSweep
-  };
-  store.write("state.json", next);
   const lines = alert ? newFindings.map(
     (f) => `${f.severity === "suspicious" ? "REVIEW" : "ALERT"}: ${f.campaign ?? (f.surface === "deps" ? "malicious package" : f.severity === "suspicious" ? "machine analysis" : "no campaign")} \u2192 ${f.surface} ${f.severity.toUpperCase()}: ${f.title} [${f.id}]`
   ) : [`NOTHING NEW: ${vs.map((v) => `${v.surface}=${v.verdict}`).join(", ")}`];
   lines.push(`report: ${run.path("REPORT.md")}`);
   const result = { alert, incomplete, newFindings, exitCode: alert ? EXIT_ALERT : incomplete ? EXIT_INCOMPLETE : 0, summary: lines.join("\n") };
+  let sent = true;
   if (alert && opts.notifyIssue && opts.runner) {
+    const body = [
+      ...lines.slice(0, -1),
+      "",
+      "| Surface | Verdict |",
+      "|---|---|",
+      ...vs.map((v) => `| \`${v.surface}\` | ${v.verdict} |`),
+      "",
+      `Full report on the machine that ran the sweep: \`${run.path("REPORT.md")}\``
+    ].join("\n").slice(0, 6e4);
+    run.writeText("ISSUE.md", `${body}
+`);
     const res = await opts.runner(
       "gh",
       [
@@ -13789,12 +16201,23 @@ async function watchCommit(dir, run, opts = {}) {
         "--title",
         `ultraguard: ${newFindings.length} new finding(s) on ${now.toISOString().slice(0, 10)}`,
         "--body-file",
-        run.path("REPORT.md")
+        run.path("ISSUE.md")
       ],
       { timeoutMs: 6e4 }
     );
-    result.notified = res.ok ? res.stdout.trim() : `failed: ${res.stderr.trim()}`;
+    sent = res.ok;
+    result.notified = res.ok ? res.stdout.trim() : `failed: ${(res.stderr || res.stdout).trim()} (the findings will alert again on the next run)`;
   }
+  if (sent) for (const f of newFindings) alerted.add(f.key);
+  const next = {
+    handled: [...handled.values()],
+    campaigns: [...byId.values()],
+    alerted: [...alerted],
+    lastSweep: now.toISOString(),
+    lastFullSweep: !incompleteNow && (plan?.resweep || !state.lastFullSweep) ? now.toISOString() : state.lastFullSweep,
+    failed: state.failed
+  };
+  store.write("state.json", next);
   return result;
 }
 
@@ -13808,15 +16231,15 @@ things it writes are its run folders, its state folder and the antivirus
 databases it keeps current (ClamAV signatures, YARA-Forge rules).
 
 USAGE
-  ultraguard doctor [--probe] [--json]
+  ultraguard doctor [--probe] [--state <dir>] [--json]
   ultraguard rules update [--set core|extended|full] [--state <dir>]   freshclam + YARA-Forge
   ultraguard rules status [--state <dir>]
   ultraguard search <query> --out <run> [--limit <n>]
   ultraguard intel [<url>...] [--web-results <file.json>] --out <run>
   ultraguard ioc set --file <iocs.json> --out <run>
   ultraguard ioc show --out <run> [--json]
-  ultraguard scan github|host|deps|cloud --out <run> [scan flags]
-  ultraguard sweep --out <run> [--surfaces <list>] [scan flags]
+  ultraguard scan github|host|deps|cloud --out <run> [scan flags] [--json]
+  ultraguard sweep --out <run> [--surfaces <list>] [scan flags] [--json]
   ultraguard report --out <run> [--json]
   ultraguard check <answer.md> --out <run> [--json]
   ultraguard watch plan [--web-results <file.json>] --out <run> [--state <dir>] [--resweep-days <n>]
@@ -13835,7 +16258,7 @@ SCAN FLAGS
   --repos <a/b,c/d>     github: only these repositories
   --max-repos <n>       github: stop after n repositories
   --concurrency <n>     github: parallel repositories (default 8)
-  --roots <dir,dir>     host, deps: where to walk (default: your home directory)
+  --roots <dir,dir>     host, deps: existing folders to walk (default: your home directory)
   --depth <n>           host, deps: walk depth (default 6)
   --skip-live           host: skip crontab, open connections, processes, signatures, antivirus
   --no-av               host: skip the ClamAV pass (on by default when ClamAV is installed)
@@ -13844,9 +16267,14 @@ SCAN FLAGS
   --yara-source <S#>    host: the source the YARA rules came from, cited by their findings
   --no-rules            host: skip the community YARA rules (YARA-Forge) installed by rules update
   --no-update           host: do not refresh ClamAV signatures or YARA-Forge rules older than 7 days
+  --state <dir>         host, rules, watch: ultraguard's state folder (default ~/.ultraguard)
   --set <name>          rules update: core (default, highest precision), extended or full
+  --npm-user <name>     deps: the npm account whose packages to check for versions published in a campaign window (default: npm whoami)
+  --no-registry         deps: skip that check (it reads the public npm registry)
   --no-osv              deps: skip package-checker (OSV and GHSA feeds, malicious packages)
   --surfaces <list>     sweep: github,host,deps,cloud (default: all)
+  scan and sweep exit 20 when GitHub was asked for and could not be scanned
+  (logged out, every read refused): its verdict is UNKNOWN, never CLEAN.
   --limit <n>           search: hits to aim for (default 10)
 
 ROUTINE (watch)
@@ -13882,9 +16310,10 @@ var VALUE_FLAGS = [
   "limit",
   "yara",
   "yara-source",
-  "set"
+  "set",
+  "npm-user"
 ];
-var BOOL_FLAGS = ["json", "probe", "skip-live", "no-osv", "no-av", "av-full", "no-rules", "no-update"];
+var BOOL_FLAGS = ["json", "probe", "skip-live", "no-osv", "no-av", "av-full", "no-rules", "no-update", "no-registry"];
 var SCAN = [
   "out",
   "repos",
@@ -13894,6 +16323,8 @@ var SCAN = [
   "depth",
   "skip-live",
   "no-osv",
+  "no-registry",
+  "npm-user",
   "no-av",
   "av-full",
   "yara",
@@ -13924,6 +16355,10 @@ var runner = defaultRunner;
 function setRunner(r) {
   runner = r;
 }
+var registryGet = defaultRegistryGet;
+function setRegistryGet(g) {
+  registryGet = g;
+}
 var rulesDeps = defaultRulesDeps;
 function setRulesDeps(d) {
   rulesDeps = d;
@@ -13932,9 +16367,11 @@ function out(text) {
   process.stdout.write(text.endsWith("\n") ? text : `${text}
 `);
 }
-function needRun(a) {
+function needRun(a, opts = {}) {
   const dir = argValue(a, "out");
   if (!dir) throw new UsageError(`${a.command} needs --out <run>: one directory per investigation, shared by every command`);
+  if (opts.mustExist && !existsSync14(resolve5(dir)))
+    throw new UsageError(`no run at ${dir}: check the --out path (a run is created by search, intel or watch plan)`);
   return new Run(dir);
 }
 function needIocs(run) {
@@ -13947,10 +16384,48 @@ function needIocs(run) {
     );
   return iocs;
 }
+var EXACT = /* @__PURE__ */ new Set(["branch", "pr_title", "commit_message", "actor"]);
+function uncheckedEcosystems(iocs) {
+  const n = /* @__PURE__ */ new Map();
+  for (const c of iocs.campaigns)
+    for (const i of c.indicators) {
+      const e = normEco(i.ecosystem ?? "");
+      if (i.type === "package" && !SUPPORTED_ECOSYSTEMS.includes(e)) n.set(e, (n.get(e) ?? 0) + 1);
+    }
+  return [...n].map(([e, k]) => `${e} (${k})`);
+}
+var GITHUB_TYPES = /* @__PURE__ */ new Set([
+  "branch",
+  "pr_title",
+  "commit_message",
+  "file",
+  "workflow_file",
+  "string",
+  "ip",
+  "domain",
+  "url",
+  "cache_key_prefix",
+  "artifact_prefix",
+  "actor"
+]);
+function rootsOf(a) {
+  const roots = argList(a, "roots").map((r) => resolve5(r.replace(/^~(?=$|\/)/, homedir5())));
+  for (const r of roots) {
+    let dir = false;
+    try {
+      dir = statSync13(r).isDirectory();
+    } catch {
+      dir = false;
+    }
+    if (!dir) throw new UsageError(`--roots: ${r} does not exist or is not a directory (pass existing folders, comma-separated)`);
+  }
+  return roots;
+}
 function walkFor(a) {
-  const roots = argList(a, "roots").map((r) => resolve4(r.replace(/^~(?=$|\/)/, homedir5())));
+  const roots = rootsOf(a);
   return walk(roots.length ? roots : [homedir5()], { maxDepth: argInt(a, "depth", { min: 1, max: 20 }) ?? 6 });
 }
+var githubBlind = false;
 async function runScan(surface, a, run, iocs, tree) {
   if (surface === "github") {
     const r2 = await scanGithub(iocs, runner, {
@@ -13958,13 +16433,30 @@ async function runScan(surface, a, run, iocs, tree) {
       maxRepos: argInt(a, "max-repos", { min: 1 }),
       concurrency: argInt(a, "concurrency", { min: 1, max: 32 })
     });
+    if (r2.account.result.scanned && !iocs.campaigns.some((c) => c.indicators.some((i) => GITHUB_TYPES.has(i.type))))
+      for (const g of [r2.account.gaps, r2.repos.gaps])
+        g.push({
+          surface: g === r2.account.gaps ? "github:account" : "github:repos",
+          what: "the campaign's indicators",
+          why: "no indicator of this run applies to GitHub: only new keys, webhooks and deploy keys were reviewed",
+          fix: "add the branches, PR titles, commit messages or files the sources name, if any"
+        });
     const accF = run.recordSurface(r2.account.result, r2.account.findings, r2.account.gaps);
     const repF = run.recordSurface(r2.repos.result, r2.repos.findings, r2.repos.gaps);
     run.setMeta({ login: r2.login, hitRepos: r2.hitRepos });
-    return `github: ${r2.repos.result.stats.repos ?? 0} repositories as ${r2.login ?? "?"}; ${accF.length} account finding(s), ${repF.length} repository finding(s)`;
+    const blind2 = [r2.account, r2.repos].filter((x) => !x.result.scanned);
+    if (blind2.length) githubBlind = true;
+    if (blind2.length === 2) {
+      const g = r2.account.gaps[r2.account.gaps.length - 1] ?? r2.repos.gaps[0];
+      return `github: NOT SCANNED (${g ? `${g.what}: ${g.why}` : "gh failed"}). Fix: ${g?.fix ?? "gh auth login"}`;
+    }
+    const line = `github: ${r2.repos.result.stats.repos ?? 0} repositories as ${r2.login ?? "?"}; ${accF.length} account finding(s), ${repF.length} repository finding(s)`;
+    return blind2.length ? `${line}
+${blind2.map((x) => `${x.result.surface} NOT SCANNED: ${x.gaps.find((g) => g.fix)?.what ?? "see gaps.json"}`).join("\n")}` : line;
   }
   if (surface === "host") {
     let refreshed = "";
+    const refreshGaps = [];
     if (!argBool(a, "no-update") && !argBool(a, "skip-live")) {
       const ups = await refreshDefenses(stateDir(argValue(a, "state")), runner, {
         clamav: !argBool(a, "no-av"),
@@ -13974,8 +16466,15 @@ async function runScan(surface, a, run, iocs, tree) {
       const shown = ups.filter((u) => u.status === "updated" || u.status === "failed");
       if (shown.length) refreshed = `${formatDefenses(shown)}
 `;
+      for (const u of ups.filter((x) => x.status === "failed"))
+        refreshGaps.push({
+          surface: "host",
+          what: `fresh ${u.engine === "clamav" ? "ClamAV signatures" : "YARA-Forge rules"}`,
+          why: u.detail,
+          fix: "ultraguard rules update"
+        });
     }
-    const roots = argList(a, "roots").map((r3) => resolve4(r3.replace(/^~(?=$|\/)/, homedir5())));
+    const roots = rootsOf(a);
     const r2 = await scanHost(iocs, (tree ?? (() => walkFor(a)))(), runner, {
       hitRepos: run.meta().hitRepos,
       skipLive: argBool(a, "skip-live"),
@@ -13984,25 +16483,30 @@ async function runScan(surface, a, run, iocs, tree) {
       yara: argValue(a, "yara"),
       yaraSource: argValue(a, "yara-source"),
       listDir: run.dir,
+      stateDir: stateDir(argValue(a, "state")),
       ...communityRules(a, run)
     });
-    const f2 = run.recordSurface(r2.result, r2.findings, r2.gaps);
+    const f2 = run.recordSurface(r2.result, r2.findings, [...refreshGaps, ...r2.gaps]);
     run.write("host-inventory.json", r2.inventory);
     return `${refreshed}host: ${r2.result.stats.files ?? 0} files, ${r2.result.stats.startupItems ?? 0} startup items, ${r2.result.stats.credentialFiles ?? 0} credential files; ${f2.length} finding(s)`;
   }
   if (surface === "deps") {
-    const roots = argList(a, "roots").map((r3) => resolve4(r3.replace(/^~(?=$|\/)/, homedir5())));
+    const roots = rootsOf(a);
     const r2 = await scanDeps(iocs, (tree ?? (() => walkFor(a)))(), run, {
       checker: argBool(a, "no-osv") ? false : void 0,
       runner,
-      roots: roots.length ? roots : [homedir5()]
+      roots: roots.length ? roots : [homedir5()],
+      // Global installs (npm -g, nvm, bun, uv tools, pipx) are read under the real home.
+      home: homedir5()
     });
-    const f2 = run.recordSurface(r2.result, r2.findings, r2.gaps);
-    return `deps: ${r2.result.stats.lockfiles ?? 0} lockfiles, ${r2.result.stats.packages ?? 0} packages, ${r2.result.stats.malicious ?? 0} malicious, ${r2.result.stats.vulnerable ?? 0} with known CVEs; ${f2.length} finding(s)`;
+    const pub = argBool(a, "no-registry") ? void 0 : await scanNpmPublishes(iocs, { user: argValue(a, "npm-user"), runner, get: registryGet });
+    if (pub) Object.assign(r2.result.stats, pub.stats);
+    const f2 = run.recordSurface(r2.result, [...r2.findings, ...pub?.findings ?? []], [...r2.gaps, ...pub?.gaps ?? []]);
+    return `deps: ${r2.result.stats.lockfiles ?? 0} lockfiles${pub?.user ? `, ${pub.stats.npmPackages ?? 0} npm packages of ${pub.user}` : ""}, ${r2.result.stats.packages ?? 0} packages, ${r2.result.stats.malicious ?? 0} malicious, ${r2.result.stats.vulnerable ?? 0} with known CVEs; ${f2.length} finding(s)`;
   }
   const r = await scanCloud(iocs, runner);
   const f = run.recordSurface(r.result, r.findings, r.gaps);
-  return `cloud: ${r.result.scanned ? "scanned" : "no logged-in CLI"}; ${f.length} finding(s)`;
+  return `cloud: ${r.result.scanned ? "scanned" : r.result.notApplicable ?? "not fully read, see the gaps"}; ${f.length} finding(s)`;
 }
 function communityRules(a, run) {
   if (argBool(a, "no-rules")) return {};
@@ -14067,6 +16571,7 @@ ${r.added.length} new hit(s), ${r.total} in ${run.path("search-hits.json")}. Kee
     }
     case "intel": {
       const run = needRun(a);
+      for (const url of a.positional) if (!/^https?:\/\//i.test(url)) throw new UsageError(`intel: "${url}" is not a URL: add https://`);
       const hits = a.positional.map((url) => ({ url }));
       const file = argValue(a, "web-results");
       if (file) hits.push(...readWebResultsFile(file));
@@ -14077,10 +16582,12 @@ ${r.added.length} new hit(s), ${r.total} in ${run.path("search-hits.json")}. Kee
         for (const s of sources)
           out(`[${s.id}] ${s.error ? `FAILED (${s.error})` : "ok"}  ${s.title ?? ""} <${s.url}>${s.file ? `
      text: ${run.path(s.file)}` : ""}`);
-        out(
-          `
+        if (!sources.some((s) => !s.error)) out("\nNo source could be fetched: nothing to extract IOCs from. Try other pages for the same attack.");
+        else
+          out(
+            `
 Next: read each source, then write ${run.path("iocs.json")} (start from ${run.path("iocs.todo.json")}: one campaign per ATTACK, so merge the sources that describe the same one), then \`ultraguard ioc set --file ${run.path("iocs.json")} --out ${run.dir}\`.`
-        );
+          );
       }
       return sources.some((s) => !s.error) ? EXIT_OK : EXIT_FAILURE;
     }
@@ -14094,7 +16601,7 @@ Next: read each source, then write ${run.path("iocs.json")} (start from ${run.pa
             (c) => [
               `${c.id}: ${c.title} (since ${c.since}${c.until ? `, until ${c.until}` : ""}, ${c.indicators.length} indicators) ${c.sources.map((s) => `[${s}]`).join("")}`,
               ...c.indicators.map(
-                (i) => `  ${i.type.padEnd(20)} ${i.ecosystem ? `${i.ecosystem}:` : ""}${i.value}${i.versions?.length ? `@${i.versions.join(",")}` : ""}${i.regex ? " (regex)" : ""}${i.weak ? " (weak)" : ""} [${i.source}]`
+                (i) => `  ${i.type.padEnd(20)} ${i.ecosystem ? `${i.ecosystem}:` : ""}${i.value}${i.versions?.length ? `@${i.versions.join(",")}` : ""}${i.regex ? " (regex)" : EXACT.has(i.type) ? " (exact)" : ""}${i.weak ? " (weak)" : ""} [${i.source}]`
               )
             ].join("\n")
           ).join("\n\n")
@@ -14103,11 +16610,17 @@ Next: read each source, then write ${run.path("iocs.json")} (start from ${run.pa
       }
       if (sub !== "set") throw new UsageError("ioc takes `set --file <iocs.json>` or `show`");
       const file = argValue(a, "file");
-      const own = file ? JSON.parse(readFileSync15(file, "utf8")).campaigns : [];
+      let raw;
+      if (file)
+        try {
+          raw = JSON.parse(readFileSync16(file, "utf8"));
+        } catch (e) {
+          throw new UsageError(`${file}: not valid JSON (${e.message})`);
+        }
       const carried = run.read("iocs.carried.json", { campaigns: [] }).campaigns;
       if (!file && !carried.length) throw new UsageError("ioc set needs --file <iocs.json>");
-      const merged = [...own, ...carried.filter((c) => !own.some((o) => o.id === c.id))];
-      const { iocs, problems } = validateIocs({ campaigns: merged }, run.sources());
+      const own = file ? raw?.campaigns : [];
+      const { iocs, problems } = Array.isArray(own) ? validateIocs({ campaigns: [...own, ...carried.filter((c) => !own.some((o) => o?.id === c.id))] }, run.sources()) : validateIocs(raw, run.sources());
       if (!iocs) {
         out(json2 ? jsonLine(problems) : `iocs refused: ${problems.length} problem(s)
 ${problems.map((p) => `  ${p.path}: ${p.message}`).join("\n")}`);
@@ -14115,8 +16628,10 @@ ${problems.map((p) => `  ${p.path}: ${p.message}`).join("\n")}`);
       }
       run.write("iocs.json", iocs);
       const n = iocs.campaigns.reduce((s, c) => s + c.indicators.length, 0);
+      const unchecked = uncheckedEcosystems(iocs);
       out(
-        json2 ? jsonLine({ campaigns: iocs.campaigns.length, indicators: n }) : `iocs set: ${iocs.campaigns.length} campaign(s), ${n} indicator(s)${carried.length ? ` (${carried.length} carried from the watch state)` : ""}`
+        json2 ? jsonLine({ campaigns: iocs.campaigns.length, indicators: n, uncheckedEcosystems: unchecked }) : `iocs set: ${iocs.campaigns.length} campaign(s), ${n} indicator(s)${carried.length ? ` (${carried.length} carried from the watch state)` : ""}${unchecked.length ? `
+note: ultraguard has no reader for ${unchecked.join(", ")}: those package indicators are reported as a deps coverage gap (supported: ${SUPPORTED_ECOSYSTEMS.join(", ")})` : ""}`
       );
       return EXIT_OK;
     }
@@ -14125,8 +16640,20 @@ ${problems.map((p) => `  ${p.path}: ${p.message}`).join("\n")}`);
       if (surface !== "github" && surface !== "host" && surface !== "deps" && surface !== "cloud")
         throw new UsageError("scan takes github, host, deps or cloud");
       const run = needRun(a);
-      out(await runScan(surface, a, run, needIocs(run)));
-      return EXIT_OK;
+      const iocs = needIocs(run);
+      if (surface === "host" || surface === "deps") rootsOf(a);
+      githubBlind = false;
+      const line = await runScan(surface, a, run, iocs);
+      const mine = SURFACE_OF[surface] ?? [];
+      out(
+        json2 ? jsonLine({
+          summary: line,
+          surfaces: run.surfaces().filter((x) => mine.includes(x.surface)),
+          findings: run.findings().filter((f) => mine.includes(f.surface)).length,
+          gaps: run.gaps().filter((g) => mine.includes(g.surface))
+        }) : line
+      );
+      return githubBlind ? EXIT_INCOMPLETE : EXIT_OK;
     }
     case "sweep": {
       const run = needRun(a);
@@ -14135,18 +16662,52 @@ ${problems.map((p) => `  ${p.path}: ${p.message}`).join("\n")}`);
       for (const w of wanted) if (!SURFACE_OF[w]) throw new UsageError(`--surfaces takes github,host,deps,cloud, not "${w}"`);
       const ORDER2 = ["github", "host", "deps", "cloud"];
       const list = ORDER2.filter((s) => !wanted.length || wanted.includes(s));
+      run.setMeta({ requested: list.flatMap((s) => SURFACE_OF[s] ?? []) });
+      if (list.includes("host") || list.includes("deps")) rootsOf(a);
       let tree;
+      githubBlind = false;
       const shared = () => tree ??= walkFor(a);
-      for (const s of list) out(await runScan(s, a, run, iocs, shared));
+      const lines = [];
+      let crashed = 0;
+      for (const s of list) {
+        process.stderr.write(`${s}: scanning${s === "github" ? " (about one second per API call)" : ""}...
+`);
+        let line;
+        try {
+          line = await runScan(s, a, run, iocs, shared);
+        } catch (e) {
+          if (e instanceof UsageError) throw e;
+          crashed++;
+          const why = e.message;
+          for (const surface of SURFACE_OF[s] ?? [])
+            run.recordSurface(
+              { surface, scanned: false, stats: {}, startedAt: (/* @__PURE__ */ new Date()).toISOString() },
+              [],
+              [{ surface, what: `the ${s} scan`, why: `it stopped with an error: ${why}`, fix: `fix the cause, then ultraguard scan ${s} --out ${run.dir}` }]
+            );
+          line = `${s}: FAILED (${why}), recorded as a gap`;
+        }
+        if (json2) lines.push(line);
+        else out(line);
+      }
       const { verdicts: vs } = writeReport(run);
-      out(`
+      out(
+        json2 ? jsonLine({
+          surfaces: list,
+          summary: lines,
+          verdicts: vs,
+          findings: run.findings().length,
+          gaps: run.gaps().length,
+          report: run.path("REPORT.md")
+        }) : `
 ${vs.map((v) => `${v.surface.padEnd(15)} ${v.verdict}`).join("\n")}
 
-report: ${run.path("REPORT.md")}`);
-      return EXIT_OK;
+report: ${run.path("REPORT.md")}`
+      );
+      return crashed ? EXIT_FAILURE : githubBlind ? EXIT_INCOMPLETE : EXIT_OK;
     }
     case "report": {
-      const run = needRun(a);
+      const run = needRun(a, { mustExist: true });
       const r = writeReport(run);
       out(
         json2 ? jsonLine(r.verdicts) : `${r.verdicts.map((v) => `${v.surface.padEnd(15)} ${v.verdict}  ${v.why}`).join("\n")}
@@ -14159,8 +16720,8 @@ ${run.path("REMEDIATION.md")}`
     case "check": {
       const file = a.positional[0];
       if (!file) throw new UsageError("check needs the answer file: ultraguard check <answer.md> --out <run>");
-      const run = needRun(a);
-      const problems = checkAnswer(run, readFileSync15(file, "utf8"));
+      const run = needRun(a, { mustExist: true });
+      const problems = checkAnswer(run, readFileSync16(file, "utf8"));
       if (json2) out(jsonLine({ ok: problems.length === 0, problems }));
       else
         out(
@@ -14171,18 +16732,30 @@ ${problems.map((p) => `  ${p.line ? `line ${p.line}: ` : ""}[${p.rule}] ${p.mess
     }
     case "watch": {
       const sub = a.positional[0];
-      const run = needRun(a);
+      const run = needRun(a, { mustExist: sub === "commit" });
       const dir = stateDir(argValue(a, "state"));
       if (sub === "plan") {
         const file = argValue(a, "web-results");
         const hits = file ? readWebResultsFile(file) : [];
         const r2 = await watchPlan(dir, run, hits, { resweepDays: argInt(a, "resweep-days", { min: 1, max: 365 }) });
-        if (json2) out(jsonLine(r2));
-        else if (r2.nothingNew) out(`NOTHING NEW: ${r2.skipped} source(s) already handled${r2.since ? ` (last sweep ${r2.since})` : ""}; no re-sweep due`);
+        const failures = r2.failed.map(
+          (f) => `could not fetch ${f.url} (${f.error ?? "?"})${f.givenUp ? `: given up after ${f.attempts} attempts` : `, attempt ${f.attempts}`}`
+        );
+        if (json2) out(jsonLine({ ...r2, hits: hits.length }));
+        else if (r2.nothingNew)
+          out(
+            [
+              `NOTHING NEW: ${hits.length} hit(s) read, ${r2.skipped} source(s) already handled${r2.since ? ` (last sweep ${r2.since})` : ""}; no re-sweep due`,
+              ...failures
+            ].join("\n")
+          );
         else
           out(
-            `${r2.newSources} new source(s), ${r2.skipped} already handled${r2.resweep ? "; re-sweep of every known campaign is due (iocs.carried.json)" : ""}.
-Next: fill the IOCs, ioc set, sweep, report, then watch commit.`
+            [
+              `${hits.length} hit(s) read: ${r2.newSources} new source(s), ${r2.skipped} already handled${r2.resweep ? "; re-sweep of every known campaign is due (iocs.carried.json)" : ""}.`,
+              ...failures,
+              "Next: fill the IOCs, ioc set, sweep, report, then watch commit."
+            ].join("\n")
           );
         return EXIT_OK;
       }
@@ -14236,7 +16809,7 @@ Run \`ultraguard --help\`.
 }
 function isStartedFile() {
   try {
-    return !!process.argv[1] && pathToFileURL(realpathSync3(process.argv[1])).href === import.meta.url;
+    return !!process.argv[1] && pathToFileURL(realpathSync4(process.argv[1])).href === import.meta.url;
   } catch {
     return false;
   }
@@ -14266,6 +16839,7 @@ export {
   SURFACES,
   VALUE_FLAGS,
   main,
+  setRegistryGet,
   setRulesDeps,
   setRunner
 };

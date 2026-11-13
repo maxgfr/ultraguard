@@ -40,13 +40,15 @@ describe("scan host", () => {
     const r = await scanHost(AIKIDO_IOCS, walk([join(home, "code")]), noLive, {
       home,
       startupDirs: [startup],
+      dropDirs: [],
       hitRepos: ["org/site"],
       skipLive: true,
       now: NOW,
     });
     const t = r.findings.map((f) => `${f.severity}: ${f.title}`);
     expect(t.some((x) => x.startsWith("compromised: File") && x.includes(".ci-gvwxh6.sh"))).toBe(true);
-    expect(t.some((x) => x.includes("node_modules"))).toBe(false);
+    // The walk skips node_modules, but a package's top level is still checked by name (where droppers sit).
+    expect(t.some((x) => x.startsWith("compromised: File") && x.includes("node_modules/evil/.ci-zzz.sh"))).toBe(true);
     expect(t.some((x) => x.startsWith("suspicious: VS Code task runs automatically"))).toBe(true);
     expect(t.some((x) => x.startsWith("suspicious: Startup item com.new.plist") && x.includes("/usr/local/bin/new"))).toBe(true);
     expect(t.some((x) => x.includes("com.old.plist"))).toBe(false);
@@ -71,7 +73,7 @@ describe("scan host", () => {
       ],
     };
     put(home, ".ci-abc.sh", body);
-    const r = await scanHost(iocs, walk([home]), noLive, { home, startupDirs: [], skipLive: true });
+    const r = await scanHost(iocs, walk([home]), noLive, { home, startupDirs: [], dropDirs: [], skipLive: true });
     expect(r.findings[0]?.title).toContain("matches the sha256");
     expect(r.findings[0]?.indicator?.type).toBe("sha256");
   });
@@ -83,7 +85,7 @@ describe("scan host", () => {
       return { ok: false, status: 1, stdout: "", stderr: "", missing: true };
     };
     const home = tmp("ug-live-");
-    const r = await scanHost(AIKIDO_IOCS, walk([home]), live, { home, platform: "darwin", startupDirs: [] });
+    const r = await scanHost(AIKIDO_IOCS, walk([home]), live, { home, platform: "darwin", startupDirs: [], dropDirs: [] });
     const t = r.findings.map((f) => f.title);
     expect(t).toContain('crontab line 1 contains "#ghc2"');
     expect(t).toContain("Open connection to 18.143.168.96");
@@ -120,6 +122,8 @@ describe("lockfiles", () => {
     ]);
     expect(parseLockfile("requirements-dev.txt", "requests==2.31.0\nflask>=2\nuvicorn[standard]==0.30.0 ; python_version>'3'\n")).toEqual([
       { ecosystem: "pypi", name: "requests", version: "2.31.0" },
+      // Unpinned: version "*", matched only by an every-version (typosquat) indicator.
+      { ecosystem: "pypi", name: "flask", version: "*" },
       { ecosystem: "pypi", name: "uvicorn", version: "0.30.0" },
     ]);
     expect(parseLockfile("Gemfile.lock", "GEM\n  specs:\n    rails (7.1.0)\n      actionpack (= 7.1.0)\n")).toEqual([
@@ -195,9 +199,10 @@ describe("scan deps", () => {
   });
 
   it("groups lockfiles two levels under their root, never one run per lockfile nor the whole home", () => {
+    // /h/Cargo.lock sits in the root itself: scanDeps stages it on its own instead of handing package-checker all of /h.
     expect(
       checkerGroups(["/h/Documents/Code/a/package-lock.json", "/h/Documents/Code/b/x/yarn.lock", "/h/p/go.sum", "/h/Cargo.lock", "/other/q/uv.lock"], ["/h"]),
-    ).toEqual(["/h", "/other/q"]);
+    ).toEqual(["/h/Documents/Code", "/h/p", "/other/q"]);
     expect(checkerGroups(["/h/Documents/Code/a/package-lock.json", "/h/Documents/Code/b/yarn.lock", "/h/p/go.sum"], ["/h"])).toEqual([
       "/h/Documents/Code",
       "/h/p",

@@ -1,4 +1,4 @@
-import { readFileSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -21,7 +21,7 @@ import {
   UsageError,
 } from "./engine.js";
 import { intel, readWebResultsFile, type WebHit } from "./intel.js";
-import { validateIocs } from "./ioc.js";
+import { normEco, SUPPORTED_ECOSYSTEMS, validateIocs } from "./ioc.js";
 import { renderReport } from "./report.js";
 import { formatDefenses, refreshDefenses } from "./defenses.js";
 import { defaultRulesDeps, installedRules, RULE_SETS, type RuleSet, type RulesDeps, rulesAgeDays } from "./rules.js";
@@ -32,10 +32,11 @@ import { scanCloud } from "./scan/cloud.js";
 import { scanDeps } from "./scan/deps.js";
 import { scanGithub } from "./scan/github.js";
 import { scanHost } from "./scan/host.js";
+import { defaultRegistryGet, type RegistryGet, scanNpmPublishes } from "./scan/registry.js";
 import { walk, type WalkResult } from "./scan/walk.js";
-import { type Campaign, type IocFile, SURFACES, type Surface } from "./types.js";
+import { type Campaign, type Gap, type IocFile, SURFACES, type Surface } from "./types.js";
 import { VERSION } from "./version.js";
-import { stateDir, watchCommit, watchPlan } from "./watch.js";
+import { EXIT_INCOMPLETE, stateDir, watchCommit, watchPlan } from "./watch.js";
 
 export const HELP = `ultraguard v${VERSION} (webindex ${ENGINE_VERSION})
 An AI antivirus for an agent: the agent finds attack news on the web, turns
@@ -46,15 +47,15 @@ things it writes are its run folders, its state folder and the antivirus
 databases it keeps current (ClamAV signatures, YARA-Forge rules).
 
 USAGE
-  ultraguard doctor [--probe] [--json]
+  ultraguard doctor [--probe] [--state <dir>] [--json]
   ultraguard rules update [--set core|extended|full] [--state <dir>]   freshclam + YARA-Forge
   ultraguard rules status [--state <dir>]
   ultraguard search <query> --out <run> [--limit <n>]
   ultraguard intel [<url>...] [--web-results <file.json>] --out <run>
   ultraguard ioc set --file <iocs.json> --out <run>
   ultraguard ioc show --out <run> [--json]
-  ultraguard scan github|host|deps|cloud --out <run> [scan flags]
-  ultraguard sweep --out <run> [--surfaces <list>] [scan flags]
+  ultraguard scan github|host|deps|cloud --out <run> [scan flags] [--json]
+  ultraguard sweep --out <run> [--surfaces <list>] [scan flags] [--json]
   ultraguard report --out <run> [--json]
   ultraguard check <answer.md> --out <run> [--json]
   ultraguard watch plan [--web-results <file.json>] --out <run> [--state <dir>] [--resweep-days <n>]
@@ -73,7 +74,7 @@ SCAN FLAGS
   --repos <a/b,c/d>     github: only these repositories
   --max-repos <n>       github: stop after n repositories
   --concurrency <n>     github: parallel repositories (default 8)
-  --roots <dir,dir>     host, deps: where to walk (default: your home directory)
+  --roots <dir,dir>     host, deps: existing folders to walk (default: your home directory)
   --depth <n>           host, deps: walk depth (default 6)
   --skip-live           host: skip crontab, open connections, processes, signatures, antivirus
   --no-av               host: skip the ClamAV pass (on by default when ClamAV is installed)
@@ -82,9 +83,14 @@ SCAN FLAGS
   --yara-source <S#>    host: the source the YARA rules came from, cited by their findings
   --no-rules            host: skip the community YARA rules (YARA-Forge) installed by rules update
   --no-update           host: do not refresh ClamAV signatures or YARA-Forge rules older than 7 days
+  --state <dir>         host, rules, watch: ultraguard's state folder (default ~/.ultraguard)
   --set <name>          rules update: core (default, highest precision), extended or full
+  --npm-user <name>     deps: the npm account whose packages to check for versions published in a campaign window (default: npm whoami)
+  --no-registry         deps: skip that check (it reads the public npm registry)
   --no-osv              deps: skip package-checker (OSV and GHSA feeds, malicious packages)
   --surfaces <list>     sweep: github,host,deps,cloud (default: all)
+  scan and sweep exit 20 when GitHub was asked for and could not be scanned
+  (logged out, every read refused): its verdict is UNKNOWN, never CLEAN.
   --limit <n>           search: hits to aim for (default 10)
 
 ROUTINE (watch)
@@ -122,8 +128,9 @@ export const VALUE_FLAGS = [
   "yara",
   "yara-source",
   "set",
+  "npm-user",
 ];
-export const BOOL_FLAGS = ["json", "probe", "skip-live", "no-osv", "no-av", "av-full", "no-rules", "no-update"];
+export const BOOL_FLAGS = ["json", "probe", "skip-live", "no-osv", "no-av", "av-full", "no-rules", "no-update", "no-registry"];
 
 const SCAN = [
   "out",
@@ -134,6 +141,8 @@ const SCAN = [
   "depth",
   "skip-live",
   "no-osv",
+  "no-registry",
+  "npm-user",
   "no-av",
   "av-full",
   "yara",
@@ -166,6 +175,11 @@ let runner: Runner = defaultRunner;
 export function setRunner(r: Runner): void {
   runner = r;
 }
+let registryGet: RegistryGet = defaultRegistryGet;
+/** Test seam: replace the npm registry reads. */
+export function setRegistryGet(g: RegistryGet): void {
+  registryGet = g;
+}
 let rulesDeps: RulesDeps = defaultRulesDeps;
 /** Test seam: replace the YARA-Forge download. */
 export function setRulesDeps(d: RulesDeps): void {
@@ -176,9 +190,12 @@ function out(text: string): void {
   process.stdout.write(text.endsWith("\n") ? text : `${text}\n`);
 }
 
-function needRun(a: CommandArgs): Run {
+function needRun(a: CommandArgs, opts: { mustExist?: boolean } = {}): Run {
   const dir = argValue(a, "out");
   if (!dir) throw new UsageError(`${a.command} needs --out <run>: one directory per investigation, shared by every command`);
+  // Commands that read a run must not create an empty one from a mistyped path: it would pass every check.
+  if (opts.mustExist && !existsSync(resolve(dir)))
+    throw new UsageError(`no run at ${dir}: check the --out path (a run is created by search, intel or watch plan)`);
   return new Run(dir);
 }
 
@@ -194,10 +211,61 @@ function needIocs(run: Run): IocFile {
   return iocs;
 }
 
-function walkFor(a: CommandArgs): WalkResult {
+/** Types matched as a whole line unless "regex" is set: `ioc show` says so. */
+const EXACT = new Set(["branch", "pr_title", "commit_message", "actor"]);
+
+/** Package ecosystems in the file that no reader covers, with their indicator count: "maven (2)". */
+function uncheckedEcosystems(iocs: IocFile): string[] {
+  const n = new Map<string, number>();
+  for (const c of iocs.campaigns)
+    for (const i of c.indicators) {
+      const e = normEco(i.ecosystem ?? "");
+      if (i.type === "package" && !(SUPPORTED_ECOSYSTEMS as readonly string[]).includes(e)) n.set(e, (n.get(e) ?? 0) + 1);
+    }
+  return [...n].map(([e, k]) => `${e} (${k})`);
+}
+
+/** Indicator types the GitHub scan reads. */
+const GITHUB_TYPES = new Set([
+  "branch",
+  "pr_title",
+  "commit_message",
+  "file",
+  "workflow_file",
+  "string",
+  "ip",
+  "domain",
+  "url",
+  "cache_key_prefix",
+  "artifact_prefix",
+  "actor",
+]);
+
+/**
+ * The --roots, each an existing directory. A typo or a space-separated list would
+ * otherwise walk nothing and come back CLEAN with "0 lockfiles".
+ */
+function rootsOf(a: CommandArgs): string[] {
   const roots = argList(a, "roots").map((r) => resolve(r.replace(/^~(?=$|\/)/, homedir())));
+  for (const r of roots) {
+    let dir = false;
+    try {
+      dir = statSync(r).isDirectory();
+    } catch {
+      dir = false;
+    }
+    if (!dir) throw new UsageError(`--roots: ${r} does not exist or is not a directory (pass existing folders, comma-separated)`);
+  }
+  return roots;
+}
+
+function walkFor(a: CommandArgs): WalkResult {
+  const roots = rootsOf(a);
   return walk(roots.length ? roots : [homedir()], { maxDepth: argInt(a, "depth", { min: 1, max: 20 }) ?? 6 });
 }
+
+/** Set by runScan when the GitHub surface was asked for and came back unscanned: sweep and scan then exit 20. */
+let githubBlind = false;
 
 async function runScan(surface: "github" | "host" | "deps" | "cloud", a: CommandArgs, run: Run, iocs: IocFile, tree?: () => WalkResult): Promise<string> {
   if (surface === "github") {
@@ -206,14 +274,34 @@ async function runScan(surface: "github" | "host" | "deps" | "cloud", a: Command
       maxRepos: argInt(a, "max-repos", { min: 1 }),
       concurrency: argInt(a, "concurrency", { min: 1, max: 32 }),
     });
+    // Nothing in the file is a GitHub indicator (a package-only campaign): CLEAN would mean "checked against nothing".
+    if (r.account.result.scanned && !iocs.campaigns.some((c) => c.indicators.some((i) => GITHUB_TYPES.has(i.type))))
+      for (const g of [r.account.gaps, r.repos.gaps])
+        g.push({
+          surface: g === r.account.gaps ? "github:account" : "github:repos",
+          what: "the campaign's indicators",
+          why: "no indicator of this run applies to GitHub: only new keys, webhooks and deploy keys were reviewed",
+          fix: "add the branches, PR titles, commit messages or files the sources name, if any",
+        });
     const accF = run.recordSurface(r.account.result, r.account.findings, r.account.gaps);
     const repF = run.recordSurface(r.repos.result, r.repos.findings, r.repos.gaps);
     run.setMeta({ login: r.login, hitRepos: r.hitRepos });
-    return `github: ${r.repos.result.stats.repos ?? 0} repositories as ${r.login ?? "?"}; ${accF.length} account finding(s), ${repF.length} repository finding(s)`;
+    // Zero findings from a scan that read nothing must not read as clean.
+    const blind = [r.account, r.repos].filter((x) => !x.result.scanned);
+    if (blind.length) githubBlind = true;
+    if (blind.length === 2) {
+      const g = r.account.gaps[r.account.gaps.length - 1] ?? r.repos.gaps[0];
+      return `github: NOT SCANNED (${g ? `${g.what}: ${g.why}` : "gh failed"}). Fix: ${g?.fix ?? "gh auth login"}`;
+    }
+    const line = `github: ${r.repos.result.stats.repos ?? 0} repositories as ${r.login ?? "?"}; ${accF.length} account finding(s), ${repF.length} repository finding(s)`;
+    return blind.length
+      ? `${line}\n${blind.map((x) => `${x.result.surface} NOT SCANNED: ${x.gaps.find((g) => g.fix)?.what ?? "see gaps.json"}`).join("\n")}`
+      : line;
   }
   if (surface === "host") {
     // Stale signatures miss this month's malware: refresh them first (ClamAV and YARA-Forge, each only if older than 7 days).
     let refreshed = "";
+    const refreshGaps: Gap[] = [];
     if (!argBool(a, "no-update") && !argBool(a, "skip-live")) {
       const ups = await refreshDefenses(stateDir(argValue(a, "state")), runner, {
         clamav: !argBool(a, "no-av"),
@@ -222,8 +310,16 @@ async function runScan(surface: "github" | "host" | "deps" | "cloud", a: Command
       });
       const shown = ups.filter((u) => u.status === "updated" || u.status === "failed");
       if (shown.length) refreshed = `${formatDefenses(shown)}\n`;
+      // A failed refresh is part of the run's coverage, not only a line on the terminal.
+      for (const u of ups.filter((x) => x.status === "failed"))
+        refreshGaps.push({
+          surface: "host",
+          what: `fresh ${u.engine === "clamav" ? "ClamAV signatures" : "YARA-Forge rules"}`,
+          why: u.detail,
+          fix: "ultraguard rules update",
+        });
     }
-    const roots = argList(a, "roots").map((r) => resolve(r.replace(/^~(?=$|\/)/, homedir())));
+    const roots = rootsOf(a);
     const r = await scanHost(iocs, (tree ?? (() => walkFor(a)))(), runner, {
       hitRepos: run.meta().hitRepos,
       skipLive: argBool(a, "skip-live"),
@@ -232,25 +328,31 @@ async function runScan(surface: "github" | "host" | "deps" | "cloud", a: Command
       yara: argValue(a, "yara"),
       yaraSource: argValue(a, "yara-source"),
       listDir: run.dir,
+      stateDir: stateDir(argValue(a, "state")),
       ...communityRules(a, run),
     });
-    const f = run.recordSurface(r.result, r.findings, r.gaps);
+    const f = run.recordSurface(r.result, r.findings, [...refreshGaps, ...r.gaps]);
     run.write("host-inventory.json", r.inventory);
     return `${refreshed}host: ${r.result.stats.files ?? 0} files, ${r.result.stats.startupItems ?? 0} startup items, ${r.result.stats.credentialFiles ?? 0} credential files; ${f.length} finding(s)`;
   }
   if (surface === "deps") {
-    const roots = argList(a, "roots").map((r) => resolve(r.replace(/^~(?=$|\/)/, homedir())));
+    const roots = rootsOf(a);
     const r = await scanDeps(iocs, (tree ?? (() => walkFor(a)))(), run, {
       checker: argBool(a, "no-osv") ? false : undefined,
       runner,
       roots: roots.length ? roots : [homedir()],
+      // Global installs (npm -g, nvm, bun, uv tools, pipx) are read under the real home.
+      home: homedir(),
     });
-    const f = run.recordSurface(r.result, r.findings, r.gaps);
-    return `deps: ${r.result.stats.lockfiles ?? 0} lockfiles, ${r.result.stats.packages ?? 0} packages, ${r.result.stats.malicious ?? 0} malicious, ${r.result.stats.vulnerable ?? 0} with known CVEs; ${f.length} finding(s)`;
+    // The packages the user publishes: a worm with their npm token republishes them.
+    const pub = argBool(a, "no-registry") ? undefined : await scanNpmPublishes(iocs, { user: argValue(a, "npm-user"), runner, get: registryGet });
+    if (pub) Object.assign(r.result.stats, pub.stats);
+    const f = run.recordSurface(r.result, [...r.findings, ...(pub?.findings ?? [])], [...r.gaps, ...(pub?.gaps ?? [])]);
+    return `deps: ${r.result.stats.lockfiles ?? 0} lockfiles${pub?.user ? `, ${pub.stats.npmPackages ?? 0} npm packages of ${pub.user}` : ""}, ${r.result.stats.packages ?? 0} packages, ${r.result.stats.malicious ?? 0} malicious, ${r.result.stats.vulnerable ?? 0} with known CVEs; ${f.length} finding(s)`;
   }
   const r = await scanCloud(iocs, runner);
   const f = run.recordSurface(r.result, r.findings, r.gaps);
-  return `cloud: ${r.result.scanned ? "scanned" : "no logged-in CLI"}; ${f.length} finding(s)`;
+  return `cloud: ${r.result.scanned ? "scanned" : (r.result.notApplicable ?? "not fully read, see the gaps")}; ${f.length} finding(s)`;
 }
 
 /** The installed YARA-Forge rules for scan host, registered as a source of the run so their findings cite it. */
@@ -323,6 +425,7 @@ async function dispatch(a: CommandArgs): Promise<number> {
     }
     case "intel": {
       const run = needRun(a);
+      for (const url of a.positional) if (!/^https?:\/\//i.test(url)) throw new UsageError(`intel: "${url}" is not a URL: add https://`);
       const hits: WebHit[] = a.positional.map((url) => ({ url }));
       const file = argValue(a, "web-results");
       if (file) hits.push(...readWebResultsFile(file));
@@ -332,9 +435,11 @@ async function dispatch(a: CommandArgs): Promise<number> {
       else {
         for (const s of sources)
           out(`[${s.id}] ${s.error ? `FAILED (${s.error})` : "ok"}  ${s.title ?? ""} <${s.url}>${s.file ? `\n     text: ${run.path(s.file)}` : ""}`);
-        out(
-          `\nNext: read each source, then write ${run.path("iocs.json")} (start from ${run.path("iocs.todo.json")}: one campaign per ATTACK, so merge the sources that describe the same one), then \`ultraguard ioc set --file ${run.path("iocs.json")} --out ${run.dir}\`.`,
-        );
+        if (!sources.some((s) => !s.error)) out("\nNo source could be fetched: nothing to extract IOCs from. Try other pages for the same attack.");
+        else
+          out(
+            `\nNext: read each source, then write ${run.path("iocs.json")} (start from ${run.path("iocs.todo.json")}: one campaign per ATTACK, so merge the sources that describe the same one), then \`ultraguard ioc set --file ${run.path("iocs.json")} --out ${run.dir}\`.`,
+          );
       }
       return sources.some((s) => !s.error) ? EXIT_OK : EXIT_FAILURE;
     }
@@ -352,7 +457,7 @@ async function dispatch(a: CommandArgs): Promise<number> {
                     `${c.id}: ${c.title} (since ${c.since}${c.until ? `, until ${c.until}` : ""}, ${c.indicators.length} indicators) ${c.sources.map((s) => `[${s}]`).join("")}`,
                     ...c.indicators.map(
                       (i) =>
-                        `  ${i.type.padEnd(20)} ${i.ecosystem ? `${i.ecosystem}:` : ""}${i.value}${i.versions?.length ? `@${i.versions.join(",")}` : ""}${i.regex ? " (regex)" : ""}${i.weak ? " (weak)" : ""} [${i.source}]`,
+                        `  ${i.type.padEnd(20)} ${i.ecosystem ? `${i.ecosystem}:` : ""}${i.value}${i.versions?.length ? `@${i.versions.join(",")}` : ""}${i.regex ? " (regex)" : EXACT.has(i.type) ? " (exact)" : ""}${i.weak ? " (weak)" : ""} [${i.source}]`,
                     ),
                   ].join("\n"),
                 )
@@ -362,21 +467,35 @@ async function dispatch(a: CommandArgs): Promise<number> {
       }
       if (sub !== "set") throw new UsageError("ioc takes `set --file <iocs.json>` or `show`");
       const file = argValue(a, "file");
-      const own: Campaign[] = file ? (JSON.parse(readFileSync(file, "utf8")) as IocFile).campaigns : [];
+      let raw: unknown;
+      if (file)
+        try {
+          raw = JSON.parse(readFileSync(file, "utf8"));
+        } catch (e) {
+          throw new UsageError(`${file}: not valid JSON (${(e as Error).message})`);
+        }
       const carried = run.read<IocFile>("iocs.carried.json", { campaigns: [] }).campaigns;
       if (!file && !carried.length) throw new UsageError("ioc set needs --file <iocs.json>");
-      const merged = [...own, ...carried.filter((c) => !own.some((o) => o.id === c.id))];
-      const { iocs, problems } = validateIocs({ campaigns: merged }, run.sources());
+      // A file of the wrong shape (a bare list of indicators) is answered by the validator, not merged.
+      const own: Campaign[] | undefined = file ? ((raw as IocFile | null)?.campaigns as Campaign[] | undefined) : [];
+      const { iocs, problems } = Array.isArray(own)
+        ? validateIocs({ campaigns: [...own, ...carried.filter((c) => !own.some((o) => o?.id === c.id))] }, run.sources())
+        : validateIocs(raw, run.sources());
       if (!iocs) {
         out(json ? jsonLine(problems) : `iocs refused: ${problems.length} problem(s)\n${problems.map((p) => `  ${p.path}: ${p.message}`).join("\n")}`);
         return EXIT_FAILURE;
       }
       run.write("iocs.json", iocs);
       const n = iocs.campaigns.reduce((s, c) => s + c.indicators.length, 0);
+      const unchecked = uncheckedEcosystems(iocs);
       out(
         json
-          ? jsonLine({ campaigns: iocs.campaigns.length, indicators: n })
-          : `iocs set: ${iocs.campaigns.length} campaign(s), ${n} indicator(s)${carried.length ? ` (${carried.length} carried from the watch state)` : ""}`,
+          ? jsonLine({ campaigns: iocs.campaigns.length, indicators: n, uncheckedEcosystems: unchecked })
+          : `iocs set: ${iocs.campaigns.length} campaign(s), ${n} indicator(s)${carried.length ? ` (${carried.length} carried from the watch state)` : ""}${
+              unchecked.length
+                ? `\nnote: ultraguard has no reader for ${unchecked.join(", ")}: those package indicators are reported as a deps coverage gap (supported: ${SUPPORTED_ECOSYSTEMS.join(", ")})`
+                : ""
+            }`,
       );
       return EXIT_OK;
     }
@@ -385,8 +504,22 @@ async function dispatch(a: CommandArgs): Promise<number> {
       if (surface !== "github" && surface !== "host" && surface !== "deps" && surface !== "cloud")
         throw new UsageError("scan takes github, host, deps or cloud");
       const run = needRun(a);
-      out(await runScan(surface, a, run, needIocs(run)));
-      return EXIT_OK;
+      const iocs = needIocs(run);
+      if (surface === "host" || surface === "deps") rootsOf(a);
+      githubBlind = false;
+      const line = await runScan(surface, a, run, iocs);
+      const mine = SURFACE_OF[surface] ?? [];
+      out(
+        json
+          ? jsonLine({
+              summary: line,
+              surfaces: run.surfaces().filter((x) => mine.includes(x.surface)),
+              findings: run.findings().filter((f) => mine.includes(f.surface)).length,
+              gaps: run.gaps().filter((g) => mine.includes(g.surface)),
+            })
+          : line,
+      );
+      return githubBlind ? EXIT_INCOMPLETE : EXIT_OK;
     }
     case "sweep": {
       const run = needRun(a);
@@ -396,16 +529,55 @@ async function dispatch(a: CommandArgs): Promise<number> {
       // Always github first, whatever order was asked: the host scan looks for clones of the repos it found hit.
       const ORDER = ["github", "host", "deps", "cloud"] as const;
       const list = ORDER.filter((s) => !wanted.length || wanted.includes(s));
+      // The routine tells "left out on purpose" from "could not scan" with this.
+      run.setMeta({ requested: list.flatMap((s) => SURFACE_OF[s] ?? []) });
+      // A mistyped root fails now, before the GitHub stage spends its API budget.
+      if (list.includes("host") || list.includes("deps")) rootsOf(a);
       let tree: WalkResult | undefined;
+      githubBlind = false;
       const shared = () => (tree ??= walkFor(a));
+      const lines: string[] = [];
+      let crashed = 0;
       // GitHub first: the host scan looks for local clones of the repositories it found hit.
-      for (const s of list) out(await runScan(s, a, run, iocs, shared));
+      for (const s of list) {
+        // Progress on stderr (stdout stays clean for --json): a large account takes minutes.
+        process.stderr.write(`${s}: scanning${s === "github" ? " (about one second per API call)" : ""}...\n`);
+        let line: string;
+        try {
+          line = await runScan(s, a, run, iocs, shared);
+        } catch (e) {
+          if (e instanceof UsageError) throw e;
+          // One surface that crashes must not take the others and the report with it: it becomes a gap.
+          crashed++;
+          const why = (e as Error).message;
+          for (const surface of SURFACE_OF[s] ?? [])
+            run.recordSurface(
+              { surface, scanned: false, stats: {}, startedAt: new Date().toISOString() },
+              [],
+              [{ surface, what: `the ${s} scan`, why: `it stopped with an error: ${why}`, fix: `fix the cause, then ultraguard scan ${s} --out ${run.dir}` }],
+            );
+          line = `${s}: FAILED (${why}), recorded as a gap`;
+        }
+        if (json) lines.push(line);
+        else out(line);
+      }
       const { verdicts: vs } = writeReport(run);
-      out(`\n${vs.map((v) => `${v.surface.padEnd(15)} ${v.verdict}`).join("\n")}\n\nreport: ${run.path("REPORT.md")}`);
-      return EXIT_OK;
+      out(
+        json
+          ? jsonLine({
+              surfaces: list,
+              summary: lines,
+              verdicts: vs,
+              findings: run.findings().length,
+              gaps: run.gaps().length,
+              report: run.path("REPORT.md"),
+            })
+          : `\n${vs.map((v) => `${v.surface.padEnd(15)} ${v.verdict}`).join("\n")}\n\nreport: ${run.path("REPORT.md")}`,
+      );
+      return crashed ? EXIT_FAILURE : githubBlind ? EXIT_INCOMPLETE : EXIT_OK;
     }
     case "report": {
-      const run = needRun(a);
+      const run = needRun(a, { mustExist: true });
       const r = writeReport(run);
       out(
         json
@@ -417,7 +589,7 @@ async function dispatch(a: CommandArgs): Promise<number> {
     case "check": {
       const file = a.positional[0];
       if (!file) throw new UsageError("check needs the answer file: ultraguard check <answer.md> --out <run>");
-      const run = needRun(a);
+      const run = needRun(a, { mustExist: true });
       const problems = checkAnswer(run, readFileSync(file, "utf8"));
       if (json) out(jsonLine({ ok: problems.length === 0, problems }));
       else
@@ -430,17 +602,30 @@ async function dispatch(a: CommandArgs): Promise<number> {
     }
     case "watch": {
       const sub = a.positional[0];
-      const run = needRun(a);
+      const run = needRun(a, { mustExist: sub === "commit" });
       const dir = stateDir(argValue(a, "state"));
       if (sub === "plan") {
         const file = argValue(a, "web-results");
         const hits = file ? readWebResultsFile(file) : [];
         const r = await watchPlan(dir, run, hits, { resweepDays: argInt(a, "resweep-days", { min: 1, max: 365 }) });
-        if (json) out(jsonLine(r));
-        else if (r.nothingNew) out(`NOTHING NEW: ${r.skipped} source(s) already handled${r.since ? ` (last sweep ${r.since})` : ""}; no re-sweep due`);
+        const failures = r.failed.map(
+          (f) => `could not fetch ${f.url} (${f.error ?? "?"})${f.givenUp ? `: given up after ${f.attempts} attempts` : `, attempt ${f.attempts}`}`,
+        );
+        if (json) out(jsonLine({ ...r, hits: hits.length }));
+        else if (r.nothingNew)
+          out(
+            [
+              `NOTHING NEW: ${hits.length} hit(s) read, ${r.skipped} source(s) already handled${r.since ? ` (last sweep ${r.since})` : ""}; no re-sweep due`,
+              ...failures,
+            ].join("\n"),
+          );
         else
           out(
-            `${r.newSources} new source(s), ${r.skipped} already handled${r.resweep ? "; re-sweep of every known campaign is due (iocs.carried.json)" : ""}.\nNext: fill the IOCs, ioc set, sweep, report, then watch commit.`,
+            [
+              `${hits.length} hit(s) read: ${r.newSources} new source(s), ${r.skipped} already handled${r.resweep ? "; re-sweep of every known campaign is due (iocs.carried.json)" : ""}.`,
+              ...failures,
+              "Next: fill the IOCs, ioc set, sweep, report, then watch commit.",
+            ].join("\n"),
           );
         return EXIT_OK;
       }

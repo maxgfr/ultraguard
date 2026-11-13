@@ -47,8 +47,10 @@ proves that the verdict cites only real findings and hides none.
 Node 18 or newer, no install, no key. `<skill-dir>` is the directory holding
 this file; every `ultraguard …` below stands for
 `node <skill-dir>/scripts/ultraguard.mjs …`. Pick one absolute run directory
-per investigation and pass it as `--out` to every command that works on a run
-(all but `doctor`).
+per investigation, outside the temp folders and Downloads (e.g.
+`~/.ultraguard/runs/<date>-<slug>`), and pass it as `--out` to every command
+that works on a run (all but `doctor` and `rules`). `check`, `report` and
+`watch commit` refuse a `--out` that does not exist.
 
 ```bash
 ultraguard doctor --probe                    # what this machine lets ultraguard see
@@ -57,12 +59,15 @@ ultraguard doctor --probe                    # what this machine lets ultraguard
 `gh` must be logged in (`gh auth status`). Cloud checks run only for the CLIs
 (`aws`, `gcloud`, `az`) already logged in.
 
-**GitHub API budget.** A sweep costs about 10 REST calls per repository pushed
-to since the campaign started, and 1 per other repository (about 2,000 for
-200 active repositories), out of 5,000 an hour, and the search API
-allows 30 calls a minute. Run one sweep at a time, and keep some budget for
-judging the findings with `gh api` afterwards. A refused call is recorded as a
-coverage gap; `gh api rate_limit` shows what is left.
+**GitHub API budget.** A sweep costs up to about 16 REST calls per repository
+pushed to since the campaign started, 1 or 2 per other repository and 3 more
+per repository you administer (about 3,500 for 200 active repositories), out
+of 5,000 an hour; the search API allows 30 calls a minute (code search 10).
+Run one sweep at a time, and keep some budget for judging the findings with
+`gh api` afterwards. A refused call is recorded as a coverage gap; when the
+budget runs out the gap names the repositories left with the `--repos` to
+re-run. `gh api rate_limit` shows what is left. `scan github` and `sweep`
+exit 20 when GitHub could not be scanned at all (UNKNOWN, never CLEAN).
 
 ## Routing
 
@@ -91,6 +96,9 @@ ultraguard ioc set --file <run>/iocs.json --out <run>      # refuses an IOC with
 # 3. Sweep. GitHub first: the host scan then looks for local clones of the repos it found hit.
 ultraguard sweep --out <run>                               # github, host, deps, cloud
 # → findings [F#], coverage gaps, REPORT.md and REMEDIATION.md
+# A large account takes minutes (about one second per GitHub call): give the
+# command a 10-minute timeout or run it in the background. To split it, run
+# `sweep --surfaces github`, then `sweep --surfaces host,deps,cloud`, same --out.
 
 # 4. Judge, write the answer, check it.
 ultraguard check <run>/ANSWER.md --out <run>
@@ -104,10 +112,19 @@ invisible characters in CLAUDE.md or AGENTS.md), npm's download cache, odd
 processes and file names, and the credential stores a stealer would take.
 Everything collected is in `<run>/host-inventory.json`.
 
-**Dependencies.** `scan deps` matches the campaign's packages itself, and runs
-the vendored `package-checker.sh` (OSV and GHSA feeds, 12 ecosystems) for
-malicious packages (compromised) and known CVEs (one info line, the list in
-`<run>/deps-vulnerabilities.json`: a patching backlog, not a compromise).
+**Dependencies.** `scan deps` matches the campaign's packages itself, in
+lockfiles, unpinned `requirements*.txt` lines, `package.json` files with no
+lockfile, `node_modules` and virtualenvs, and the global npm, nvm, bun, uv and
+pipx installs. It runs the vendored `package-checker.sh` (OSV and GHSA feeds,
+Bash 4+) for malicious packages (compromised) and known CVEs (one info line,
+the list in `<run>/deps-vulnerabilities.json`: a patching backlog, not a
+compromise). A feed it could not load, or a stale local copy of it, is a gap.
+It also lists the npm packages the user maintains (`npm whoami`, or
+`--npm-user`) and flags every version published inside a campaign window: a
+worm holding their npm token republishes them with an install script
+(Shai-Hulud). Ask the user whether they published it; one they did not is a
+compromise of their npm account: revoke every npm token, deprecate the
+version. `--no-registry` skips it.
 
 **Antivirus.** When ClamAV is installed, `scan host` also runs it, targeted:
 the programs startup items run, the files the other checks flagged, recent
@@ -126,11 +143,13 @@ under `<run>/yara/` and pass `--yara <run>/yara --yara-source S#`: they run
 over the same targets, and their matches cite that source.
 
 Scan flags: `--repos owner/a,owner/b` and `--max-repos <n>` narrow GitHub;
-`--concurrency <n>` sets parallel repositories; `--roots ~/code,~/work` and
-`--depth <n>` bound the walk of the disk; `--skip-live` skips crontab, sockets
+`--concurrency <n>` sets parallel repositories; `--roots <dir,dir>` (existing
+folders that hold your code) and `--depth <n>` bound the walk of the disk; `--skip-live` skips crontab, sockets
 and processes; `--no-osv` skips the OSV malicious-package feed (offline).
 `ultraguard scan github|host|deps|cloud --out <run>` re-runs one surface; it
-replaces that surface's findings rather than adding duplicates. `report --out
+replaces that surface's findings rather than adding duplicates, and never
+reuses an `[F#]` for another finding. `--json` gives scan and sweep results as
+one JSON line. `report --out
 <run>` rewrites REPORT.md after a re-scan; `ioc show --out <run>` prints what
 was set.
 
@@ -164,7 +183,11 @@ Your job is what the engine cannot do:
 
 Write `<run>/ANSWER.md` in the user's language:
 
-- one line per surface with its verdict and the `[F#]` that support it;
+- one line per surface with its verdict and the `[F#]` that support it. Write
+  the verdict word as the report does, in English capitals, whatever the
+  language (`Machine : REVIEW [F6]`); an unscanned surface is UNKNOWN or "not
+  scanned", never left out. A false positive keeps its computed verdict, with
+  your explanation next to it;
 - what to do first, taken from REMEDIATION.md, most urgent first;
 - a **Coverage** section: what was not checked and how to close it;
 - the sources `[S#]` of the campaigns you checked.
@@ -186,8 +209,9 @@ finding before answering. Without subagents, do the same steps in order.
   scan could not reach it.
 - Read secrets' values: `gh secret list` names them, which is enough to rotate.
 - Upload anything: the only network calls are `gh` (GitHub API), your search
-  queries, page fetches of your sources, and OSV queries of package names and
-  versions.
+  queries, page fetches of your sources, and the download of the OSV and GHSA
+  advisory feeds from raw.githubusercontent.com (package names never leave
+  the machine).
 
 ## References
 
