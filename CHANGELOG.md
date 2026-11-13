@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here, generated automatically from the [Conventional Commits](https://www.conventionalcommits.org/) by [semantic-release](https://github.com/semantic-release/semantic-release).
 
+# [1.6.0](https://github.com/maxgfr/ultraguard/compare/v1.5.0...v1.6.0) (2026-11-13)
+
+
+### Features
+
+* audit fixes: no false CLEAN, wider coverage, less noise ([#10](https://github.com/maxgfr/ultraguard/issues/10)) ([7e34c35](https://github.com/maxgfr/ultraguard/commit/7e34c357f0ce366821ec34198bf0ac2e2be3fcfc))
+
 # [1.5.0](https://github.com/maxgfr/ultraguard/compare/v1.4.0...v1.5.0) (2026-11-12)
 
 
