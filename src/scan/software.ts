@@ -218,13 +218,18 @@ export async function scanSoftware(opts: SoftwareOpts): Promise<SoftwareResult> 
       const carriers = carriersOf(k, installed);
       if (!carriers.length) continue;
       hits++;
-      const ssh = carriers.includes("OpenSSH") ? await runner("ssh", ["-V"], { timeoutMs: 10_000 }) : undefined;
+      // The OpenSSH macOS ships (and patches), not one a package manager put first on the PATH.
+      const ssh = carriers.includes("OpenSSH") ? await runner("/usr/bin/ssh", ["-V"], { timeoutMs: 10_000 }) : undefined;
       const versions = carriers.map((c) => {
         if (c === "macOS") return { name: "macOS", version: macos };
         if (c === "OpenSSH") return { name: "OpenSSH", version: /OpenSSH_([\w.]+)/.exec(`${ssh?.stderr ?? ""}${ssh?.stdout ?? ""}`)?.[1] };
         return { name: c, version: installed.get(c)?.version };
       });
-      const status = statusOf(carriers, { osUpdate, pendingKnown: !!pending, chrome: chrome?.version, stable });
+      const ctx = { osUpdate, pendingKnown: !!pending, chrome: chrome?.version, stable };
+      // Each carrier has its own way to update: one status per distinct answer.
+      const statuses = carriers.map((c) => statusOf(c, ctx));
+      const distinct = [...new Set(statuses)];
+      const status = distinct.length === 1 ? (distinct[0] as string) : carriers.map((c, i) => `${c}: ${statuses[i]}`).join("; ");
       const what = versions.map((v) => `${v.name}${v.version ? ` ${v.version}` : ""}`).join(", ");
       res.findings.push({
         surface: "deps",
@@ -238,7 +243,7 @@ export async function scanSoftware(opts: SoftwareOpts): Promise<SoftwareResult> 
         },
         key: `deps|kev|${k.cveID}`,
       });
-      for (const v of versions)
+      for (const [i, v] of versions.entries())
         res.machine.push({
           tier: "P0",
           software: v.name,
@@ -246,7 +251,7 @@ export async function scanSoftware(opts: SoftwareOpts): Promise<SoftwareResult> 
           cve: k.cveID,
           dateAdded: k.dateAdded,
           title: `${k.cveID} (${k.vendorProject} ${k.product}), in CISA KEV since ${k.dateAdded}`,
-          status,
+          status: statuses[i],
         });
     }
     res.stats.kevInstalled = hits;
@@ -302,13 +307,13 @@ function carriersOf(k: KevEntry, installed: Map<string, unknown>): string[] {
   return [...out];
 }
 
-function statusOf(carriers: string[], s: { osUpdate?: PendingUpdate; pendingKnown: boolean; chrome?: string; stable?: string }): string {
-  if (carriers.includes("macOS") || carriers.includes("OpenSSH")) {
+function statusOf(carrier: string, s: { osUpdate?: PendingUpdate; pendingKnown: boolean; chrome?: string; stable?: string }): string {
+  if (carrier === "macOS" || carrier === "OpenSSH") {
     if (s.osUpdate) return `update pending (${s.osUpdate.title}): install it`;
     if (s.pendingKnown) return "macOS reports no pending update: patched if Apple has shipped the fix";
     return "update macOS if an update is offered";
   }
-  if (carriers.includes("Google Chrome") && s.chrome && s.stable)
+  if (carrier === "Google Chrome" && s.chrome && s.stable)
     return compareVersions(s.chrome, s.stable) < 0
       ? `Chrome is behind the current stable ${s.stable}: update it`
       : "Chrome is the current stable: patched if Google has shipped the fix";

@@ -15,6 +15,7 @@ const CATALOG: KevCatalog = {
     { cveID: "CVE-2026-125350", vendorProject: "Google", product: "Chromium", vulnerabilityName: "Chromium V8 Type Confusion", dateAdded: "2026-11-10" },
     { cveID: "CVE-2024-27834", vendorProject: "Apple", product: "Multiple Products", dateAdded: "2026-11-04", knownRansomwareCampaignUse: "Unknown" },
     { cveID: "CVE-2026-124194", vendorProject: "Microsoft", product: "Office", dateAdded: "2026-11-10" },
+    { cveID: "CVE-2026-123158", vendorProject: "OpenBSD", product: "OpenSSH", dateAdded: "2026-11-09" },
     { cveID: "CVE-2026-1", vendorProject: "Mozilla", product: "Firefox", dateAdded: "2026-01-02" },
   ],
 };
@@ -37,14 +38,14 @@ describe("feeds", () => {
     const state = tmp("ug-st-");
     const get = fakeGet({ [KEV_URL]: CATALOG });
     const first = await loadKev(state, get, NOW);
-    expect(first.data?.vulnerabilities).toHaveLength(4);
+    expect(first.data?.vulnerabilities).toHaveLength(5);
     expect(await loadKev(state, get, new Date(NOW.getTime() + 3_600_000))).toMatchObject({ fetchedAt: NOW.toISOString() });
     expect(get.calls).toHaveLength(1);
     const later = await loadKev(state, fakeGet({}), new Date(NOW.getTime() + 3 * 86_400_000));
     expect(later).toMatchObject({ stale: true, error: "offline", fetchedAt: NOW.toISOString() });
     expect(later.data?.catalogVersion).toBe("2026.11.10");
     expect(await loadKev(tmp("ug-st2-"), fakeGet({}), NOW)).toEqual({ error: "offline" });
-    expect(feedCache(state, new Date(NOW.getTime() + 5 * 3_600_000)).kev).toEqual({ ageHours: 5, catalogVersion: "2026.11.10", entries: 4 });
+    expect(feedCache(state, new Date(NOW.getTime() + 5 * 3_600_000)).kev).toEqual({ ageHours: 5, catalogVersion: "2026.11.10", entries: 5 });
   });
 
   it("EPSS: batches of 100, scores as numbers, cached per CVE", async () => {
@@ -93,6 +94,7 @@ function macRunner(opts: { su?: { ok: boolean; stdout: string; stderr?: string }
       return { ok: su.ok, status: su.ok ? 0 : 1, stdout: su.stdout, stderr: su.stderr ?? "" };
     }
     if (cmd === "plutil") return { ok: true, status: 0, stdout: args[3]?.includes("Google Chrome") ? "157.0.8103.79\n" : "1.2.3\n", stderr: "" };
+    if (cmd === "/usr/bin/ssh") return { ok: true, status: 0, stdout: "", stderr: "OpenSSH_10.5p1, LibreSSL 3.3.6\n" };
     if (cmd === "node")
       return opts.node ? { ok: true, status: 0, stdout: `${opts.node}\n`, stderr: "" } : { ok: false, status: 1, stdout: "", stderr: "", missing: true };
     return { ok: false, status: 1, stdout: "", stderr: "", missing: true };
@@ -139,7 +141,7 @@ describe("machine software", () => {
     );
     expect(t).toContain("info: Google Chrome 157.0.8103.79 is behind the current stable 157.0.8103.92: relaunch it to update (chrome://settings/help)");
     expect(t).toContain(
-      "info: CVE-2026-125350 (Google Chromium: Chromium V8 Type Confusion) is in CISA KEV since 2026-11-10, exploited in the wild; installed here: Google Chrome 157.0.8103.79, Brave Browser 1.2.3; Chrome is behind the current stable 157.0.8103.92: update it",
+      "info: CVE-2026-125350 (Google Chromium: Chromium V8 Type Confusion) is in CISA KEV since 2026-11-10, exploited in the wild; installed here: Google Chrome 157.0.8103.79, Brave Browser 1.2.3; Google Chrome: Chrome is behind the current stable 157.0.8103.92: update it; Brave Browser: update the app (check its About window)",
     );
     expect(t).toContain(
       "info: CVE-2024-27834 (Apple Multiple Products) is in CISA KEV since 2026-11-04, exploited in the wild; installed here: macOS 27.2; update pending (macOS 27.2.1): install it",
@@ -147,13 +149,17 @@ describe("machine software", () => {
     expect(t).toContain("info: Node.js 22.3.0: 1 security release(s) since (v22.4.1): upgrade to 22.5.0");
     // Office is not installed; the Firefox entry is older than 30 days.
     expect(t.some((x) => x.includes("CVE-2026-124194") || x.includes("CVE-2026-1 "))).toBe(false);
-    expect(r.machine.filter((m) => m.tier === "P0").map((m) => `${m.software} ${m.cve}`)).toEqual([
-      "Google Chrome CVE-2026-125350",
-      "Brave Browser CVE-2026-125350",
-      "macOS CVE-2024-27834",
+    expect(t).toContain(
+      "info: CVE-2026-123158 (OpenBSD OpenSSH) is in CISA KEV since 2026-11-09, exploited in the wild; installed here: OpenSSH 10.5p1; update pending (macOS 27.2.1): install it",
+    );
+    expect(r.machine.filter((m) => m.tier === "P0").map((m) => `${m.software} ${m.cve} ${m.status}`)).toEqual([
+      "Google Chrome CVE-2026-125350 Chrome is behind the current stable 157.0.8103.92: update it",
+      "Brave Browser CVE-2026-125350 update the app (check its About window)",
+      "OpenSSH CVE-2026-123158 update pending (macOS 27.2.1): install it",
+      "macOS CVE-2024-27834 update pending (macOS 27.2.1): install it",
     ]);
     expect(r.gaps).toEqual([]);
-    expect(r.stats).toMatchObject({ pendingUpdates: 2, kevInstalled: 2, appsChecked: 3 });
+    expect(r.stats).toMatchObject({ pendingUpdates: 2, kevInstalled: 3, appsChecked: 3 });
   });
 
   it("nothing pending: macOS is said patched if Apple shipped the fix; failures and missing feeds are gaps", async () => {
@@ -165,6 +171,7 @@ describe("machine software", () => {
       now: NOW,
     });
     expect(quiet.findings.map((f) => f.title)).toEqual([
+      "CVE-2026-123158 (OpenBSD OpenSSH) is in CISA KEV since 2026-11-09, exploited in the wild; installed here: OpenSSH 10.5p1; macOS reports no pending update: patched if Apple has shipped the fix",
       "CVE-2024-27834 (Apple Multiple Products) is in CISA KEV since 2026-11-04, exploited in the wild; installed here: macOS 27.2; macOS reports no pending update: patched if Apple has shipped the fix",
     ]);
     expect(quiet.findings.every((f) => f.severity === "info")).toBe(true);
