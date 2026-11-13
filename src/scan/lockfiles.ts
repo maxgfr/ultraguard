@@ -25,6 +25,26 @@ export const LOCKFILES: Record<string, string> = {
   "Gemfile.lock": "rubygems",
 };
 
+/**
+ * Lockfiles package-checker reads that ultraguard has no parser for: they are
+ * handed to its advisory pass, never matched against campaign packages here.
+ */
+export const ADVISORY_ONLY = new Set([
+  "deno.lock",
+  "go.mod",
+  "pdm.lock",
+  "gradle.lockfile",
+  "pom.xml",
+  "packages.lock.json",
+  "pubspec.lock",
+  "mix.lock",
+  "Package.resolved",
+]);
+
+export function advisoryOnlyKind(path: string): boolean {
+  return ADVISORY_ONLY.has(basename(path));
+}
+
 export function lockfileKind(path: string): string | undefined {
   const name = basename(path);
   if (LOCKFILES[name]) return name;
@@ -84,7 +104,10 @@ function npmLock(text: string): Locked[] {
   }
   const walkDeps = (deps: Record<string, any> | undefined) => {
     for (const [name, v] of Object.entries<any>(deps ?? {})) {
-      if (v.version) out.push({ ecosystem: "npm", name, version: v.version });
+      // An alias (lockfileVersion 1): {"my-alias": {"version": "npm:real-pkg@1.2.3"}} installs real-pkg.
+      const alias = typeof v.version === "string" ? /^npm:((?:@[^/@]+\/)?[^@]+)@([^@]+)$/.exec(v.version) : null;
+      if (alias) out.push({ ecosystem: "npm", name: alias[1] as string, version: alias[2] as string });
+      else if (v.version) out.push({ ecosystem: "npm", name, version: v.version });
       walkDeps(v.dependencies);
     }
   };
@@ -106,7 +129,12 @@ function yarnLock(text: string): Locked[] {
   for (const block of text.split(/\n(?=\S)/)) {
     const header = /^"?((?:@[^/@\s]+\/)?[^@\s",]+)@/.exec(block);
     const version = /^\s+version:?\s+"?([^"\s]+)"?/m.exec(block);
-    if (header && version) out.push({ ecosystem: "npm", name: header[1] as string, version: version[1] as string });
+    if (!header || !version) continue;
+    out.push({ ecosystem: "npm", name: header[1] as string, version: version[1] as string });
+    // An alias installs another package: "my-alias@npm:real-pkg@^1.2.3" (v1), or berry's resolution line.
+    const real =
+      /^"?(?:@[^/@\s]+\/)?[^@\s",]+@npm:((?:@[^/@\s]+\/)?[^@\s",]+)@/.exec(block)?.[1] ?? /^\s+resolution:\s+"?((?:@[^/@\s]+\/)?[^@\s"]+)@/m.exec(block)?.[1];
+    if (real && real !== header[1]) out.push({ ecosystem: "npm", name: real, version: version[1] as string });
   }
   return uniq(out);
 }
@@ -138,8 +166,10 @@ function pipfileLock(text: string): Locked[] {
 
 function requirements(text: string): Locked[] {
   const out: Locked[] = [];
-  for (const m of text.matchAll(/^\s*([A-Za-z0-9_.-]+)(?:\[[^\]]*\])?\s*==\s*([^\s;#]+)/gm))
-    out.push({ ecosystem: "pypi", name: m[1] as string, version: m[2] as string });
+  // "name==1.2.3" is pinned. "name", "name>=0.4" or "name ; marker" is not: version "*", which only an
+  // every-version indicator (a typosquat) matches. Options (-r, -e), URLs and VCS lines are skipped.
+  for (const m of text.matchAll(/^[ \t]*([A-Za-z0-9][A-Za-z0-9_.-]*)(?:\[[^\]]*\])?[ \t]*(?:==[ \t]*([^\s;#]+)|(?=[<>=!~;#]|[ \t]*$))/gm))
+    out.push({ ecosystem: "pypi", name: m[1] as string, version: (m[2] as string | undefined) ?? "*" });
   return uniq(out);
 }
 

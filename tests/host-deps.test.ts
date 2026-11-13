@@ -120,6 +120,8 @@ describe("lockfiles", () => {
     ]);
     expect(parseLockfile("requirements-dev.txt", "requests==2.31.0\nflask>=2\nuvicorn[standard]==0.30.0 ; python_version>'3'\n")).toEqual([
       { ecosystem: "pypi", name: "requests", version: "2.31.0" },
+      // Unpinned: version "*", matched only by an every-version (typosquat) indicator.
+      { ecosystem: "pypi", name: "flask", version: "*" },
       { ecosystem: "pypi", name: "uvicorn", version: "0.30.0" },
     ]);
     expect(parseLockfile("Gemfile.lock", "GEM\n  specs:\n    rails (7.1.0)\n      actionpack (= 7.1.0)\n")).toEqual([
@@ -195,9 +197,10 @@ describe("scan deps", () => {
   });
 
   it("groups lockfiles two levels under their root, never one run per lockfile nor the whole home", () => {
+    // /h/Cargo.lock sits in the root itself: scanDeps stages it on its own instead of handing package-checker all of /h.
     expect(
       checkerGroups(["/h/Documents/Code/a/package-lock.json", "/h/Documents/Code/b/x/yarn.lock", "/h/p/go.sum", "/h/Cargo.lock", "/other/q/uv.lock"], ["/h"]),
-    ).toEqual(["/h", "/other/q"]);
+    ).toEqual(["/h/Documents/Code", "/h/p", "/other/q"]);
     expect(checkerGroups(["/h/Documents/Code/a/package-lock.json", "/h/Documents/Code/b/yarn.lock", "/h/p/go.sum"], ["/h"])).toEqual([
       "/h/Documents/Code",
       "/h/p",

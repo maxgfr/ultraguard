@@ -286,6 +286,8 @@ async function runScan(surface: "github" | "host" | "deps" | "cloud", a: Command
       checker: argBool(a, "no-osv") ? false : undefined,
       runner,
       roots: roots.length ? roots : [homedir()],
+      // Global installs (npm -g, nvm, bun, uv tools, pipx) are read under the real home.
+      home: homedir(),
     });
     const f = run.recordSurface(r.result, r.findings, r.gaps);
     return `deps: ${r.result.stats.lockfiles ?? 0} lockfiles, ${r.result.stats.packages ?? 0} packages, ${r.result.stats.malicious ?? 0} malicious, ${r.result.stats.vulnerable ?? 0} with known CVEs; ${f.length} finding(s)`;

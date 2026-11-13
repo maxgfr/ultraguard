@@ -104,10 +104,13 @@ invisible characters in CLAUDE.md or AGENTS.md), npm's download cache, odd
 processes and file names, and the credential stores a stealer would take.
 Everything collected is in `<run>/host-inventory.json`.
 
-**Dependencies.** `scan deps` matches the campaign's packages itself, and runs
-the vendored `package-checker.sh` (OSV and GHSA feeds, 12 ecosystems) for
-malicious packages (compromised) and known CVEs (one info line, the list in
-`<run>/deps-vulnerabilities.json`: a patching backlog, not a compromise).
+**Dependencies.** `scan deps` matches the campaign's packages itself, in
+lockfiles, unpinned `requirements*.txt` lines, `package.json` files with no
+lockfile, `node_modules` and virtualenvs, and the global npm, nvm, bun, uv and
+pipx installs. It runs the vendored `package-checker.sh` (OSV and GHSA feeds,
+Bash 4+) for malicious packages (compromised) and known CVEs (one info line,
+the list in `<run>/deps-vulnerabilities.json`: a patching backlog, not a
+compromise). A feed it could not load, or a stale local copy of it, is a gap.
 
 **Antivirus.** When ClamAV is installed, `scan host` also runs it, targeted:
 the programs startup items run, the files the other checks flagged, recent
@@ -190,8 +193,9 @@ finding before answering. Without subagents, do the same steps in order.
   scan could not reach it.
 - Read secrets' values: `gh secret list` names them, which is enough to rotate.
 - Upload anything: the only network calls are `gh` (GitHub API), your search
-  queries, page fetches of your sources, and OSV queries of package names and
-  versions.
+  queries, page fetches of your sources, and the download of the OSV and GHSA
+  advisory feeds from raw.githubusercontent.com (package names never leave
+  the machine).
 
 ## References
 
