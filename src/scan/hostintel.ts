@@ -38,6 +38,11 @@ export interface HostInventory {
   agents?: import("./agents.js").AgentInventory;
   /** Every non-comment line of the user's crontab. */
   crontab?: string[];
+  /** macOS: XProtect's version and the hardening settings read (real-time tools found: LuLu, BlockBlock...). */
+  macos?: {
+    xprotect?: { version?: string; installed?: string; ageDays?: number };
+    hardening?: import("./xprotect.js").Hardening;
+  };
   /** Browser extensions installed in the review window. */
   recentBrowserExtensions?: { browser: string; profile: string; id: string; version: string; installed: string }[];
 }
@@ -260,6 +265,80 @@ export async function signerOf(
   return { signed: true, signer: authority, team: team && team !== "not set" ? team : undefined };
 }
 
+/** What `codesign -dv` says about a program or a bundle. */
+export interface CodeSignature {
+  signed: boolean;
+  adhoc?: boolean;
+  /** The first Authority line: who signed it. */
+  authority?: string;
+  team?: string;
+  identifier?: string;
+}
+
+/**
+ * Who signed a program or an app bundle, from `codesign -dv` alone: no
+ * `--verify`, which hashes every resource of a bundle and takes minutes on a
+ * large app. Undefined when codesign is absent or could not read the file.
+ */
+export async function codesignInfo(runner: Runner, path: string): Promise<CodeSignature | undefined> {
+  const res = await runner("codesign", ["-dv", "--verbose=2", path], { timeoutMs: 15_000 });
+  if (res.missing) return undefined;
+  const text = `${res.stderr}\n${res.stdout}`;
+  if (/not signed at all|code object is not signed/i.test(text)) return { signed: false };
+  if (!res.ok && !/Authority=|Signature=adhoc|Identifier=/.test(text)) return undefined;
+  const identifier = /^Identifier=(.+)$/m.exec(text)?.[1]?.trim();
+  const team = /^TeamIdentifier=(.+)$/m.exec(text)?.[1]?.trim();
+  if (/Signature=adhoc/.test(text)) return { signed: false, adhoc: true, identifier };
+  return {
+    signed: true,
+    authority: /^Authority=(.+)$/m.exec(text)?.[1]?.trim(),
+    team: team && team !== "not set" ? team : undefined,
+    identifier,
+  };
+}
+
+/** Apple's own signing identities: the OS (Software Signing), the App Store, and Apple's Developer ID. */
+export const isAppleSigned = (sig: CodeSignature | undefined): boolean =>
+  !!sig?.signed &&
+  /^(Software Signing|Apple Mac OS Application Signing|Apple iPhone OS Application Signing|Developer ID Application: Apple Inc\.)/.test(sig.authority ?? "");
+
+/** The app bundle a program lives in (`/Applications/X.app/Contents/MacOS/x` → `/Applications/X.app`), if any. */
+export function appBundleOf(program: string | undefined): string | undefined {
+  const i = program?.indexOf(".app/Contents/") ?? -1;
+  return program && i > 0 ? program.slice(0, i + 4) : undefined;
+}
+
+/**
+ * A bundle's CFBundleIdentifier: read from an XML Info.plist directly, through
+ * `plutil` for a binary one (when `runner` is given). Undefined when unreadable.
+ */
+export async function bundleIdOf(bundle: string, runner?: Runner): Promise<string | undefined> {
+  const plist = join(bundle, "Contents/Info.plist");
+  const text = readSmall(plist);
+  if (text === undefined) return undefined;
+  const xml = /<key>CFBundleIdentifier<\/key>\s*<string>([^<]*)<\/string>/.exec(text)?.[1];
+  if (xml !== undefined) return decodeXml(xml).trim() || undefined;
+  if (!runner || !text.startsWith("bplist")) return undefined;
+  const r = await runner("plutil", ["-extract", "CFBundleIdentifier", "raw", "-o", "-", plist], { timeoutMs: 10_000 });
+  return r.ok ? r.stdout.trim() || undefined : undefined;
+}
+
+/** A finding for an IOC match: compromised unless said otherwise, citing the indicator's source. */
+export function iocHit(
+  m: Matcher,
+  f: Omit<NewFinding, "campaign" | "source" | "indicator" | "key" | "severity" | "surface"> & { severity?: Finding["severity"] },
+): NewFinding {
+  return {
+    surface: "host",
+    severity: "compromised",
+    ...f,
+    campaign: m.campaign.id,
+    source: m.indicator.source,
+    indicator: { type: m.indicator.type, value: m.indicator.value },
+    key: `host|${f.subject}|${m.indicator.type}:${m.indicator.value}`,
+  };
+}
+
 /** Shell startup files: the persistence that runs every time a terminal opens (or closes). */
 export const SHELL_STARTUP = [
   ".zshrc",
@@ -314,6 +393,67 @@ const SHELL_RISK: Rule[] = [
   // A program run from a temp or shared folder. Not hidden home folders: `source ~/.fzf.zsh` is everywhere.
   [(s) => s.split(/\s+/).some(inTemp), "runs from a temporary or shared folder"],
 ];
+
+/**
+ * ClickFix and what 2026 macOS stealers run once pasted into Terminal (AMOS,
+ * MacSync, Phexia...): a download piped into osascript, a download decoded
+ * and decompressed into a shell, a fake password dialog, a password checked
+ * with dscl or piped into sudo, quarantine stripped from an app, Gatekeeper
+ * turned off. Matched in shell history, where the pasted command stays.
+ */
+const CLICKFIX: Rule[] = [
+  [
+    (s) => {
+      const rest = from(s, FETCHER);
+      return !!rest && /\|\s*(sudo\s+(-\S+\s+)*)?(\S*\/)?osascript\b/i.test(rest);
+    },
+    "pipes a download into osascript (ClickFix)",
+  ],
+  [
+    (s) =>
+      FETCHER.test(s) &&
+      /\bbase64\s+(-\w*[dD]\b|--decode\b)/.test(s) &&
+      /\b(gunzip|zcat|gzip\s+(-\w*d\b|--decompress\b))/.test(s) &&
+      /\|\s*(sudo\s+(-\S+\s+)*)?(\S*\/)?((ba|z|da|k)?sh|osascript)\b/.test(s),
+    "downloads, decodes and decompresses a payload into a shell (ClickFix)",
+  ],
+  [
+    (s) => {
+      const rest = from(s, /\bosascript\b/i);
+      return !!rest && /display dialog/i.test(rest) && /hidden answer/i.test(rest);
+    },
+    "shows a fake password dialog (osascript display dialog with hidden answer)",
+  ],
+  [/\bdscl\s+\.\s+-authonly\b/, "checks a password with dscl . -authonly, how stealers validate a phished password"],
+  [
+    (s) => {
+      const rest = from(s, /\bxattr\b/);
+      return !!rest && /\s-[a-z]*[cd][a-z]*\b/.test(rest) && /\.app\b/i.test(rest);
+    },
+    "strips macOS's quarantine from an app, which skips Gatekeeper's check",
+  ],
+  [/\becho\b[^|\n]*\|\s*sudo\b[^|\n]*\s-[a-zA-Z]*S\b/, "pipes a password into sudo -S"],
+  [/\bspctl\s+(--master-disable|--global-disable)\b/, "turns Gatekeeper off"],
+];
+
+/** The ClickFix signals of one command line. */
+export function clickfixSignals(rawLine: string): string[] {
+  const line = rawLine.length > 4000 ? rawLine.slice(0, 4000) : rawLine;
+  return CLICKFIX.filter(([rule]) => hit(rule, line)).map(([, label]) => label);
+}
+
+/** History lines with ClickFix signals: the 1-based line, the command (zsh's ": <time>:0;" prefix off), when zsh recorded it. */
+export function clickfixLines(text: string): { line: number; text: string; signals: string[]; at?: string }[] {
+  const out: { line: number; text: string; signals: string[]; at?: string }[] = [];
+  for (const { line, text: raw } of logicalLines(text)) {
+    const zsh = /^: (\d+):\d+;/.exec(raw);
+    const cmd = (zsh ? raw.slice(zsh[0].length) : raw.replace(/^- cmd: /, "")).trim();
+    if (!cmd) continue;
+    const signals = clickfixSignals(cmd);
+    if (signals.length) out.push({ line, text: cmd, signals, at: zsh ? new Date(Number(zsh[1]) * 1000).toISOString() : undefined });
+  }
+  return out;
+}
 
 /** Physical lines joined where a line ends with a backslash, each with its first line number. */
 function logicalLines(text: string): { line: number; text: string }[] {
@@ -729,6 +869,13 @@ export async function processFindings(runner: Runner, home: string, os: NodeJS.P
         }
       }
     }
+    // A cryptocurrency miner (Phexia installs XMRig): its name, or a mining pool on its command line.
+    if (
+      /^(xmrig|xmr-stak)/i.test(basename(exe)) ||
+      /^(xmrig|xmr-stak)/i.test(basename(cmdline.split(/\s+/)[0] ?? "")) ||
+      /\bstratum\+(tcp|ssl|tls):\/\//i.test(cmdline)
+    )
+      signals = ["looks like a cryptocurrency miner (xmrig, or a stratum mining pool on its command line)", ...signals];
     if (!signals.length || seen.has(subject)) continue;
     seen.add(subject);
     out.push({

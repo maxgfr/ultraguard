@@ -95,7 +95,11 @@ function validateIndicator(ind: Indicator, at: string, usable: Set<string>, push
       push(`${at}.value`, 'not a valid branch name: it looks like a pattern, add "regex": true and anchor it (^...$)');
     if ((ind.type === "pr_title" || ind.type === "commit_message" || ind.type === "actor") && LOOKS_LIKE_REGEX.test(value))
       push(`${at}.value`, 'looks like a regular expression: add "regex": true and anchor it (^...$), or "regex": false to match it literally');
+    if ((ind.type === "launchd_label" || ind.type === "bundle_id") && (/[\s*?]/.test(value.trim()) || LOOKS_LIKE_REGEX.test(value)))
+      push(`${at}.value`, `a ${ind.type} is compared exactly (case-sensitive): this looks like a pattern, add "regex": true and anchor it (^...$)`);
   }
+  if (ind.type === "team_id" && !ind.regex && !/^[A-Z0-9]{10}$/i.test(value.trim()))
+    push(`${at}.value`, "an Apple Developer Team ID is 10 letters and digits (TeamIdentifier in codesign -dv)");
   if (ind.type === "package") {
     if (typeof ind.ecosystem !== "string" || !ind.ecosystem.trim()) push(`${at}.ecosystem`, "required for a package indicator");
     if (/.@v?\d|==/.test(value)) push(`${at}.value`, 'the package name only: put the version in "versions": ["1.2.3"]');
@@ -109,8 +113,6 @@ function validateIndicator(ind: Indicator, at: string, usable: Set<string>, push
     }
   }
   if (ind.type === "sha256" && !/^[a-f0-9]{64}$/i.test(value.trim())) push(`${at}.value`, "a sha256 is 64 hex characters");
-  if (ind.type === "team_id" && !ind.regex && !/^[A-Z0-9]{10}$/.test(value.trim()))
-    push(`${at}.value`, "an Apple Developer Team ID is 10 capital letters and digits, e.g. A1B2C3D4E5");
   if (ind.type === "ip" && !/^[\d.]+$|^[a-f0-9:]+$/i.test(defang(value).trim())) push(`${at}.value`, "an IPv4 or IPv6 address");
 }
 
@@ -198,10 +200,14 @@ function compile(c: Campaign, ind: Indicator): Matcher {
     // indicator for the variants a source describes.
     const want = value.trim().toLowerCase();
     test = (s) => s.trim().toLowerCase() === want;
-  } else if (ind.type === "launchd_label" || ind.type === "team_id" || ind.type === "bundle_id") {
-    // Exact and case-sensitive, as launchd and codesign compare them.
-    const want = value.trim();
+  } else if (ind.type === "launchd_label" || ind.type === "bundle_id") {
+    // Exact and case-sensitive, as launchd and LaunchServices compare them. A label
+    // copied with its file name ("com.finder.helper.plist") means the label.
+    const want = ind.type === "launchd_label" ? value.trim().replace(/\.plist$/, "") : value.trim();
     test = (s) => s.trim() === want;
+  } else if (ind.type === "team_id") {
+    const want = value.trim().toUpperCase();
+    test = (s) => s.trim().toUpperCase() === want;
   } else if (ind.type.endsWith("_prefix")) {
     test = (s) => s.toLowerCase().startsWith(value.toLowerCase());
   } else if (ind.type === "string") {

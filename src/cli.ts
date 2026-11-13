@@ -33,9 +33,11 @@ import { defaultRunner, type Runner } from "./runner.js";
 import { scanCloud } from "./scan/cloud.js";
 import { type CheckerVuln, scanDeps } from "./scan/deps.js";
 import { scanGithub } from "./scan/github.js";
+import { DEFAULT_RESCAN_DAYS } from "./scan/avcache.js";
 import { scanHost } from "./scan/host.js";
 import { scanSoftware } from "./scan/software.js";
 import { assessVulnerabilities, type SoftwareScan } from "./scan/vulns.js";
+import { detectXProtect, type XProtectInfo, xprotectSource } from "./scan/xprotect.js";
 import { defaultRegistryGet, type RegistryGet, scanNpmPublishes } from "./scan/registry.js";
 import { walk, type WalkResult } from "./scan/walk.js";
 import { type Campaign, type Gap, type IocFile, SURFACES, type Surface } from "./types.js";
@@ -96,7 +98,10 @@ SCAN FLAGS
   --depth <n>           host, deps: walk depth (default 6)
   --skip-live           host: skip crontab, open connections, processes, signatures, antivirus
   --no-av               host: skip the ClamAV pass (on by default when ClamAV is installed)
-  --av-full             host: ClamAV over every root instead of the targeted list (slow)
+  --av-full             host: ClamAV and YARA over every file under the roots instead of
+                        the targeted list; incremental: unchanged files scanned clean
+                        recently are skipped (the first run takes hours, the next minutes)
+  --av-rescan-days <n>  host: with --av-full, rescan unchanged files after n days (default 7)
   --yara <rules>        host: also run YARA rules (a .yar file or a folder of them)
   --yara-source <S#>    host: the source the YARA rules came from, cited by their findings
   --no-rules            host: skip the community YARA rules (YARA-Forge) installed by rules update
@@ -147,6 +152,7 @@ export const VALUE_FLAGS = [
   "surfaces",
   "state",
   "resweep-days",
+  "av-rescan-days",
   "notify-issue",
   "limit",
   "yara",
@@ -170,6 +176,7 @@ const SCAN = [
   "npm-user",
   "no-av",
   "av-full",
+  "av-rescan-days",
   "yara",
   "yara-source",
   "no-rules",
@@ -374,11 +381,19 @@ async function runScan(surface: "github" | "host" | "deps" | "cloud", a: Command
       yaraSource: argValue(a, "yara-source"),
       listDir: run.dir,
       stateDir: stateDir(argValue(a, "state")),
+      avRescanDays: argInt(a, "av-rescan-days", { min: 0, max: 365 }),
       ...communityRules(a, run),
+      xprotect: process.platform === "darwin" && !argBool(a, "skip-live") ? await xprotectRules(run) : undefined,
     });
     const f = run.recordSurface(r.result, r.findings, [...refreshGaps, ...r.gaps]);
     run.write("host-inventory.json", r.inventory);
-    return `${refreshed}host: ${r.result.stats.files ?? 0} files, ${r.result.stats.startupItems ?? 0} startup items, ${r.result.stats.credentialFiles ?? 0} credential files; ${f.length} finding(s)`;
+    const st = r.result.stats;
+    // --av-full is incremental: say how much of the disk this run read and how much the cache let it skip.
+    const full =
+      st.avScanned !== undefined
+        ? `\nantivirus (--av-full): ${st.avScanned} file(s) scanned, ${st.avSkipped ?? 0} unchanged and scanned clean in the last ${argInt(a, "av-rescan-days", { min: 0, max: 365 }) ?? DEFAULT_RESCAN_DAYS} days skipped`
+        : "";
+    return `${refreshed}host: ${st.files ?? 0} files, ${st.startupItems ?? 0} startup items, ${st.credentialFiles ?? 0} credential files; ${f.length} finding(s)${full}`;
   }
   if (surface === "deps") {
     const roots = rootsOf(a);
@@ -427,6 +442,13 @@ function communityRules(
     origin: "rules",
   });
   return { community: { source: meta.source, compiled: meta.compiled, label: `YARA-Forge ${meta.set}`, sourceId: src.id, ageDays: rulesAgeDays(meta) } };
+}
+
+/** Apple's XProtect rules for scan host (macOS), registered as a source of the run so their matches cite it. */
+async function xprotectRules(run: Run): Promise<XProtectInfo> {
+  const info = await detectXProtect(runner);
+  if (!info.missing && info.rules.length) info.sourceId = run.addSource(xprotectSource(info)).id;
+  return info;
 }
 
 const SURFACE_OF: Record<string, Surface[]> = { github: ["github:account", "github:repos"], host: ["host"], deps: ["deps"], cloud: ["cloud"] };

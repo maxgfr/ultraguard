@@ -10,14 +10,22 @@ import { closeSync, existsSync, lstatSync, openSync, readdirSync, readFileSync, 
 import { homedir, platform, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { globRegex, type Matcher, matchers, normEco, reviewStart } from "../ioc.js";
+import { mapPool } from "../pool.js";
 import type { Runner } from "../runner.js";
 import type { Finding, Gap, IocFile, SurfaceResult } from "../types.js";
 import { readJson, scanAgents } from "./agents.js";
-import { antivirusPass, avTargetList, dropFolders, excludedBy, yaraPass } from "./antivirus.js";
+import { appFindings } from "./macos.js";
+import { appleLookalikeFolders, hiddenHomePrograms, stagingArchives } from "./stealer.js";
+import { antivirusPass, avTargetList, dropFolders, excludedBy, yaraPass, yaraRuleFiles } from "./antivirus.js";
+import { DEFAULT_RESCAN_DAYS, fullFiles, type Incremental, ruleSetKey, ScanCache } from "./avcache.js";
 import {
+  appBundleOf,
   backdated,
   browserExtensions,
+  bundleIdOf,
+  codesignInfo,
   changedMs,
+  clickfixLines,
   configFindings,
   credentialInventory,
   EXTENSION_ENTRY,
@@ -27,6 +35,7 @@ import {
   type HostInventory,
   INTERPRETERS,
   interpretedScript,
+  iocHit,
   npmCacheHits,
   packageStoreHits,
   processFindings,
@@ -41,6 +50,7 @@ import {
   startupCommand,
 } from "./hostintel.js";
 import type { WalkResult } from "./walk.js";
+import { hardeningFindings, remediatorFindings, type XProtectInfo, xprotectYara } from "./xprotect.js";
 
 type NewFinding = Omit<Finding, "id">;
 
@@ -72,6 +82,16 @@ export interface HostScanOptions {
   community?: { source: string; compiled?: string; label: string; sourceId?: string; ageDays: number };
   /** yara is installed but no community rules are: say how to get them. */
   communityMissing?: boolean;
+  /** --av-full: days before a file scanned clean is scanned again even if unchanged (default 7). */
+  avRescanDays?: number;
+  /** macOS: XProtect's version and rule files (detectXProtect), with the run's [S#] for them. Without it, no XProtect YARA pass. */
+  xprotect?: XProtectInfo;
+  /** Where stealers stage their loot archives (default /tmp, $TMPDIR, /Users/Shared; the drop folders when those are given). */
+  stagingDirs?: string[];
+  /** macOS: Application Support folders checked for hidden Apple look-alikes (default ~/Library/Application Support, and /Library/Application Support with the live checks). */
+  supportDirs?: string[];
+  /** macOS: folders holding installed apps (default /Applications and ~/Applications). Read with the live checks. */
+  appDirs?: string[];
 }
 
 /** A character below space, or DEL: what a line-oriented tool splits or hides on. */
@@ -100,6 +120,8 @@ export function sha256File(p: string, max = Number.POSITIVE_INFINITY): string | 
 }
 
 const MAX_TEXT = 2 * 1024 * 1024;
+/** Targets hashed against sha256 IOCs: the scanners read the whole target list, hashing stays on the short part of it. */
+const MAX_HASHED = 5000;
 
 function readText(p: string, max = MAX_TEXT): string | undefined {
   try {
@@ -110,20 +132,7 @@ function readText(p: string, max = MAX_TEXT): string | undefined {
   }
 }
 
-function hitOf(
-  m: Matcher,
-  f: Omit<NewFinding, "campaign" | "source" | "indicator" | "key" | "severity" | "surface"> & { severity?: Finding["severity"] },
-): NewFinding {
-  return {
-    surface: "host",
-    severity: "compromised",
-    ...f,
-    campaign: m.campaign.id,
-    source: m.indicator.source,
-    indicator: { type: m.indicator.type, value: m.indicator.value },
-    key: `host|${f.subject}|${m.indicator.type}:${m.indicator.value}`,
-  };
-}
+const hitOf = iocHit;
 
 function startupDirs(home: string, os: NodeJS.Platform): string[] {
   if (os === "darwin") return [join(home, "Library/LaunchAgents"), "/Library/LaunchAgents", "/Library/LaunchDaemons"];
@@ -197,6 +206,7 @@ export async function scanHost(
   const inventory: HostInventory = { startupItems: [], credentials: [], recentExtensions: [], shellStartup: [] };
   const dropDirs = opts.dropDirs ?? defaultDropDirs(home);
   const startupFolders = opts.startupDirs ?? startupDirs(home, os);
+  const appDirs = opts.appDirs ?? ["/Applications", join(home, "Applications")];
 
   const M = {
     file: matchers(iocs, "file", "workflow_file"),
@@ -205,6 +215,9 @@ export async function scanHost(
     net: matchers(iocs, "ip", "domain"),
     process: matchers(iocs, "process"),
     pkg: matchers(iocs, "package").filter((m) => (m.indicator.ecosystem ?? "").toLowerCase().startsWith("vs") || m.indicator.ecosystem === "openvsx"),
+    label: matchers(iocs, "launchd_label"),
+    team: matchers(iocs, "team_id"),
+    bundle: matchers(iocs, "bundle_id"),
   };
   const hashes = new Map(M.hash.map((m) => [m.indicator.value.toLowerCase(), m]));
   const hashed = new Set<string>();
@@ -406,6 +419,14 @@ export async function scanHost(
   }
   result.stats.vscodeDirs = tree.vscodeDirs.length;
 
+  const hashOf = (f: string | undefined) => {
+    if (!f || !hashes.size) return undefined;
+    hashed.add(f);
+    return hashes.get(sha256File(f) ?? "");
+  };
+  // ultraguard's own folders: never targets, never findings.
+  const ownDirs = [opts.listDir, opts.stateDir].filter((x): x is string => !!x);
+
   // 3. Startup items: an IOC inside is a compromise. Without one, the item's
   // facts decide: who signed what it runs, where that lives, what the command
   // does, and whether it changed recently. A risk signal is worth a look
@@ -509,6 +530,9 @@ export async function scanHost(
     const label = /<key>Label<\/key>\s*<string>([^<]+)<\/string>/.exec(text)?.[1] ?? name.replace(/\.plist$/, "");
     const appleProgram = /^\/(System|usr\/libexec|usr\/sbin|Library\/Apple)\//.test(executable ?? "") && !INTERPRETERS.test(basename(executable ?? ""));
     if (/^com\.apple\./i.test(label) && !appleProgram) item.signals.unshift(`is named like an Apple service (${label}) but is not Apple's`);
+    // A program inside an app bundle: the bundle's identifier, for bundle_id IOCs.
+    const bundle = item.exists ? appBundleOf(executable) : undefined;
+    const bundleId = bundle && M.bundle.length ? await bundleIdOf(bundle, opts.skipLive ? undefined : runner) : undefined;
     inventory.startupItems.push(item);
     const recent = changed >= sinceMs;
     const facts = [
@@ -519,12 +543,14 @@ export async function scanHost(
     // A strong signal (fetch-and-run, reverse shell, temp folder) is suspicious at any date.
     const strong = item.signals.some((s) => !s.startsWith("points to") && !s.startsWith("is not signed"));
     // An IOC in the item, in the script it runs, its name, or the hash of the item, its program or its script.
-    const hashOf = (f: string | undefined) => {
-      if (!f || !hashes.size) return undefined;
-      hashed.add(f);
-      return hashes.get(sha256File(f) ?? "");
-    };
+    // The launchd label, the file name without its extension (a systemd unit's name), the signing team, the app bundle.
+    const unit = name.replace(/\.(plist|service|timer|socket|path|desktop)$/, "");
+    const idHit =
+      M.label.find((x) => x.test(label) || x.test(unit) || x.test(name)) ??
+      (item.team ? M.team.find((x) => x.test(item.team ?? "")) : undefined) ??
+      (bundleId ? M.bundle.find((x) => x.test(bundleId)) : undefined);
     const m =
+      idHit ??
       M.content.find((x) => x.test(text ?? "")) ??
       (interp.text ? M.content.find((x) => x.test(interp.text ?? "")) : undefined) ??
       (fileSeen.has(p) ? undefined : M.file.find((x) => x.test(p))) ??
@@ -538,7 +564,9 @@ export async function scanHost(
           title:
             m.indicator.type === "sha256"
               ? `Startup item ${p}, or the program or script it runs, matches the sha256 ${m.indicator.value}`
-              : `Startup item ${p} ${m.indicator.type === "file" || m.indicator.type === "workflow_file" ? "matches" : "contains"} "${m.indicator.value}"`,
+              : m === idHit
+                ? `Startup item ${p} ${m.indicator.type === "launchd_label" ? "has the launchd label" : m.indicator.type === "team_id" ? `runs ${executable} signed by team` : `runs a program of the app`} "${m.indicator.value}"`
+                : `Startup item ${p} ${m.indicator.type === "file" || m.indicator.type === "workflow_file" ? "matches" : "contains"} "${m.indicator.value}"`,
           at,
           evidence: { kind: "file", ref: p, excerpt: command },
         }),
@@ -555,6 +583,46 @@ export async function scanHost(
       });
   }
   result.stats.startupItems = startupCount;
+
+  // 3b. Hidden programs in the home folder (AMOS's ~/.agent and ~/.mainhelper), hidden Apple look-alike folders, loot archives.
+  for (const h of hiddenHomePrograms(home, inventory.startupItems)) {
+    if (fileSeen.has(h.path)) continue;
+    const m = hashOf(h.path) ?? M.content.find((x) => x.test(h.path));
+    if (m)
+      findings.push(
+        hitOf(m, { subject: h.path, title: `Hidden file ${h.path} (${h.why}) matches "${m.indicator.value}"`, evidence: { kind: "file", ref: h.path } }),
+      );
+    else
+      findings.push({
+        surface: "host",
+        severity: "suspicious",
+        subject: h.path,
+        title: `Hidden program in your home folder: ${h.path} is ${h.why}. macOS backdoors hide there (AMOS's ~/.agent, ~/.mainhelper)`,
+        evidence: { kind: "file", ref: h.path, excerpt: h.runBy ? `run by ${h.runBy}` : undefined },
+        key: `host|hidden-home|${h.path}`,
+      });
+  }
+  if (os === "darwin") {
+    const support = opts.supportDirs ?? [join(home, "Library/Application Support"), ...(opts.skipLive ? [] : ["/Library/Application Support"])];
+    for (const d of appleLookalikeFolders(support))
+      if (!fileSeen.has(d))
+        findings.push({
+          surface: "host",
+          severity: "suspicious",
+          subject: d,
+          title: `Hidden folder named like Apple's: ${d}. Apple does not hide its folders in Application Support; AMOS stages its backdoor in .com.apple.* folders there`,
+          evidence: { kind: "file", ref: d },
+          key: `host|apple-lookalike|${d}`,
+        });
+  }
+  const staging = await stagingArchives(runner, opts.stagingDirs ?? opts.dropDirs ?? [tmpdir(), "/tmp", "/Users/Shared"], {
+    sinceMs,
+    nowMs,
+    skip: excludedBy(ownDirs),
+  });
+  findings.push(...staging.findings.filter((f) => !fileSeen.has(f.subject)));
+  gaps.push(...staging.gaps);
+  result.stats.stagingArchives = staging.archives;
 
   // 4a. AI coding agents: hooks, MCP servers, base URLs, instruction files (home and every clone).
   // One malformed config must not stop the surface: an exception is a gap.
@@ -593,7 +661,23 @@ export async function scanHost(
     const text = existsSync(p) ? readText(p, 20 * 1024 * 1024) : undefined;
     if (!text) continue;
     const lines = text.split("\n");
+    // A pasted ClickFix chain in history: suspicious alone, compromised when it names an IOC.
+    const pasted = /_history$/.test(p) ? clickfixLines(text) : [];
+    const chained = new Set<number>();
     for (const m of M.content) {
+      const c = pasted.find((x) => m.test(x.text));
+      if (c) {
+        chained.add(c.line);
+        findings.push(
+          hitOf(m, {
+            subject: p,
+            title: `${p} line ${c.line}: a pasted command that ${c.signals.join("; ")}, with "${m.indicator.value}"`,
+            at: c.at,
+            evidence: { kind: "file", ref: `${p}:${c.line}`, excerpt: c.text.slice(0, 200) },
+          }),
+        );
+        continue;
+      }
       const ln = lines.findIndex((l) => m.test(l));
       if (ln < 0) continue;
       findings.push(
@@ -613,6 +697,24 @@ export async function scanHost(
         }),
       );
     }
+    const rest = pasted.filter((c) => !chained.has(c.line));
+    for (const c of rest.slice(0, 20))
+      findings.push({
+        surface: "host",
+        severity: "suspicious",
+        subject: p,
+        title: `${basename(p)} line ${c.line}: a pasted command that ${c.signals.join("; ")} (the ClickFix pattern of macOS stealers)`,
+        at: c.at,
+        evidence: { kind: "file", ref: `${p}:${c.line}`, excerpt: c.text.slice(0, 200) },
+        key: `host|${p}|clickfix|${c.line}`,
+      });
+    if (rest.length > 20)
+      gaps.push({
+        surface: "host",
+        what: `${rest.length - 20} more ClickFix-like line(s) in ${p}`,
+        why: "only the first 20 are reported",
+        fix: `grep -n osascript ${p}`,
+      });
   }
 
   // 5. Editor extensions named by an IOC, in VS Code and every fork (Cursor, Windsurf, VSCodium, Antigravity, Kiro...),
@@ -701,6 +803,18 @@ export async function scanHost(
       evidence: { kind: "file", ref: "host-inventory.json" },
       key: "host|browser-ext-recent",
     });
+
+  // 5c. macOS apps: bundle_id and team_id IOCs; new unsigned apps and Apple look-alikes. Live: codesign and plutil run.
+  if (os === "darwin" && !opts.skipLive) {
+    const apps = await appFindings(runner, appDirs, {
+      nowMs,
+      sinceMs,
+      team: M.team,
+      bundle: M.bundle,
+    });
+    findings.push(...apps.findings);
+    result.stats.apps = apps.apps.length;
+  }
 
   // 6. Local clones of repositories the GitHub scan found hit.
   if (opts.hitRepos?.length) {
@@ -803,7 +917,42 @@ export async function scanHost(
       }
     }
     findings.push(...(await processFindings(runner, home, os)));
-  } else gaps.push({ surface: "host", what: "crontab, open connections, processes and code signatures", why: "live checks were skipped" });
+    // team_id IOCs: who signed each running program, at most 400 distinct ones.
+    if (M.team.length && os === "darwin") {
+      const ps = await runner("ps", ["-axo", "comm="], { timeoutMs: 10_000 });
+      const exes = [...new Set(ps.stdout.split("\n").map((l) => l.trim()))].filter((e) => e.startsWith("/"));
+      const signed = await mapPool(exes.slice(0, 400), 8, async (exe) => ({ exe, sig: await codesignInfo(runner, exe) }));
+      for (const { exe, sig } of signed) {
+        const m = sig?.team ? M.team.find((x) => x.test(sig.team ?? "")) : undefined;
+        if (m)
+          findings.push(
+            hitOf(m, {
+              subject: exe,
+              title: `Running program ${exe} is signed by team "${m.indicator.value}"`,
+              evidence: { kind: "command", ref: `codesign -dv ${exe}`, excerpt: [sig?.identifier, sig?.authority].filter(Boolean).join(" | ") },
+            }),
+          );
+      }
+      if (!ps.ok)
+        gaps.push({
+          surface: "host",
+          what: "the signing team of running programs (team_id IOCs)",
+          why: "ps failed",
+          fix: "ps -axo comm= | xargs -n1 codesign -dv",
+        });
+      else if (exes.length > 400)
+        gaps.push({
+          surface: "host",
+          what: `the signing team of ${exes.length - 400} running program(s) past the first 400`,
+          why: "codesign runs on a bounded number of programs",
+        });
+    }
+  } else
+    gaps.push({
+      surface: "host",
+      what: `crontab, open connections, processes and code signatures${os === "darwin" ? ", apps, XProtect and XProtect Remediator, Gatekeeper, SIP and update settings" : ""}`,
+      why: "live checks were skipped",
+    });
 
   // 8. What a stealer here would take: the credential stores, by path.
   inventory.credentials = credentialInventory(
@@ -831,6 +980,38 @@ export async function scanHost(
   );
   const flagged = findings.map((f) => f.subject).filter((s) => s.startsWith("/"));
   const full = opts.av === "full";
+  // --av-full: every file under the roots, listed once for every scanner, each skipping what its cache already saw clean.
+  let fullList: ReturnType<typeof fullFiles> | undefined;
+  const everyFile = () => {
+    if (!fullList) {
+      fullList = fullFiles(opts.roots ?? [home], exclude);
+      result.stats.fullFiles = fullList.files.length;
+      if (fullList.unreadable)
+        gaps.push({
+          surface: "host",
+          what: `${fullList.unreadable} folder(s) or file(s) under the full-pass roots`,
+          why: "this user cannot list or stat them",
+        });
+      if (fullList.capped)
+        gaps.push({
+          surface: "host",
+          what: `files past the first ${fullList.files.length} of the full pass`,
+          why: "the full pass is capped",
+          fix: "narrow --roots",
+        });
+    }
+    return fullList.files;
+  };
+  const rescanMs = (opts.avRescanDays ?? DEFAULT_RESCAN_DAYS) * 86_400_000;
+  const incremental = (name: string, ruleFiles: string[]): Incremental | undefined =>
+    full
+      ? {
+          files: everyFile(),
+          cache: opts.stateDir ? ScanCache.open(opts.stateDir, name, ruleSetKey(ruleFiles)) : undefined,
+          nowMs,
+          maxAgeMs: rescanMs,
+        }
+      : undefined;
   let targetList: ReturnType<typeof avTargetList> | undefined;
   const targets = () => {
     targetList ??= avTargetList(home, inventory, flagged, sinceMs, { exclude, folders: opts.dropDirs ? dropDirs : undefined, nowMs });
@@ -840,7 +1021,10 @@ export async function scanHost(
   if (hashes.size) {
     const skip = excludedBy(exclude);
     let tooBig = 0;
-    const files = targets().targets.flatMap((t) => {
+    // The first 5,000 targets: startup programs, flagged files and new extensions come first; the temp folders' recent files fill the rest.
+    const all = targets().targets;
+    const beyond = Math.max(0, all.length - MAX_HASHED);
+    const files = all.slice(0, MAX_HASHED).flatMap((t) => {
       try {
         return statSync(t).isDirectory()
           ? readdirOr(t)
@@ -875,7 +1059,7 @@ export async function scanHost(
     result.stats.hashed = hashed.size;
     gaps.push({
       surface: "host",
-      what: `sha256 of files outside startup programs, flagged files, recent temp and Downloads files and new extensions${tooBig ? ` (and ${tooBig} file(s) over 500 MB)` : ""}`,
+      what: `sha256 of files outside startup programs, flagged files, recent temp and Downloads files and new extensions${tooBig ? ` (and ${tooBig} file(s) over 500 MB)` : ""}${beyond ? ` (and ${beyond} recent file(s) past the first ${MAX_HASHED} targets)` : ""}`,
       why: "hashing every file on the disk takes hours",
     });
   }
@@ -888,16 +1072,23 @@ export async function scanHost(
       listDir,
       now: opts.now,
       exclude,
-      full: full ? (opts.roots ?? [home]) : undefined,
       targets: full ? undefined : targets(),
+      incremental: full ? { files: everyFile(), nowMs, maxAgeMs: rescanMs, stateDir: opts.stateDir } : undefined,
     });
     findings.push(...av.findings);
     gaps.push(...av.gaps);
     Object.assign(result.stats, av.stats);
   } else if (opts.av === "off") gaps.push({ surface: "host", what: "the antivirus pass", why: "--no-av" });
-  const yaraTargets = () => (full ? (opts.roots ?? [home]) : targets().targets);
+  const yaraTargets = () => (full ? [] : targets().targets);
   if (opts.yara) {
-    const y = await yaraPass(runner, { rules: opts.yara, targets: yaraTargets(), recursive: full, listDir, source: opts.yaraSource, exclude });
+    const y = await yaraPass(runner, {
+      rules: opts.yara,
+      targets: yaraTargets(),
+      listDir,
+      source: opts.yaraSource,
+      exclude,
+      incremental: incremental("yara", yaraRuleFiles(opts.yara)),
+    });
     findings.push(...y.findings);
     gaps.push(...y.gaps);
     Object.assign(result.stats, y.stats);
@@ -911,7 +1102,7 @@ export async function scanHost(
       community: true,
       label: c.label,
       targets: yaraTargets(),
-      recursive: full,
+      incremental: incremental("yara-forge", [c.compiled ?? c.source]),
       listDir,
       source: c.sourceId,
       // The rule text (.yar) sits next to the compiled set (.yarc): it holds every string the rules look for.
@@ -934,6 +1125,27 @@ export async function scanHost(
       why: "not installed",
       fix: "ultraguard rules update (needs yara; yarac makes scans faster)",
     });
+  // macOS's own antivirus: Apple's YARA rules over the same targets, XProtect Remediator's reports, and the hardening stealers turn off.
+  if (os === "darwin" && !opts.skipLive) {
+    const mac: NonNullable<HostInventory["macos"]> = {};
+    if (opts.xprotect) {
+      const xp = opts.xprotect;
+      mac.xprotect = { version: xp.version, installed: xp.installed, ageDays: xp.ageDays };
+      const y = await xprotectYara(runner, xp, { targets: yaraTargets(), listDir, exclude: [...exclude, xp.bundle], incremental });
+      findings.push(...y.findings);
+      gaps.push(...y.gaps);
+      Object.assign(result.stats, y.stats);
+    }
+    const xpr = await remediatorFindings(runner);
+    findings.push(...xpr.findings);
+    gaps.push(...xpr.gaps);
+    Object.assign(result.stats, xpr.stats);
+    const hard = await hardeningFindings(runner, { appDirs });
+    findings.push(...hard.findings);
+    gaps.push(...hard.gaps);
+    mac.hardening = hard.hardening;
+    inventory.macos = mac;
+  }
   gaps.push({
     surface: "host",
     what: "login items registered in System Settings, Safari extensions, kernel and system extensions",

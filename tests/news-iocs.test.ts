@@ -12,7 +12,7 @@ const file = (indicators: Omit<Indicator, "source">[]): IocFile => ({
 });
 
 describe("launchd_label, team_id, bundle_id", () => {
-  it("ioc set accepts them, and refuses a team_id that is not 10 capitals and digits", () => {
+  it("ioc set accepts them, and refuses a team_id that is not 10 letters and digits", () => {
     const ok = file([
       { type: "launchd_label", value: "com.finder.helper" },
       { type: "launchd_label", value: "^com\\.apple\\.accountsd\\.helper$", regex: true },
@@ -24,7 +24,7 @@ describe("launchd_label, team_id, bundle_id", () => {
     expect(bad.map((p) => p.path)).toEqual(["campaigns[0].indicators[0].value"]);
   });
 
-  it("match exactly and case-sensitively, or by regex", () => {
+  it("labels and bundle ids match exactly and case-sensitively, Team IDs regardless of case, or by regex", () => {
     const m = matchers(
       file([
         { type: "launchd_label", value: "com.finder.helper" },
@@ -40,7 +40,7 @@ describe("launchd_label, team_id, bundle_id", () => {
     expect(label?.test("com.finder.helper.plist")).toBe(false);
     expect(label?.test("COM.FINDER.HELPER")).toBe(false);
     expect(team?.test("ZZ00ZZ00ZZ")).toBe(true);
-    expect(team?.test("zz00zz00zz")).toBe(false);
+    expect(team?.test("zz00zz00zz")).toBe(true); // codesign prints capitals; a lower-case copy still means the same team
     expect(bundle?.test("com.example.crashreporter")).toBe(true);
   });
 });

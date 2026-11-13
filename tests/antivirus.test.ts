@@ -283,14 +283,17 @@ describe("antivirus and yara regressions", () => {
     const t1 = join(home, "t1");
     mkdirSync(join(home, "Downloads"), { recursive: true });
     mkdirSync(t1, { recursive: true });
-    for (let i = 0; i < 2100; i++) writeFileSync(join(t1, `f${i}`), "x");
+    for (let i = 0; i < 10_100; i++) writeFileSync(join(t1, `f${i}`), "x");
     writeFileSync(join(home, "Downloads", "zzz-dropper.bin"), "x");
-    mkdirSync(join(home, "Downloads/a/b/c/d"), { recursive: true });
+    // Six levels down is still listed; the seventh is a named gap.
+    mkdirSync(join(home, "Downloads/a/b/c/d/e/f/g"), { recursive: true });
+    writeFileSync(join(home, "Downloads/a/b/c/d/e/f/deep.bin"), "x");
     symlinkSync(t1, join(home, "t2"));
     const r = avTargetList(home, inv(), [], 0, { folders: [join(home, "Downloads"), t1, join(home, "t2")] });
-    expect(r.targets[0]).toBe(join(home, "Downloads", "zzz-dropper.bin"));
-    expect(r.targets).toHaveLength(2001);
-    expect(r.truncated).toEqual([`1 folder(s) in ${join(home, "Downloads")} deeper than 3 levels`, `recent files in ${t1} past the first 2000`]);
+    expect(r.targets.slice(0, 2).sort()).toEqual([join(home, "Downloads/a/b/c/d/e/f/deep.bin"), join(home, "Downloads", "zzz-dropper.bin")]);
+    expect(r.targets).toContain(join(home, "Downloads/a/b/c/d/e/f/deep.bin"));
+    expect(r.targets).toHaveLength(10_002);
+    expect(r.truncated).toEqual([`1 folder(s) in ${join(home, "Downloads")} deeper than 6 levels`, `recent files in ${t1} past the first 10000`]);
     expect(dropFolders(home)).toContain(tmpdir());
   });
 
