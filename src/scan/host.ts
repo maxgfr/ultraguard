@@ -6,30 +6,40 @@
 // "suspicious": the scan cannot tell a fresh install from a dropper, the agent
 // and the user can, so the report asks them to judge.
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { closeSync, existsSync, lstatSync, openSync, readdirSync, readFileSync, readSync, realpathSync, statSync } from "node:fs";
 import { homedir, platform, tmpdir } from "node:os";
-import { basename, join } from "node:path";
-import { type Matcher, matchers, reviewStart } from "../ioc.js";
+import { basename, dirname, join } from "node:path";
+import { globRegex, type Matcher, matchers, normEco, reviewStart } from "../ioc.js";
 import type { Runner } from "../runner.js";
 import type { Finding, Gap, IocFile, SurfaceResult } from "../types.js";
-import { scanAgents } from "./agents.js";
+import { readJson, scanAgents } from "./agents.js";
+import { antivirusPass, avTargetList, dropFolders, excludedBy, yaraPass } from "./antivirus.js";
 import {
-  SHELL_STARTUP,
+  backdated,
+  browserExtensions,
+  changedMs,
   configFindings,
+  credentialInventory,
+  EXTENSION_ENTRY,
+  extensionDirs,
+  extensionEntryFile,
   gitHookFindings,
+  type HostInventory,
+  INTERPRETERS,
   interpretedScript,
   npmCacheHits,
-  credentialInventory,
-  type HostInventory,
+  packageStoreHits,
   processFindings,
+  pthFindings,
   recentExtensions,
   riskSignals,
+  SELECTOR_RUN,
   type StartupItem,
+  shellStartupFiles,
   shellStartupFindings,
   signerOf,
   startupCommand,
 } from "./hostintel.js";
-import { antivirusPass, avTargets, yaraPass } from "./antivirus.js";
 import type { WalkResult } from "./walk.js";
 
 type NewFinding = Omit<Finding, "id">;
@@ -42,6 +52,8 @@ export interface HostScanOptions {
   hitRepos?: string[];
   /** Directories that hold startup items, overriding the platform defaults (tests). */
   startupDirs?: string[];
+  /** Folders a dropper writes to (Downloads, temp folders, caches), overriding the defaults (tests): probed for file IOCs by name, listed for recent files. */
+  dropDirs?: string[];
   /** Skip commands that read live system state (crontab, lsof, ps): tests and sandboxes. */
   skipLive?: boolean;
   /** Antivirus: "off", targeted (default) or every root ("full"). */
@@ -54,6 +66,8 @@ export interface HostScanOptions {
   yaraSource?: string;
   /** Where the scanners' target lists are written (the run directory). */
   listDir?: string;
+  /** ultraguard's state folder (community rules): never a scanner target or finding. */
+  stateDir?: string;
   /** Installed community rules (YARA-Forge) and the run's [S#] for them. */
   community?: { source: string; compiled?: string; label: string; sourceId?: string; ageDays: number };
   /** yara is installed but no community rules are: say how to get them. */
@@ -63,18 +77,31 @@ export interface HostScanOptions {
 /** A character below space, or DEL: what a line-oriented tool splits or hides on. */
 const hasControlChar = (s: string) => [...s].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127);
 
-const MAX_HASH_BYTES = 50 * 1024 * 1024;
-
-function sha256File(p: string): string | undefined {
+/** sha256 of a file, read in 1 MB chunks (no size limit unless `max` is given). Undefined when unreadable or over `max`. */
+export function sha256File(p: string, max = Number.POSITIVE_INFINITY): string | undefined {
+  let fd: number | undefined;
   try {
-    if (statSync(p).size > MAX_HASH_BYTES) return undefined;
-    return createHash("sha256").update(readFileSync(p)).digest("hex");
+    const st = statSync(p);
+    if (!st.isFile() || st.size > max) return undefined;
+    fd = openSync(p, "r");
+    const h = createHash("sha256");
+    const buf = Buffer.alloc(1024 * 1024);
+    for (;;) {
+      const n = readSync(fd, buf, 0, buf.length, null);
+      if (n <= 0) break;
+      h.update(buf.subarray(0, n));
+    }
+    return h.digest("hex");
   } catch {
     return undefined;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
   }
 }
 
-function readText(p: string, max = 2 * 1024 * 1024): string | undefined {
+const MAX_TEXT = 2 * 1024 * 1024;
+
+function readText(p: string, max = MAX_TEXT): string | undefined {
   try {
     if (statSync(p).size > max) return undefined;
     return readFileSync(p, "utf8");
@@ -100,8 +127,58 @@ function hitOf(
 
 function startupDirs(home: string, os: NodeJS.Platform): string[] {
   if (os === "darwin") return [join(home, "Library/LaunchAgents"), "/Library/LaunchAgents", "/Library/LaunchDaemons"];
-  return [join(home, ".config/systemd/user"), join(home, ".config/autostart"), "/etc/systemd/system", "/etc/cron.d", "/etc/xdg/autostart"];
+  return [
+    join(home, ".config/systemd/user"),
+    join(home, ".local/share/systemd/user"),
+    join(home, ".config/autostart"),
+    join(home, ".config/environment.d"),
+    "/etc/systemd/system",
+    "/etc/cron.d",
+    "/etc/cron.hourly",
+    "/etc/cron.daily",
+    "/etc/cron.weekly",
+    "/etc/cron.monthly",
+    "/etc/xdg/autostart",
+    "/etc/profile.d",
+    // Single files.
+    "/etc/crontab",
+    "/etc/rc.local",
+    "/etc/ld.so.preload",
+  ];
 }
+
+/** Folders a dropper writes to: Downloads and temp folders, then caches and per-user data folders. */
+function defaultDropDirs(home: string): string[] {
+  return [
+    ...dropFolders(home),
+    join(home, "Library/Caches"),
+    "/Library/Caches",
+    join(home, "Library/Application Support"),
+    join(home, ".local/share"),
+    join(home, ".local/bin"),
+    join(home, ".config"),
+    join(home, ".cache"),
+  ];
+}
+
+/** A `file` IOC written as a home path (`~/x`, `$HOME/x`, `${HOME}/x`, `%USERPROFILE%\\x`). */
+const HOME_ANCHOR = /^(~|\$HOME|\$\{HOME\}|%USERPROFILE%)[/\\]/i;
+
+const realOr = (p: string): string => {
+  try {
+    return realpathSync(p);
+  } catch {
+    return p;
+  }
+};
+
+const readdirOr = (d: string): string[] => {
+  try {
+    return readdirSync(d);
+  } catch {
+    return [];
+  }
+};
 
 export async function scanHost(
   iocs: IocFile,
@@ -111,12 +188,15 @@ export async function scanHost(
 ): Promise<{ result: SurfaceResult; findings: NewFinding[]; gaps: Gap[]; inventory: HostInventory }> {
   const home = opts.home ?? homedir();
   const os = opts.platform ?? platform();
+  const nowMs = (opts.now ?? new Date()).getTime();
   // Startup items changed without an IOC are worth a look over the last 30 days at most.
   const sinceMs = Date.parse(reviewStart(iocs, opts.now));
   const result: SurfaceResult = { surface: "host", scanned: true, stats: {}, startedAt: (opts.now ?? new Date()).toISOString() };
   const findings: NewFinding[] = [];
   const gaps: Gap[] = [];
   const inventory: HostInventory = { startupItems: [], credentials: [], recentExtensions: [], shellStartup: [] };
+  const dropDirs = opts.dropDirs ?? defaultDropDirs(home);
+  const startupFolders = opts.startupDirs ?? startupDirs(home, os);
 
   const M = {
     file: matchers(iocs, "file", "workflow_file"),
@@ -127,13 +207,28 @@ export async function scanHost(
     pkg: matchers(iocs, "package").filter((m) => (m.indicator.ecosystem ?? "").toLowerCase().startsWith("vs") || m.indicator.ecosystem === "openvsx"),
   };
   const hashes = new Map(M.hash.map((m) => [m.indicator.value.toLowerCase(), m]));
+  const hashed = new Set<string>();
 
   // 1. Files named like an IOC, and their hashes.
-  result.stats.files = tree.files.length;
-  for (const p of tree.files) {
-    const m = M.file.find((x) => x.test(p));
-    if (!m) continue;
+  const fileSeen = new Set<string>();
+  const reportFile = (p: string, m: Matcher, isDir = false) => {
+    // One finding per real file: /tmp is /private/tmp on macOS.
+    const real = realOr(p);
+    if (fileSeen.has(p) || fileSeen.has(real)) return;
+    fileSeen.add(p).add(real);
+    if (isDir) {
+      findings.push(
+        hitOf(m, {
+          subject: p,
+          severity: m.indicator.weak ? "suspicious" : "compromised",
+          title: `Folder ${p} matches "${m.indicator.value}"${m.indicator.weak ? " (a common name)" : ""}`,
+          evidence: { kind: "file", ref: p },
+        }),
+      );
+      return;
+    }
     const digest = sha256File(p);
+    hashed.add(p);
     const hashHit = digest ? hashes.get(digest) : undefined;
     // A weak name (one ordinary files also have) is only suspicious on its own;
     // its hash, when the campaign publishes it, settles it.
@@ -141,9 +236,10 @@ export async function scanHost(
     // An exact file name (no wildcard) from a campaign that publishes hashes is
     // identified by those hashes: matching the name but none of them is most
     // likely the ordinary file of that name. A wildcard pattern (a random-named
-    // dropper like `.ci-*.sh`) stays strong.
+    // dropper like `.ci-*.sh`) stays strong. A hash that could not be computed settles nothing.
     const exactName = !/[*?]/.test(m.indicator.value) && !m.indicator.regex;
-    const nameOnly = !hashHit && (!!m.indicator.weak || (exactName && campaignHashes > 0));
+    const nameOnly = !hashHit && (!!m.indicator.weak || (exactName && campaignHashes > 0 && digest !== undefined));
+    const notHashed = digest === undefined && campaignHashes ? " (sha256 not computed: the file could not be read)" : "";
     findings.push(
       hitOf(hashHit ?? m, {
         subject: p,
@@ -151,12 +247,94 @@ export async function scanHost(
         title: hashHit
           ? `File ${p} matches the sha256`
           : nameOnly
-            ? `File ${p} is named like "${m.indicator.value}"${m.indicator.weak ? " (a common name)" : ""}${campaignHashes ? `, but its sha256 matches none of the campaign's ${campaignHashes} hash(es)` : ""}`
-            : `File ${p} matches "${m.indicator.value}"`,
+            ? `File ${p} is named like "${m.indicator.value}"${m.indicator.weak ? " (a common name)" : ""}${digest && campaignHashes ? `, but its sha256 matches none of the campaign's ${campaignHashes} hash(es)` : notHashed}`
+            : `File ${p} matches "${m.indicator.value}"${notHashed}`,
         evidence: { kind: "file", ref: p, excerpt: digest ? `sha256=${digest}` : undefined },
       }),
     );
+  };
+  result.stats.files = tree.files.length;
+  for (const p of tree.files) {
+    const m = M.file.find((x) => x.test(p));
+    if (m) reportFile(p, m);
   }
+  // 1a. File IOCs looked up where they say they are, whatever the walk reached:
+  // `~/.dev-env/`, `/tmp/inventory.txt`, `.local/share/pgmon/service.py`, a
+  // bare name in a drop folder (Downloads, temp folders, caches, LaunchAgents).
+  const probe = (p: string, m: Matcher) => {
+    const name = basename(p);
+    if (/[*?]/.test(dirname(p))) return;
+    const hits = /[*?]/.test(name)
+      ? readdirOr(dirname(p))
+          .filter((n) => globRegex(name).test(n))
+          .slice(0, 50)
+          .map((n) => join(dirname(p), n))
+      : [p];
+    for (const h of hits) {
+      try {
+        const st = lstatSync(h);
+        if (st.isDirectory()) reportFile(h, m, true);
+        else if (st.isFile()) reportFile(h, m);
+      } catch {}
+    }
+  };
+  let nameDirs: string[] | undefined;
+  for (const m of M.file) {
+    if (m.indicator.regex) continue;
+    const raw = m.indicator.value.trim().replace(/[/\\]+$/, "");
+    if (!raw) continue;
+    if (HOME_ANCHOR.test(raw)) probe(join(home, raw.replace(HOME_ANCHOR, "").replace(/\\/g, "/")), m);
+    else if (raw.startsWith("/")) {
+      probe(raw, m);
+      // Another user's home in the write-up (`/Users/victim/.dev-env`): the same place in this one.
+      const other = /^\/(Users|home)\/[^/]+\/(.+)$/.exec(raw);
+      if (other && !raw.startsWith(`${home}/`)) probe(join(home, other[2] as string), m);
+      if (/^\/(tmp|var)\//.test(raw)) probe(`/private${raw}`, m);
+    } else if (raw.includes("/")) probe(join(home, raw), m);
+    else {
+      // A bare name: the drop folders and one level below them.
+      nameDirs ??= [...new Set([home, ...dropDirs, ...startupFolders])].flatMap((d) => [
+        d,
+        ...readdirOr(d)
+          .slice(0, 2000)
+          .map((n) => join(d, n))
+          .filter((x) => {
+            try {
+              return lstatSync(x).isDirectory();
+            } catch {
+              return false;
+            }
+          })
+          .slice(0, 500),
+      ]);
+      for (const d of nameDirs) probe(join(d, raw), m);
+    }
+  }
+  // 1c. Package folders the walk skips (node_modules, virtualenvs): a dropped
+  // file sits at a package's top level (bun_environment.js, litellm_init.pth).
+  if (M.file.length)
+    for (const clone of tree.gitDirs) {
+      const nm = join(clone, "node_modules");
+      const pkgs = readdirOr(nm)
+        .slice(0, 5000)
+        .flatMap((n) => (n.startsWith("@") ? readdirOr(join(nm, n)).map((x) => join(nm, n, x)) : [join(nm, n)]));
+      const site = [".venv", "venv"].flatMap((v) =>
+        readdirOr(join(clone, v, "lib"))
+          .filter((x) => x.startsWith("python"))
+          .map((x) => join(clone, v, "lib", x, "site-packages")),
+      );
+      for (const dir of [...pkgs.slice(0, 5000), ...site])
+        for (const n of readdirOr(dir).slice(0, 2000)) {
+          const p = join(dir, n);
+          const m = M.file.find((x) => x.test(p));
+          if (!m) continue;
+          try {
+            const st = lstatSync(p);
+            if (st.isFile()) reportFile(p, m);
+            else if (st.isDirectory()) reportFile(p, m, true);
+          } catch {}
+        }
+    }
   if (tree.capped)
     gaps.push({
       surface: "host",
@@ -170,7 +348,6 @@ export async function scanHost(
       what: `${tree.unreadable} unreadable directories`,
       why: "permission denied (macOS privacy protection or another user's files)",
     });
-  if (hashes.size) gaps.push({ surface: "host", what: "sha256 of every file", why: "only files named like an IOC and startup items are hashed" });
 
   // 1b. File names with a line break or another control character: a trick to hide from tools and lists.
   let oddNames = 0;
@@ -194,14 +371,27 @@ export async function scanHost(
     const text = existsSync(p) ? readText(p) : undefined;
     if (!text || !/"runOn"\s*:\s*"folderOpen"/.test(text)) continue;
     const line = text.split("\n").findIndex((l) => /folderOpen/.test(l)) + 1;
-    const cmd = /"command"\s*:\s*"([^"]+)"/.exec(text)?.[1];
+    // The tasks that run on open, not the first command of the file.
+    const j = readJson(p) as { tasks?: unknown } | undefined;
+    const tasks = Array.isArray(j?.tasks) ? (j.tasks as any[]) : undefined;
+    const auto = (tasks ?? [])
+      .filter((t) => t?.runOptions?.runOn === "folderOpen")
+      .map((t) => {
+        const args = Array.isArray(t.args) ? t.args.map((x: unknown) => (typeof x === "string" ? x : ((x as { value?: string })?.value ?? ""))) : [];
+        const cmd = [typeof t.command === "string" ? t.command : "", ...args].filter(Boolean).join(" ");
+        return { label: typeof t.label === "string" ? t.label : undefined, cmd };
+      });
+    const cmd = tasks
+      ? auto.map((t) => `${t.label ? `${t.label}: ` : ""}${t.cmd || "(no command)"}`).join(" | ")
+      : "(command not attributed: the file did not parse)";
+    const signals = [...new Set(auto.flatMap((t) => riskSignals(t.cmd, undefined, home)))];
     const m = M.content.find((x) => x.test(text));
     if (m)
       findings.push(
         hitOf(m, {
           subject: p,
           title: `VS Code task in ${p} runs on folder open and contains "${m.indicator.value}"`,
-          evidence: { kind: "file", ref: `${p}:${line}`, excerpt: cmd },
+          evidence: { kind: "file", ref: `${p}:${line}`, excerpt: cmd.slice(0, 300) },
         }),
       );
     else
@@ -209,8 +399,8 @@ export async function scanHost(
         surface: "host",
         severity: "suspicious",
         subject: p,
-        title: `VS Code task runs automatically when the folder opens${cmd ? `: ${cmd}` : ""}`,
-        evidence: { kind: "file", ref: `${p}:${line}`, excerpt: cmd },
+        title: `VS Code task runs automatically when the folder opens: ${cmd.slice(0, 200)}${signals.length ? `; ${signals.join("; ")}` : ""}`,
+        evidence: { kind: "file", ref: `${p}:${line}`, excerpt: cmd.slice(0, 300) },
         key: `host|${p}|folderOpen`,
       });
   }
@@ -221,109 +411,183 @@ export async function scanHost(
   // does, and whether it changed recently. A risk signal is worth a look
   // whatever the date; a recent change is worth a look with its facts.
   let startupCount = 0;
-  for (const dir of opts.startupDirs ?? startupDirs(home, os)) {
-    let names: string[] = [];
+  const startupFiles: string[] = [];
+  for (const dir of startupFolders) {
+    let st: ReturnType<typeof statSync>;
     try {
-      names = readdirSync(dir);
+      st = statSync(dir);
     } catch {
       continue;
     }
-    for (const name of names) {
+    if (st.isFile()) {
+      startupFiles.push(dir);
+      continue;
+    }
+    for (const name of readdirOr(dir)) {
       const p = join(dir, name);
-      let st: ReturnType<typeof statSync>;
-      try {
-        st = statSync(p);
-      } catch {
-        continue;
-      }
-      if (!st.isFile()) continue;
-      startupCount++;
-      let text = readText(p) ?? "";
-      // Binary plists (bplist00) are unreadable as text: plutil converts them, read-only.
-      if (text.startsWith("bplist") && os === "darwin" && !opts.skipLive) {
-        const xml = await runner("plutil", ["-convert", "xml1", "-o", "-", p], { timeoutMs: 10_000 });
-        if (xml.ok) text = xml.stdout;
-      }
-      const m = M.content.find((x) => x.test(text)) ?? (hashes.size ? hashes.get(sha256File(p) ?? "") : undefined);
-      const { command, executable } = startupCommand(text);
-      const item: StartupItem = { path: p, mtime: st.mtime.toISOString(), command, executable, signals: riskSignals(command, executable, home) };
-      // No program key (a /etc/cron.d file, a shell snippet): every non-comment line is a command.
-      if (!command) for (const l of text.split("\n").slice(0, 2000)) if (l.trim() && !/^\s*#/.test(l)) item.signals.push(...riskSignals(l, undefined, home));
-      // `/bin/bash script.sh` runs the script: read it, an Apple-signed bash says nothing.
-      const interp = interpretedScript(command, executable, home);
-      if (interp.script) item.script = interp.script;
-      item.signals = [...new Set([...item.signals, ...interp.signals])];
-      if (executable?.startsWith("/")) {
-        item.exists = existsSync(executable);
-        if (!item.exists) item.signals.push("points to a program that no longer exists");
-        else if (os === "darwin" && !opts.skipLive) {
-          const sig = await signerOf(runner, executable);
-          if (!sig) item.signer = "unreadable (codesign could not read it, often a root-only helper)";
-          else {
-            item.signed = sig.signed;
-            item.signer = sig.signer;
-            item.team = sig.team;
-            if (!sig.signed) item.signals.push(`is not signed by any developer${sig.signer ? ` (${sig.signer})` : ""}`);
+      // systemd drop-ins (`x.service.d/override.conf`) and `*.wants` links run too: one level down.
+      if (/\.(d|wants|requires)$/.test(name)) {
+        try {
+          if (statSync(p).isDirectory()) {
+            for (const n of readdirOr(p).slice(0, 200)) startupFiles.push(join(p, n));
+            continue;
           }
-        }
+        } catch {}
       }
-      // A third-party folder item named like Apple's own: Apple's live in /System.
-      const label = /<key>Label<\/key>\s*<string>([^<]+)<\/string>/.exec(text)?.[1] ?? name.replace(/\.plist$/, "");
-      if (/^com\.apple\./i.test(label) && !(item.signer ?? "").startsWith("Software Signing") && !/^\/(System|usr\/libexec|usr\/sbin)\//.test(executable ?? ""))
-        item.signals.unshift(`is named like an Apple service (${label}) but is not Apple's`);
-      inventory.startupItems.push(item);
-      const recent = st.mtimeMs >= sinceMs;
-      const facts = [
-        command ? `runs ${command.slice(0, 160)}` : "no program found",
-        item.signer ? `signed by ${item.signer}${item.team ? ` (team ${item.team})` : ""}` : undefined,
-        ...item.signals,
-      ].filter(Boolean);
-      // A strong signal (fetch-and-run, reverse shell, temp folder) is suspicious at any date.
-      const strong = item.signals.some((s) => !s.startsWith("points to") && !s.startsWith("is not signed"));
-      if (m)
-        findings.push(
-          hitOf(m, {
-            subject: p,
-            title: `Startup item ${p} contains "${m.indicator.value}"`,
-            at: item.mtime,
-            evidence: { kind: "file", ref: p, excerpt: command },
-          }),
-        );
-      else if (strong || recent)
+      startupFiles.push(p);
+    }
+  }
+  for (const p of startupFiles) {
+    const name = basename(p);
+    let st: ReturnType<typeof statSync>;
+    try {
+      st = statSync(p);
+    } catch {
+      continue;
+    }
+    if (!st.isFile()) continue;
+    startupCount++;
+    let text = readText(p);
+    const unreadable = text === undefined && st.size <= MAX_TEXT;
+    // plutil decodes what a regex cannot: binary plists, XML entities, CDATA, and comments padding a file past the read limit.
+    if (os === "darwin" && !opts.skipLive && !unreadable && (name.endsWith(".plist") || text?.startsWith("bplist"))) {
+      const xml = await runner("plutil", ["-convert", "xml1", "-o", "-", p], { timeoutMs: 10_000 });
+      if (xml.ok && xml.stdout.trim()) text = xml.stdout;
+    }
+    const changed = changedMs(st, nowMs);
+    const at = new Date(changed).toISOString();
+    if (text === undefined) {
+      inventory.startupItems.push({ path: p, mtime: st.mtime.toISOString(), command: "", signals: [unreadable ? "unreadable" : "too large to read"] });
+      if (unreadable)
+        gaps.push({
+          surface: "host",
+          what: `startup item ${p}`,
+          why: "this user cannot read it",
+          fix: name.endsWith(".plist") ? `sudo plutil -p ${JSON.stringify(p)}` : `sudo cat ${JSON.stringify(p)}`,
+        });
+      else
         findings.push({
           surface: "host",
           severity: "suspicious",
           subject: p,
-          title: `${strong ? "Risky startup item" : "Startup item"} ${basename(p)}${recent ? " was written recently" : ""}: ${facts.join("; ")}`,
-          at: item.mtime,
-          evidence: { kind: "file", ref: p, excerpt: command.slice(0, 300) },
+          title: `Startup item ${name} is ${(st.size / 1024 / 1024).toFixed(1)} MB and could not be read: a startup item is a few KB`,
+          at,
+          evidence: { kind: "file", ref: p },
           key: `host|${p}|startup`,
         });
+      continue;
     }
+    const sc = startupCommand(text);
+    const { command, executable } = sc;
+    const item: StartupItem = { path: p, mtime: st.mtime.toISOString(), command, executable, signals: riskSignals(command, executable, home) };
+    if (sc.unparsed) item.signals.push("its program could not be read (an encoding that hides the command)");
+    for (const c of sc.more ?? []) item.signals.push(...riskSignals(c, undefined, home));
+    if (name === "ld.so.preload" && text.trim()) item.signals.push(`preloads ${text.trim().split(/\s+/)[0]} into every program`);
+    // No program key (a /etc/cron.d file, a shell snippet): every non-comment line is a command.
+    if (!command && !sc.unparsed)
+      for (const l of text.split("\n").slice(0, 2000)) if (l.trim() && !/^\s*#/.test(l)) item.signals.push(...riskSignals(l, undefined, home));
+    // `/bin/bash script.sh` runs the script: read it, an Apple-signed bash says nothing. Same for a `#!` script run directly.
+    const interp = interpretedScript(command, executable, home, sc.args);
+    if (interp.script) item.script = interp.script;
+    item.signals = [...new Set([...item.signals, ...interp.signals])];
+    if (executable?.startsWith("/")) {
+      item.exists = existsSync(executable);
+      if (!item.exists) item.signals.push("points to a program that no longer exists");
+      else if (os === "darwin" && !opts.skipLive) {
+        const sig = await signerOf(runner, executable);
+        if (!sig) item.signer = "unreadable (codesign could not read it, often a root-only helper)";
+        else {
+          item.signed = sig.signed;
+          item.signer = sig.signer;
+          item.team = sig.team;
+          if (sig.invalid) item.signals.push(`has an ${sig.signer}`);
+          else if (!sig.signed) item.signals.push(`is not signed by any developer${sig.signer ? ` (${sig.signer})` : ""}`);
+        }
+      }
+    }
+    // A third-party folder item named like Apple's own: Apple's live in /System. Who signed an interpreter says nothing about the script it runs.
+    const label = /<key>Label<\/key>\s*<string>([^<]+)<\/string>/.exec(text)?.[1] ?? name.replace(/\.plist$/, "");
+    const appleProgram = /^\/(System|usr\/libexec|usr\/sbin|Library\/Apple)\//.test(executable ?? "") && !INTERPRETERS.test(basename(executable ?? ""));
+    if (/^com\.apple\./i.test(label) && !appleProgram) item.signals.unshift(`is named like an Apple service (${label}) but is not Apple's`);
+    inventory.startupItems.push(item);
+    const recent = changed >= sinceMs;
+    const facts = [
+      command ? `runs ${command.slice(0, 160)}` : sc.unparsed ? undefined : "no program found",
+      item.signer ? `signed by ${item.signer}${item.team ? ` (team ${item.team})` : ""}` : undefined,
+      ...item.signals,
+    ].filter(Boolean);
+    // A strong signal (fetch-and-run, reverse shell, temp folder) is suspicious at any date.
+    const strong = item.signals.some((s) => !s.startsWith("points to") && !s.startsWith("is not signed"));
+    // An IOC in the item, in the script it runs, its name, or the hash of the item, its program or its script.
+    const hashOf = (f: string | undefined) => {
+      if (!f || !hashes.size) return undefined;
+      hashed.add(f);
+      return hashes.get(sha256File(f) ?? "");
+    };
+    const m =
+      M.content.find((x) => x.test(text ?? "")) ??
+      (interp.text ? M.content.find((x) => x.test(interp.text ?? "")) : undefined) ??
+      (fileSeen.has(p) ? undefined : M.file.find((x) => x.test(p))) ??
+      hashOf(p) ??
+      (item.exists ? hashOf(executable) : undefined) ??
+      hashOf(interp.script);
+    if (m)
+      findings.push(
+        hitOf(m, {
+          subject: p,
+          title:
+            m.indicator.type === "sha256"
+              ? `Startup item ${p}, or the program or script it runs, matches the sha256 ${m.indicator.value}`
+              : `Startup item ${p} ${m.indicator.type === "file" || m.indicator.type === "workflow_file" ? "matches" : "contains"} "${m.indicator.value}"`,
+          at,
+          evidence: { kind: "file", ref: p, excerpt: command },
+        }),
+      );
+    else if (strong || recent)
+      findings.push({
+        surface: "host",
+        severity: "suspicious",
+        subject: p,
+        title: `${strong ? "Risky startup item" : "Startup item"} ${name}${recent ? ` was written recently${backdated(st, nowMs)}` : ""}: ${facts.join("; ")}`,
+        at,
+        evidence: { kind: "file", ref: p, excerpt: command.slice(0, 300) },
+        key: `host|${p}|startup`,
+      });
   }
   result.stats.startupItems = startupCount;
 
   // 4a. AI coding agents: hooks, MCP servers, base URLs, instruction files (home and every clone).
-  const agents = scanAgents(home, tree.gitDirs, { content: M.content, pkg: matchers(iocs, "package") });
-  findings.push(...agents.findings);
-  inventory.agents = agents.inventory;
-  result.stats.agentConfigs = agents.inventory.configs.length;
-  result.stats.mcpServers = agents.inventory.mcpServers.length;
-  // 4b. Git hooks in local clones, and npm's download cache for campaign packages.
-  findings.push(...gitHookFindings(tree.gitDirs, home, sinceMs));
+  // One malformed config must not stop the surface: an exception is a gap.
+  try {
+    const agents = scanAgents(home, tree.gitDirs, { content: M.content, pkg: matchers(iocs, "package") }, { files: tree.files });
+    findings.push(...agents.findings);
+    inventory.agents = agents.inventory;
+    result.stats.agentConfigs = agents.inventory.configs.length;
+    result.stats.mcpServers = agents.inventory.mcpServers.length;
+  } catch (e) {
+    gaps.push({
+      surface: "host",
+      what: "AI agent configs (hooks, MCP servers, instruction files)",
+      why: `the check failed: ${(e as Error).message.slice(0, 200)}`,
+    });
+  }
+  // 4b. Git hooks in local clones, and package caches and stores for campaign packages.
+  findings.push(...gitHookFindings(tree.gitDirs, home, sinceMs, M.content, nowMs));
   const npmPkgs = matchers(iocs, "package")
-    .filter((x) => (x.indicator.ecosystem ?? "").toLowerCase() === "npm")
+    .filter((x) => normEco(x.indicator.ecosystem ?? "") === "npm")
     .map((x) => ({ name: x.indicator.value, versions: x.indicator.versions, source: x.indicator.source, campaign: x.campaign.id, value: x.indicator.value }));
-  findings.push(...npmCacheHits(home, npmPkgs));
+  findings.push(...npmCacheHits(home, npmPkgs), ...packageStoreHits(home, npmPkgs));
+  // 4c. Executable .pth files in site-packages: code that runs at every Python start.
+  findings.push(...pthFindings(home, tree.gitDirs, M.file, hashes, !opts.skipLive));
 
   // 4. Shell startup files (risk signals), and package-manager, git and SSH settings.
   const rc = shellStartupFindings(home);
   findings.push(...rc.findings);
   inventory.shellStartup = rc.lines;
-  findings.push(...configFindings(home, sinceMs));
+  findings.push(...configFindings(home, sinceMs, nowMs));
 
   // 5. Shell history, startup files and /etc/hosts: a C2 address typed, pinned or wired in.
-  const traces = [".zsh_history", ".bash_history", ".local/share/fish/fish_history", ".python_history", ...SHELL_STARTUP].map((f) => join(home, f));
+  const traces = [".zsh_history", ".bash_history", ".local/share/fish/fish_history", ".python_history", ...shellStartupFiles(home)].map((f) => join(home, f));
   traces.push("/etc/hosts");
   for (const p of traces) {
     const text = existsSync(p) ? readText(p, 20 * 1024 * 1024) : undefined;
@@ -351,21 +615,14 @@ export async function scanHost(
     }
   }
 
-  // 5. Editor extensions named by an IOC (VS Code, Cursor, Windsurf, VSCodium).
+  // 5. Editor extensions named by an IOC, in VS Code and every fork (Cursor, Windsurf, VSCodium, Antigravity, Kiro...),
+  // and invisible payloads in their code (GlassWorm hides its loader in variation selectors).
   let extensions = 0;
-  for (const dir of [".vscode/extensions", ".vscode-insiders/extensions", ".cursor/extensions", ".windsurf/extensions", ".vscode-oss/extensions"].map((d) =>
-    join(home, d),
-  )) {
-    let names: string[] = [];
-    try {
-      names = readdirSync(dir);
-    } catch {
-      continue;
-    }
-    for (const name of names) {
+  for (const dir of extensionDirs(home)) {
+    for (const name of readdirOr(dir)) {
       // "publisher.name-1.2.3" or, for platform builds, "publisher.name-1.2.3-darwin-arm64".
       const mm = /^(.+?)-(\d+\.\d+\.\d+)(-.+)?$/.exec(name);
-      if (!mm) continue;
+      if (!mm || !EXTENSION_ENTRY.test(name)) continue;
       extensions++;
       const [, id, version] = mm as unknown as [string, string, string];
       const m = M.pkg.find(
@@ -373,16 +630,77 @@ export async function scanHost(
           x.indicator.value.toLowerCase() === id.toLowerCase() &&
           (!x.indicator.versions?.length || x.indicator.versions.some((v) => v.replace(/^v/, "") === version || v === `${version}${mm[3] ?? ""}`)),
       );
-      if (m)
+      if (m) {
         findings.push(
           hitOf(m, { subject: join(dir, name), title: `Editor extension ${id}@${version} is installed`, evidence: { kind: "file", ref: join(dir, name) } }),
         );
+        continue;
+      }
+      const entry = extensionEntryFile(join(dir, name));
+      if (!entry) continue;
+      const c = M.content.find((x) => x.test(entry.text));
+      if (c)
+        findings.push(
+          hitOf(c, {
+            subject: entry.path,
+            title: `Editor extension ${id}@${version} code contains "${c.indicator.value}"`,
+            evidence: { kind: "file", ref: entry.path },
+          }),
+        );
+      else if (SELECTOR_RUN.test(entry.text))
+        findings.push({
+          surface: "host",
+          severity: "suspicious",
+          subject: entry.path,
+          title: `Editor extension ${id}@${version} hides a run of invisible Unicode variation selectors in its code (the GlassWorm technique): read ${basename(entry.path)} with a hex viewer`,
+          evidence: { kind: "file", ref: entry.path },
+          key: `host|${entry.path}|selectors`,
+        });
     }
   }
   result.stats.extensions = extensions;
   const ext = recentExtensions(home, sinceMs);
   findings.push(...ext.findings);
   inventory.recentExtensions = ext.list;
+
+  // 5b. Browser extensions: Chromium profiles list them as <id>/<version>, Firefox in extensions.json.
+  const browserPkgs = matchers(iocs, "package").filter((x) => ["chrome", "firefox"].includes(normEco(x.indicator.ecosystem ?? "")));
+  const browsers = browserExtensions(home, os);
+  result.stats.browserExtensions = browsers.length;
+  for (const b of browsers) {
+    const eco = b.browser === "Firefox" ? "firefox" : "chrome";
+    const m = browserPkgs.find(
+      (x) =>
+        normEco(x.indicator.ecosystem ?? "") === eco &&
+        x.indicator.value.toLowerCase() === b.id.toLowerCase() &&
+        (!x.indicator.versions?.length || x.indicator.versions.some((v) => v.replace(/^v/, "") === b.version)),
+    );
+    if (m)
+      findings.push(
+        hitOf(m, {
+          subject: b.path,
+          title: `${b.browser} extension ${b.id}@${b.version} is installed (profile ${b.profile})`,
+          evidence: { kind: "file", ref: b.path },
+        }),
+      );
+  }
+  const newBrowser = browsers.filter((b) => b.installedMs && b.installedMs >= sinceMs && b.installedMs <= nowMs);
+  inventory.recentBrowserExtensions = newBrowser.map((b) => ({
+    browser: b.browser,
+    profile: b.profile,
+    id: b.id,
+    version: b.version,
+    installed: new Date(b.installedMs as number).toISOString(),
+  }));
+  if (newBrowser.length)
+    findings.push({
+      surface: "host",
+      severity: "info",
+      subject: "browser extensions",
+      title: `${newBrowser.length} browser extension version(s) installed or updated in the review window (listed in host-inventory.json)`,
+      evidence: { kind: "file", ref: "host-inventory.json" },
+      key: "host|browser-ext-recent",
+    });
 
   // 6. Local clones of repositories the GitHub scan found hit.
   if (opts.hitRepos?.length) {
@@ -414,6 +732,7 @@ export async function scanHost(
     const cron = await runner("crontab", ["-l"], { timeoutMs: 10_000 });
     if (cron.ok) {
       const lines = cron.stdout.split("\n");
+      inventory.crontab = lines.filter((l) => l.trim() && !/^\s*#/.test(l)).map((l) => l.slice(0, 500));
       for (const m of M.content) {
         const ln = lines.findIndex((l) => m.test(l));
         if (ln >= 0)
@@ -456,6 +775,13 @@ export async function scanHost(
       }
       if (M.net.some((m) => m.indicator.type === "domain"))
         gaps.push({ surface: "host", what: "connections to IOC domains", why: "open sockets show addresses, not names; only IOC IPs are matched live" });
+      if (os === "darwin" && M.net.length && process.getuid?.() !== 0)
+        gaps.push({
+          surface: "host",
+          what: "connections of processes owned by other users (root daemons included)",
+          why: "lsof runs without root and lists this user's sockets only",
+          fix: "sudo lsof -nPi | grep <IOC address>",
+        });
     } else
       gaps.push({
         surface: "host",
@@ -498,8 +824,61 @@ export async function scanHost(
   result.stats.credentialFiles = inventory.credentials.length;
 
   // 9. Signature scanners over the same short list: ClamAV (known families), YARA (rules from a source).
+  // ultraguard's own folders hold the strings the rules look for (the rule text, a saved article): never targets, never findings.
   const listDir = opts.listDir ?? tmpdir();
+  const exclude = [opts.listDir, opts.stateDir, opts.yara && existsSync(opts.yara) && statSync(opts.yara).isDirectory() ? opts.yara : undefined].filter(
+    (x): x is string => !!x,
+  );
   const flagged = findings.map((f) => f.subject).filter((s) => s.startsWith("/"));
+  const full = opts.av === "full";
+  let targetList: ReturnType<typeof avTargetList> | undefined;
+  const targets = () => {
+    targetList ??= avTargetList(home, inventory, flagged, sinceMs, { exclude, folders: opts.dropDirs ? dropDirs : undefined, nowMs });
+    return targetList;
+  };
+  // sha256 IOCs against the short list too: a renamed dropper a startup item runs, or one in Downloads or a temp folder.
+  if (hashes.size) {
+    const skip = excludedBy(exclude);
+    let tooBig = 0;
+    const files = targets().targets.flatMap((t) => {
+      try {
+        return statSync(t).isDirectory()
+          ? readdirOr(t)
+              .slice(0, 500)
+              .map((n) => join(t, n))
+          : [t];
+      } catch {
+        return [];
+      }
+    });
+    for (const f of files) {
+      if (hashed.has(f) || skip(f)) continue;
+      hashed.add(f);
+      let size = 0;
+      try {
+        const st = statSync(f);
+        if (!st.isFile()) continue;
+        size = st.size;
+      } catch {
+        continue;
+      }
+      if (size > 500 * 1024 * 1024) {
+        tooBig++;
+        continue;
+      }
+      const m = hashes.get(sha256File(f) ?? "");
+      if (m)
+        findings.push(
+          hitOf(m, { subject: f, title: `File ${f} matches the sha256`, evidence: { kind: "file", ref: f, excerpt: `sha256=${m.indicator.value}` } }),
+        );
+    }
+    result.stats.hashed = hashed.size;
+    gaps.push({
+      surface: "host",
+      what: `sha256 of files outside startup programs, flagged files, recent temp and Downloads files and new extensions${tooBig ? ` (and ${tooBig} file(s) over 500 MB)` : ""}`,
+      why: "hashing every file on the disk takes hours",
+    });
+  }
   if (!opts.skipLive && opts.av !== "off") {
     const av = await antivirusPass(runner, {
       home,
@@ -508,16 +887,17 @@ export async function scanHost(
       sinceMs,
       listDir,
       now: opts.now,
-      full: opts.av === "full" ? (opts.roots ?? [home]) : undefined,
+      exclude,
+      full: full ? (opts.roots ?? [home]) : undefined,
+      targets: full ? undefined : targets(),
     });
     findings.push(...av.findings);
     gaps.push(...av.gaps);
     Object.assign(result.stats, av.stats);
   } else if (opts.av === "off") gaps.push({ surface: "host", what: "the antivirus pass", why: "--no-av" });
-  const full = opts.av === "full";
-  const yaraTargets = () => (full ? (opts.roots ?? [home]) : avTargets(home, inventory, flagged, sinceMs));
+  const yaraTargets = () => (full ? (opts.roots ?? [home]) : targets().targets);
   if (opts.yara) {
-    const y = await yaraPass(runner, { rules: opts.yara, targets: yaraTargets(), recursive: full, listDir, source: opts.yaraSource });
+    const y = await yaraPass(runner, { rules: opts.yara, targets: yaraTargets(), recursive: full, listDir, source: opts.yaraSource, exclude });
     findings.push(...y.findings);
     gaps.push(...y.gaps);
     Object.assign(result.stats, y.stats);
@@ -534,6 +914,8 @@ export async function scanHost(
       recursive: full,
       listDir,
       source: c.sourceId,
+      // The rule text (.yar) sits next to the compiled set (.yarc): it holds every string the rules look for.
+      exclude: [...exclude, dirname(c.source)],
     });
     findings.push(...y.findings);
     gaps.push(...y.gaps);
@@ -554,9 +936,9 @@ export async function scanHost(
     });
   gaps.push({
     surface: "host",
-    what: "login items registered in System Settings, browser extensions, kernel and system extensions",
-    why: "not read: the background task database needs an admin (sfltool dumpbtm), and browsers keep extensions per profile",
-    fix: "System Settings > General > Login Items; each browser's extensions page",
+    what: "login items registered in System Settings, Safari extensions, kernel and system extensions",
+    why: "not read: the background task database needs an admin (sfltool dumpbtm), and Safari keeps its extensions inside app bundles",
+    fix: "System Settings > General > Login Items; Safari > Settings > Extensions",
   });
 
   const pruned = Object.entries(tree.pruned ?? {}).sort((a, b) => b[1] - a[1]);

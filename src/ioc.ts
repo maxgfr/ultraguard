@@ -169,12 +169,18 @@ function compile(c: Campaign, ind: Indicator): Matcher {
     test = (s) => re.test(s);
   } else if (ind.type === "file" || ind.type === "workflow_file") {
     // A glob with a slash matches the path's tail, otherwise the basename.
-    const re = globRegex(value);
-    const hasSlash = value.includes("/");
+    // Write-ups give home paths (`~/.dev-env/`, `$HOME/x`, `/Users/<name>/x`): the part under the home is the tail.
+    const glob = value
+      .trim()
+      .replace(/^(~|\$HOME|\$\{HOME\}|%USERPROFILE%)[/\\]|^\/(Users|home)\/[^/]+\//i, "")
+      .replace(/\\/g, "/")
+      .replace(/\/+$/, "");
+    const re = globRegex(glob);
+    const hasSlash = glob.includes("/");
     test = (s) => {
       if (!hasSlash) return re.test(s.split("/").pop() ?? s);
       const parts = s.split("/");
-      const depth = value.split("/").length;
+      const depth = glob.split("/").length;
       return re.test(parts.slice(-depth).join("/"));
     };
   } else if (
@@ -259,8 +265,8 @@ export function packageHit(ind: Indicator, ecosystem: string, name: string, vers
   return ind.versions.some((x) => typeof x === "string" && ver(x) === v);
 }
 
-/** The ecosystems ultraguard has a reader for: lockfiles, and editor extensions (vscode). */
-export const SUPPORTED_ECOSYSTEMS = ["npm", "pypi", "crates.io", "go", "packagist", "rubygems", "vscode"] as const;
+/** The ecosystems ultraguard has a reader for: lockfiles, editor extensions (vscode) and browser extensions (chrome, firefox). */
+export const SUPPORTED_ECOSYSTEMS = ["npm", "pypi", "crates.io", "go", "packagist", "rubygems", "vscode", "chrome", "firefox"] as const;
 
 export function normEco(e: string): string {
   const s = e.trim().toLowerCase();
@@ -272,6 +278,8 @@ export function normEco(e: string): string {
   if (["node", "nodejs", "node.js", "js", "javascript", "npmjs", "yarn", "pnpm"].includes(s)) return "npm";
   // VS Code Marketplace, Open VSX and the editors that install from it.
   if (/^(vs|open[-_ ]?vsx|ovsx|cursor|windsurf)/.test(s)) return "vscode";
+  if (["chromium", "edge", "brave", "browser", "chrome-web-store", "chrome-extension"].includes(s)) return "chrome";
+  if (s === "amo" || s === "firefox-addon") return "firefox";
   return s;
 }
 

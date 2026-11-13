@@ -47,9 +47,10 @@ proves that the verdict cites only real findings and hides none.
 Node 18 or newer, no install, no key. `<skill-dir>` is the directory holding
 this file; every `ultraguard …` below stands for
 `node <skill-dir>/scripts/ultraguard.mjs …`. Pick one absolute run directory
-per investigation and pass it as `--out` to every command that works on a run
-(all but `doctor` and `rules`). `check`, `report` and `watch commit` refuse a
-`--out` that does not exist.
+per investigation, outside the temp folders and Downloads (e.g.
+`~/.ultraguard/runs/<date>-<slug>`), and pass it as `--out` to every command
+that works on a run (all but `doctor` and `rules`). `check`, `report` and
+`watch commit` refuse a `--out` that does not exist.
 
 ```bash
 ultraguard doctor --probe                    # what this machine lets ultraguard see
