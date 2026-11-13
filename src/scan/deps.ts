@@ -60,21 +60,36 @@ export const FEED_STALE_DAYS = 1;
 /** Where ultraguard keeps package-checker's advisory feeds, refreshed by `rules update` and scan deps. */
 export const feedDir = (state: string): string => join(state, "package-checker", "data");
 
-/** The feed copy in `dir`: how many files, and the age in whole days of the oldest one. */
-export function localFeeds(dir: string, now = new Date()): { files: number; ageDays: number; date: string } | undefined {
+/**
+ * The feed files a complete copy holds: GHSA and OSV for every ecosystem package-checker's --update-feeds
+ * downloads (read from its FEED_ECOSYSTEM_MAP; the runtime feed is not read, --no-runtime-check).
+ */
+export const FEED_FILES: string[] = (() => {
+  const map = /FEED_ECOSYSTEM_MAP=\(([\s\S]*?)\n\)/.exec(PACKAGE_CHECKER_SCRIPT)?.[1] ?? "";
+  const types = [...map.matchAll(/"([a-z]+)\|/g)].map((m) => m[1] as string);
+  return (types.length ? types : ["npm"]).flatMap((t) => ["ghsa", "osv"].map((k) => (t === "npm" ? `${k}.purl` : `${k}-${t}.purl`)));
+})();
+
+/** The feed copy in `dir`: how many files, the feeds it lacks, and the age in whole days of the oldest one. */
+export function localFeeds(dir: string, now = new Date()): { files: number; missing: string[]; ageDays: number; date: string } | undefined {
   let oldest = Number.POSITIVE_INFINITY;
-  let files = 0;
+  const names = new Set<string>();
   try {
     for (const f of readdirSync(dir)) {
       if (!f.endsWith(".purl")) continue;
-      files++;
+      names.add(f);
       oldest = Math.min(oldest, statSync(join(dir, f)).mtimeMs);
     }
   } catch {
     return undefined;
   }
-  if (!files) return undefined;
-  return { files, ageDays: Math.max(0, Math.floor((now.getTime() - oldest) / 86_400_000)), date: new Date(oldest).toISOString() };
+  if (!names.size) return undefined;
+  return {
+    files: names.size,
+    missing: FEED_FILES.filter((f) => !names.has(f)),
+    ageDays: Math.max(0, Math.floor((now.getTime() - oldest) / 86_400_000)),
+    date: new Date(oldest).toISOString(),
+  };
 }
 
 /** One line on the feeds a scan loaded: how many, from where, how old; the ones it could not load. */
@@ -126,8 +141,11 @@ export async function updateCheckerFeeds(runner: Runner, dir: string): Promise<{
 
 export function defaultChecker(runner: Runner, workDir: string, opts: { dataDir?: string } = {}): Checker {
   const script = materializeChecker(join(workDir, "tools"));
-  // ultraguard owns the feed copy and its age: --max-feed-age 0 keeps package-checker on it, never on another local copy.
-  const feeds = opts.dataDir && localFeeds(opts.dataDir) ? ["--data-dir", opts.dataDir, "--max-feed-age", "0"] : [];
+  // ultraguard owns the feed copy and its age: on a complete copy, --max-feed-age 0 keeps package-checker on it whatever
+  // its age (ultraguard refreshes it and reports the age). A feed missing from the copy would be looked up in
+  // package-checker's other places (its Homebrew copy, then a download): with a partial copy its own age limit stays.
+  const have = opts.dataDir ? localFeeds(opts.dataDir) : undefined;
+  const feeds = opts.dataDir && have ? ["--data-dir", opts.dataDir, ...(have.missing.length ? [] : ["--max-feed-age", "0"])] : [];
   let n = 0;
   return async (dir) => {
     const out = join(workDir, `package-checker-${++n}.json`);

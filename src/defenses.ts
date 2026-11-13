@@ -5,7 +5,7 @@
 // user means it does not happen. These are the only writes ultraguard makes
 // outside a run folder: ClamAV's own database and ultraguard's state folder.
 import { detectAv } from "./scan/antivirus.js";
-import { FEED_STALE_DAYS, feedDir, localFeeds, updateCheckerFeeds } from "./scan/deps.js";
+import { FEED_FILES, FEED_STALE_DAYS, feedDir, localFeeds, updateCheckerFeeds } from "./scan/deps.js";
 import { defaultRulesDeps, installedRules, type RuleSet, type RulesDeps, rulesAgeDays, updateRules } from "./rules.js";
 import type { Runner } from "./runner.js";
 
@@ -91,7 +91,8 @@ export async function updateYaraForge(
 export async function updateAdvisoryFeeds(state: string, runner: Runner, opts: { force?: boolean; now?: Date } = {}): Promise<DefenseUpdate> {
   const dir = feedDir(state);
   const have = localFeeds(dir, opts.now);
-  if (!opts.force && have && have.ageDays <= FEED_STALE_DAYS)
+  // A partial copy (a feed missing) is refreshed: package-checker would look for the missing feed elsewhere.
+  if (!opts.force && have && !have.missing.length && have.ageDays <= FEED_STALE_DAYS)
     return { engine: "package-checker", status: "current", detail: `${have.files} feed(s) in ${dir} (${have.ageDays} days old)` };
   const r = await updateCheckerFeeds(runner, dir);
   if (r.ok) return { engine: "package-checker", status: "updated", detail: `${r.detail} (OSV and GHSA advisories for scan deps)` };
@@ -99,7 +100,7 @@ export async function updateAdvisoryFeeds(state: string, runner: Runner, opts: {
   return {
     engine: "package-checker",
     status: "failed",
-    detail: `feed refresh failed: ${r.detail}; ${kept ? `kept the copy in ${dir} (${kept.ageDays} days old)` : "no local copy: package-checker downloads the feeds itself on each scan"}`,
+    detail: `feed refresh failed: ${r.detail}; ${kept ? `kept the copy in ${dir} (${kept.ageDays} days old${kept.missing.length ? `, ${kept.missing.length} of ${FEED_FILES.length} feeds missing` : ""})` : "no local copy: package-checker looks for the feeds itself on each scan (its Homebrew copy, else a download)"}`,
   };
 }
 

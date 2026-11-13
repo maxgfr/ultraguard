@@ -6,7 +6,7 @@ import { doctor } from "../src/doctor.js";
 import { Run } from "../src/run.js";
 import type { Runner } from "../src/runner.js";
 import { renderReport } from "../src/report.js";
-import { type CheckerSource, type CheckerVuln, defaultChecker, feedDir, feedSummary, scanDeps } from "../src/scan/deps.js";
+import { type CheckerSource, type CheckerVuln, defaultChecker, FEED_FILES, feedDir, feedSummary, scanDeps } from "../src/scan/deps.js";
 import { parseLockfile } from "../src/scan/lockfiles.js";
 import { walk } from "../src/scan/walk.js";
 import { PACKAGE_CHECKER_REF, PACKAGE_CHECKER_VERSION } from "../src/vendor/package-checker-script.js";
@@ -80,9 +80,14 @@ describe("package-checker runs", () => {
     const runner = fakeChecker(0);
     await defaultChecker(runner, work, { dataDir: data })(work);
     expect(runner.calls[0]).not.toContain("--data-dir");
-    put(data, "osv.purl", "pkg:npm/x@1\n");
+    // A partial copy: package-checker's own age limit stays, so a missing feed is never an old Homebrew file.
+    put(data, "ghsa.purl", "pkg:npm/x@1\n");
     await defaultChecker(runner, work, { dataDir: data })(work);
-    const args = runner.calls[1] as string[];
+    expect(runner.calls[1]).toContain("--data-dir");
+    expect(runner.calls[1]).not.toContain("--max-feed-age");
+    for (const f of FEED_FILES) put(data, f, "pkg:npm/x@1\n");
+    await defaultChecker(runner, work, { dataDir: data })(work);
+    const args = runner.calls[2] as string[];
     expect(args.slice(args.indexOf("--data-dir"), args.indexOf("--data-dir") + 4)).toEqual(["--data-dir", data, "--max-feed-age", "0"]);
     expect(args).not.toContain("--include-gitignored");
   });
@@ -354,9 +359,15 @@ describe("doctor", () => {
     const line = async (now?: Date) => (await doctor(runner, { state, now, platform: "linux" })).find((l) => l.check === "package-checker");
     expect(await line()).toMatchObject({ ok: false, fix: "ultraguard rules update" });
     expect((await line())?.detail).toContain(`${PACKAGE_CHECKER_VERSION} (${PACKAGE_CHECKER_REF}, vendored); no advisory feeds in ${feedDir(state)}`);
+    // A partial copy is not ok.
     put(feedDir(state), "osv.purl", "pkg:npm/x@1\n");
+    expect(await line()).toMatchObject({ ok: false, fix: "ultraguard rules update" });
+    expect((await line())?.detail).toContain(
+      `1 feed(s) in ${feedDir(state)}, 0 days old (incomplete: ${FEED_FILES.length - 1} of ${FEED_FILES.length} feeds missing, ghsa.purl,`,
+    );
+    for (const f of FEED_FILES) put(feedDir(state), f, "pkg:npm/x@1\n");
     expect(await line()).toMatchObject({ ok: true, fix: undefined });
-    expect((await line())?.detail).toContain(`1 feed(s) in ${feedDir(state)}, 0 days old`);
+    expect((await line())?.detail).toContain(`${FEED_FILES.length} feed(s) in ${feedDir(state)}, 0 days old`);
     const later = await line(new Date(Date.now() + 2.5 * 86_400_000));
     expect(later).toMatchObject({ ok: false, fix: "ultraguard rules update" });
     expect(later?.detail).toContain("2 days old (stale: refreshed after 1 day)");

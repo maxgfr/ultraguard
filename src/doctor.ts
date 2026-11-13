@@ -6,7 +6,7 @@ import type { Runner } from "./runner.js";
 import { EPSS_URL, feedCache, KEV_URL } from "./feeds.js";
 import { installedRules, rulesAgeDays } from "./rules.js";
 import { detectAv } from "./scan/antivirus.js";
-import { FEED_STALE_DAYS, feedDir, localFeeds } from "./scan/deps.js";
+import { FEED_FILES, FEED_STALE_DAYS, feedDir, localFeeds } from "./scan/deps.js";
 import { Gh } from "./scan/gh.js";
 import { detectXProtect, hardeningFindings, XPROTECT_STALE_DAYS } from "./scan/xprotect.js";
 import { PACKAGE_CHECKER_REF, PACKAGE_CHECKER_VERSION } from "./vendor/package-checker-script.js";
@@ -82,14 +82,20 @@ export async function doctor(
   });
   // The vendored package-checker, and the advisory feed copy ultraguard keeps for it in the state folder.
   const feeds = opts.state ? localFeeds(feedDir(opts.state), opts.now) : undefined;
-  const fresh = !!feeds && feeds.ageDays <= FEED_STALE_DAYS;
+  const fresh = !!feeds && !feeds.missing.length && feeds.ageDays <= FEED_STALE_DAYS;
   out.push({
     check: "package-checker",
     ok: !opts.state || fresh,
     detail: `${PACKAGE_CHECKER_VERSION} (${PACKAGE_CHECKER_REF}, vendored)${
       opts.state
         ? feeds
-          ? `; ${feeds.files} feed(s) in ${feedDir(opts.state)}, ${feeds.ageDays} days old${fresh ? "" : " (stale: refreshed after 1 day)"}`
+          ? `; ${feeds.files} feed(s) in ${feedDir(opts.state)}, ${feeds.ageDays} days old${
+              feeds.missing.length
+                ? ` (incomplete: ${feeds.missing.length} of ${FEED_FILES.length} feeds missing, ${feeds.missing.slice(0, 3).join(", ")}${feeds.missing.length > 3 ? ", ..." : ""})`
+                : fresh
+                  ? ""
+                  : " (stale: refreshed after 1 day)"
+            }`
           : `; no advisory feeds in ${feedDir(opts.state)} (scan deps downloads them on each run)`
         : ""
     }`,

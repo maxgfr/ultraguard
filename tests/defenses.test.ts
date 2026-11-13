@@ -5,7 +5,7 @@ import { main, setRulesDeps, setRunner } from "../src/cli.js";
 import { freshclamSummary, refreshDefenses, updateAdvisoryFeeds, updateClamav, updateYaraForge } from "../src/defenses.js";
 import { defaultRulesDeps, installedRules, type RulesDeps } from "../src/rules.js";
 import { defaultRunner, type Runner } from "../src/runner.js";
-import { feedDir, localFeeds } from "../src/scan/deps.js";
+import { FEED_FILES, feedDir, localFeeds } from "../src/scan/deps.js";
 import { aikidoRun, tmp } from "./helpers.js";
 
 const NOW = new Date("2026-11-13T12:00:00Z");
@@ -37,14 +37,15 @@ const ok = (stdout = "") => ({ ok: true, status: 0, stdout, stderr: "" });
 const fail = (stdout = "", status = 1) => ({ ok: false, status, stdout, stderr: "" });
 const missing = () => ({ ok: false, status: 127, stdout: "", stderr: "", missing: true });
 
+const N = FEED_FILES.length;
+
 /** package-checker's --update-feeds: writes the feeds to --data-dir (ok), only one of them (partial, exit 3), or none (exit 2). */
 function updateFeeds(args: string[], how: "ok" | "partial" | "fail") {
   const dir = args[args.indexOf("--data-dir") + 1] as string;
   if (how === "fail") return { ok: false, status: 2, stdout: "", stderr: `\u001b[0;31m❌ Error: unable to write the feed directory ${dir}\u001b[0m\n` };
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "osv.purl"), "pkg:npm/x@1\n");
-  if (how === "ok") writeFileSync(join(dir, "ghsa.purl"), "pkg:npm/y@1\n");
-  return how === "ok" ? ok(`Updating feeds in ${dir}...\nUpdated 2 of 2 feed(s) in ${dir}\n`) : fail(`Updated 1 of 2 feed(s) in ${dir}\n`, 3);
+  for (const f of how === "ok" ? FEED_FILES : ["osv.purl"]) writeFileSync(join(dir, f), "pkg:npm/x@1\n");
+  return how === "ok" ? ok(`Updating feeds in ${dir}...\nUpdated ${N} of ${N} feed(s) in ${dir}\n`) : fail(`Updated 1 of ${N} feed(s) in ${dir}\n`, 3);
 }
 
 /** A fake machine: clamscan whose signatures freshclam renews, yara, unzip that unpacks one rule, package-checker's feed update. */
@@ -162,11 +163,22 @@ describe("advisory feeds refresh", () => {
     const state = tmp("ug-def-");
     const m = machine();
     const r = await updateAdvisoryFeeds(state, m.runner);
-    expect(r).toEqual({ engine: "package-checker", status: "updated", detail: "Updated 2 of 2 feed(s) (OSV and GHSA advisories for scan deps)" });
-    expect(localFeeds(feedDir(state))?.files).toBe(2);
+    expect(r).toEqual({ engine: "package-checker", status: "updated", detail: `Updated ${N} of ${N} feed(s) (OSV and GHSA advisories for scan deps)` });
+    expect(localFeeds(feedDir(state))?.files).toBe(N);
     expect((await updateAdvisoryFeeds(state, m.runner)).status).toBe("current");
     expect((await updateAdvisoryFeeds(state, m.runner, { now: new Date(Date.now() + 2.5 * 86_400_000) })).status).toBe("updated");
     expect((await updateAdvisoryFeeds(state, m.runner, { force: true })).status).toBe("updated");
+  });
+
+  it("a partial copy is refreshed even when it is fresh", async () => {
+    const state = tmp("ug-def-");
+    mkdirSync(feedDir(state), { recursive: true });
+    for (const f of FEED_FILES.filter((f) => f.startsWith("ghsa"))) writeFileSync(join(feedDir(state), f), "pkg:npm/x@1\n");
+    expect(localFeeds(feedDir(state))?.missing).toEqual(FEED_FILES.filter((f) => f.startsWith("osv")));
+    const m = machine();
+    expect((await updateAdvisoryFeeds(state, m.runner)).status).toBe("updated");
+    expect(m.calls).toContain("bash");
+    expect(localFeeds(feedDir(state))?.missing).toEqual([]);
   });
 
   it("a failed refresh keeps the older copy and gives its age; with no copy, says package-checker downloads them itself", async () => {
@@ -174,14 +186,14 @@ describe("advisory feeds refresh", () => {
     const none = await updateAdvisoryFeeds(state, machine({ feeds: "fail" }).runner);
     expect(none.status).toBe("failed");
     expect(none.detail).toBe(
-      `feed refresh failed: Error: unable to write the feed directory ${feedDir(state)}; no local copy: package-checker downloads the feeds itself on each scan`,
+      `feed refresh failed: Error: unable to write the feed directory ${feedDir(state)}; no local copy: package-checker looks for the feeds itself on each scan (its Homebrew copy, else a download)`,
     );
     const partial = await updateAdvisoryFeeds(state, machine({ feeds: "partial" }).runner);
     expect(partial.detail).toBe(
-      `feed refresh failed: Updated 1 of 2 feed(s) (the others could not be downloaded); kept the copy in ${feedDir(state)} (0 days old)`,
+      `feed refresh failed: Updated 1 of ${N} feed(s) (the others could not be downloaded); kept the copy in ${feedDir(state)} (0 days old, ${N - 1} of ${N} feeds missing)`,
     );
     const later = await updateAdvisoryFeeds(state, machine({ feeds: "fail" }).runner, { now: new Date(Date.now() + 3.5 * 86_400_000) });
-    expect(later.detail).toContain(`kept the copy in ${feedDir(state)} (3 days old)`);
+    expect(later.detail).toContain(`kept the copy in ${feedDir(state)} (3 days old, ${N - 1} of ${N} feeds missing)`);
   });
 });
 
@@ -201,8 +213,8 @@ describe("rules update", () => {
     expect(await main(["rules", "update", "--state", state])).toBe(0);
     expect(m.calls).toContain("freshclam");
     expect(installedRules(state)?.tag).toBe("20261108");
-    expect(localFeeds(feedDir(state))?.files).toBe(2);
-    expect(out.join("")).toMatch(/^package-checker +updated +Updated 2 of 2 feed\(s\)/m);
+    expect(localFeeds(feedDir(state))?.files).toBe(N);
+    expect(out.join("")).toMatch(new RegExp(`^package-checker +updated +Updated ${N} of ${N} feed\\(s\\)`, "m"));
     // Fresh feeds are refreshed again: rules update is forced.
     expect(await main(["rules", "update", "--state", state])).toBe(0);
     expect(m.calls.filter((c) => c === "bash")).toHaveLength(2);
@@ -240,7 +252,7 @@ describe("rules update", () => {
     expect(calls.map((c) => c.includes("--update-feeds"))).toEqual([false]);
     // Stale, but --no-update: no refresh.
     const old = new Date(Date.now() - 3 * 86_400_000);
-    for (const f of ["osv.purl", "ghsa.purl"]) utimesSync(join(feedDir(state), f), old, old);
+    for (const f of FEED_FILES) utimesSync(join(feedDir(state), f), old, old);
     calls.length = 0;
     expect(await scan("--no-update")).toBe(0);
     expect(calls.map((c) => c.includes("--update-feeds"))).toEqual([false]);
