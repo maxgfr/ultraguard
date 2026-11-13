@@ -1,0 +1,8 @@
+[
+  {
+    "surface": "host",
+    "what": "a signature-based antivirus pass (known malware families)",
+    "why": "ClamAV is not installed",
+    "fix": "brew install clamav (or apt install clamav), then ultraguard rules update and re-run scan host"
+  }
+]

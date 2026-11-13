@@ -1,0 +1,10 @@
+[
+  {
+    "id": "S1",
+    "url": "https://research.example/blog/amos-backdoor-launchdaemon",
+    "title": "AMOS stealer now ships a persistent backdoor (synthetic write-up for the eval)",
+    "fetchedAt": "2026-11-12T09:00:00.000Z",
+    "origin": "web",
+    "file": "sources/S1.md"
+  }
+]

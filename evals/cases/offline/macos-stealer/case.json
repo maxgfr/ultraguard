@@ -1,0 +1,22 @@
+{
+  "description": "A Mac hit by an AMOS-style stealer (synthetic): a LaunchDaemon runs ~/.agent, which keeps the ~/.mainhelper backdoor alive; the ClickFix command is in the shell history. Only the host was swept.",
+  "verdicts": {
+    "github:account": "UNKNOWN",
+    "github:repos": "UNKNOWN",
+    "host": "COMPROMISED",
+    "deps": "UNKNOWN",
+    "cloud": "UNKNOWN"
+  },
+  "badRules": [
+    "dangling",
+    "omitted-surface",
+    "omitted-subject",
+    "wrong-clean",
+    "no-coverage"
+  ],
+  "remediation": [
+    "Treat every credential it holds as stolen",
+    "`/Users/you/.mainhelper`",
+    "`/Library/LaunchDaemons/com.finder.helper.plist`"
+  ]
+}

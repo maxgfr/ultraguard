@@ -34,6 +34,9 @@ if (suite === "offline") {
     const c = JSON.parse(readFileSync(join(dir, name, "case.json"), "utf8"));
     const run = mkdtempSync(join(tmpdir(), `ug-eval-${name}-`));
     cpSync(join(dir, name, "run"), run, { recursive: true });
+    // The recorded IOC file must still pass `ioc set` (new indicator types included).
+    const set = cli(["ioc", "set", "--file", join(run, "iocs.json"), "--out", run]);
+    record(`${name}: ioc set accepts the IOC file`, set.code === 0, set.out);
     const report = cli(["report", "--out", run, "--json"]);
     const got = Object.fromEntries(JSON.parse(report.out).map((v) => [v.surface, v.verdict]));
     record(`${name}: verdicts`, JSON.stringify(got) === JSON.stringify(c.verdicts), `got ${JSON.stringify(got)}`);
@@ -48,9 +51,11 @@ if (suite === "offline") {
       `missing ${missing.join(", ")}; got ${rules.join(", ")}`,
     );
     const remediation = readFileSync(join(run, "REMEDIATION.md"), "utf8");
+    // A case lists what its remediation must say (c.remediation); by default, the account that acted.
+    const named = c.remediation ? c.remediation.every((s) => remediation.includes(s)) : /`[\w-]+`\. Tell the owners/.test(remediation);
     record(
-      `${name}: remediation runs nothing and names who acted`,
-      remediation.includes("ultraguard runs none of these commands") && /`[\w-]+`\. Tell the owners/.test(remediation),
+      `${name}: remediation runs nothing and ${c.remediation ? "names what to remove" : "names who acted"}`,
+      remediation.includes("ultraguard runs none of these commands") && named,
       "remediation text changed",
     );
   }
