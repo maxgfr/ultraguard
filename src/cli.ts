@@ -33,7 +33,7 @@ import { scanDeps } from "./scan/deps.js";
 import { scanGithub } from "./scan/github.js";
 import { scanHost } from "./scan/host.js";
 import { walk, type WalkResult } from "./scan/walk.js";
-import { type Campaign, type IocFile, SURFACES, type Surface } from "./types.js";
+import { type Campaign, type Gap, type IocFile, SURFACES, type Surface } from "./types.js";
 import { VERSION } from "./version.js";
 import { stateDir, watchCommit, watchPlan } from "./watch.js";
 
@@ -214,6 +214,7 @@ async function runScan(surface: "github" | "host" | "deps" | "cloud", a: Command
   if (surface === "host") {
     // Stale signatures miss this month's malware: refresh them first (ClamAV and YARA-Forge, each only if older than 7 days).
     let refreshed = "";
+    const refreshGaps: Gap[] = [];
     if (!argBool(a, "no-update") && !argBool(a, "skip-live")) {
       const ups = await refreshDefenses(stateDir(argValue(a, "state")), runner, {
         clamav: !argBool(a, "no-av"),
@@ -222,6 +223,14 @@ async function runScan(surface: "github" | "host" | "deps" | "cloud", a: Command
       });
       const shown = ups.filter((u) => u.status === "updated" || u.status === "failed");
       if (shown.length) refreshed = `${formatDefenses(shown)}\n`;
+      // A failed refresh is part of the run's coverage, not only a line on the terminal.
+      for (const u of ups.filter((x) => x.status === "failed"))
+        refreshGaps.push({
+          surface: "host",
+          what: `fresh ${u.engine === "clamav" ? "ClamAV signatures" : "YARA-Forge rules"}`,
+          why: u.detail,
+          fix: "ultraguard rules update",
+        });
     }
     const roots = argList(a, "roots").map((r) => resolve(r.replace(/^~(?=$|\/)/, homedir())));
     const r = await scanHost(iocs, (tree ?? (() => walkFor(a)))(), runner, {
@@ -232,9 +241,10 @@ async function runScan(surface: "github" | "host" | "deps" | "cloud", a: Command
       yara: argValue(a, "yara"),
       yaraSource: argValue(a, "yara-source"),
       listDir: run.dir,
+      stateDir: stateDir(argValue(a, "state")),
       ...communityRules(a, run),
     });
-    const f = run.recordSurface(r.result, r.findings, r.gaps);
+    const f = run.recordSurface(r.result, r.findings, [...refreshGaps, ...r.gaps]);
     run.write("host-inventory.json", r.inventory);
     return `${refreshed}host: ${r.result.stats.files ?? 0} files, ${r.result.stats.startupItems ?? 0} startup items, ${r.result.stats.credentialFiles ?? 0} credential files; ${f.length} finding(s)`;
   }

