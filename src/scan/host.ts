@@ -10,13 +10,18 @@ import { closeSync, existsSync, lstatSync, openSync, readdirSync, readFileSync, 
 import { homedir, platform, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { globRegex, type Matcher, matchers, normEco, reviewStart } from "../ioc.js";
+import { mapPool } from "../pool.js";
 import type { Runner } from "../runner.js";
 import type { Finding, Gap, IocFile, SurfaceResult } from "../types.js";
 import { readJson, scanAgents } from "./agents.js";
+import { appFindings } from "./macos.js";
 import { antivirusPass, avTargetList, dropFolders, excludedBy, yaraPass } from "./antivirus.js";
 import {
+  appBundleOf,
   backdated,
   browserExtensions,
+  bundleIdOf,
+  codesignInfo,
   changedMs,
   configFindings,
   credentialInventory,
@@ -27,6 +32,7 @@ import {
   type HostInventory,
   INTERPRETERS,
   interpretedScript,
+  iocHit,
   npmCacheHits,
   packageStoreHits,
   processFindings,
@@ -72,6 +78,8 @@ export interface HostScanOptions {
   community?: { source: string; compiled?: string; label: string; sourceId?: string; ageDays: number };
   /** yara is installed but no community rules are: say how to get them. */
   communityMissing?: boolean;
+  /** macOS: folders holding installed apps (default /Applications and ~/Applications). Read with the live checks. */
+  appDirs?: string[];
 }
 
 /** A character below space, or DEL: what a line-oriented tool splits or hides on. */
@@ -110,20 +118,7 @@ function readText(p: string, max = MAX_TEXT): string | undefined {
   }
 }
 
-function hitOf(
-  m: Matcher,
-  f: Omit<NewFinding, "campaign" | "source" | "indicator" | "key" | "severity" | "surface"> & { severity?: Finding["severity"] },
-): NewFinding {
-  return {
-    surface: "host",
-    severity: "compromised",
-    ...f,
-    campaign: m.campaign.id,
-    source: m.indicator.source,
-    indicator: { type: m.indicator.type, value: m.indicator.value },
-    key: `host|${f.subject}|${m.indicator.type}:${m.indicator.value}`,
-  };
-}
+const hitOf = iocHit;
 
 function startupDirs(home: string, os: NodeJS.Platform): string[] {
   if (os === "darwin") return [join(home, "Library/LaunchAgents"), "/Library/LaunchAgents", "/Library/LaunchDaemons"];
@@ -205,6 +200,9 @@ export async function scanHost(
     net: matchers(iocs, "ip", "domain"),
     process: matchers(iocs, "process"),
     pkg: matchers(iocs, "package").filter((m) => (m.indicator.ecosystem ?? "").toLowerCase().startsWith("vs") || m.indicator.ecosystem === "openvsx"),
+    label: matchers(iocs, "launchd_label"),
+    team: matchers(iocs, "team_id"),
+    bundle: matchers(iocs, "bundle_id"),
   };
   const hashes = new Map(M.hash.map((m) => [m.indicator.value.toLowerCase(), m]));
   const hashed = new Set<string>();
@@ -509,6 +507,9 @@ export async function scanHost(
     const label = /<key>Label<\/key>\s*<string>([^<]+)<\/string>/.exec(text)?.[1] ?? name.replace(/\.plist$/, "");
     const appleProgram = /^\/(System|usr\/libexec|usr\/sbin|Library\/Apple)\//.test(executable ?? "") && !INTERPRETERS.test(basename(executable ?? ""));
     if (/^com\.apple\./i.test(label) && !appleProgram) item.signals.unshift(`is named like an Apple service (${label}) but is not Apple's`);
+    // A program inside an app bundle: the bundle's identifier, for bundle_id IOCs.
+    const bundle = item.exists ? appBundleOf(executable) : undefined;
+    const bundleId = bundle && M.bundle.length ? await bundleIdOf(bundle, opts.skipLive ? undefined : runner) : undefined;
     inventory.startupItems.push(item);
     const recent = changed >= sinceMs;
     const facts = [
@@ -524,7 +525,14 @@ export async function scanHost(
       hashed.add(f);
       return hashes.get(sha256File(f) ?? "");
     };
+    // The launchd label, the file name without its extension (a systemd unit's name), the signing team, the app bundle.
+    const unit = name.replace(/\.(plist|service|timer|socket|path|desktop)$/, "");
+    const idHit =
+      M.label.find((x) => x.test(label) || x.test(unit) || x.test(name)) ??
+      (item.team ? M.team.find((x) => x.test(item.team ?? "")) : undefined) ??
+      (bundleId ? M.bundle.find((x) => x.test(bundleId)) : undefined);
     const m =
+      idHit ??
       M.content.find((x) => x.test(text ?? "")) ??
       (interp.text ? M.content.find((x) => x.test(interp.text ?? "")) : undefined) ??
       (fileSeen.has(p) ? undefined : M.file.find((x) => x.test(p))) ??
@@ -538,7 +546,9 @@ export async function scanHost(
           title:
             m.indicator.type === "sha256"
               ? `Startup item ${p}, or the program or script it runs, matches the sha256 ${m.indicator.value}`
-              : `Startup item ${p} ${m.indicator.type === "file" || m.indicator.type === "workflow_file" ? "matches" : "contains"} "${m.indicator.value}"`,
+              : m === idHit
+                ? `Startup item ${p} ${m.indicator.type === "launchd_label" ? "has the launchd label" : m.indicator.type === "team_id" ? `runs ${executable} signed by team` : `runs a program of the app`} "${m.indicator.value}"`
+                : `Startup item ${p} ${m.indicator.type === "file" || m.indicator.type === "workflow_file" ? "matches" : "contains"} "${m.indicator.value}"`,
           at,
           evidence: { kind: "file", ref: p, excerpt: command },
         }),
@@ -702,6 +712,17 @@ export async function scanHost(
       key: "host|browser-ext-recent",
     });
 
+  // 5c. macOS apps: bundle_id and team_id IOCs. Live: codesign and plutil run.
+  if (os === "darwin" && !opts.skipLive) {
+    const apps = await appFindings(runner, opts.appDirs ?? ["/Applications", join(home, "Applications")], {
+      nowMs,
+      team: M.team,
+      bundle: M.bundle,
+    });
+    findings.push(...apps.findings);
+    result.stats.apps = apps.apps.length;
+  }
+
   // 6. Local clones of repositories the GitHub scan found hit.
   if (opts.hitRepos?.length) {
     const wanted = new Set(opts.hitRepos.map((r) => r.toLowerCase()));
@@ -803,6 +824,36 @@ export async function scanHost(
       }
     }
     findings.push(...(await processFindings(runner, home, os)));
+    // team_id IOCs: who signed each running program, at most 400 distinct ones.
+    if (M.team.length && os === "darwin") {
+      const ps = await runner("ps", ["-axo", "comm="], { timeoutMs: 10_000 });
+      const exes = [...new Set(ps.stdout.split("\n").map((l) => l.trim()))].filter((e) => e.startsWith("/"));
+      const signed = await mapPool(exes.slice(0, 400), 8, async (exe) => ({ exe, sig: await codesignInfo(runner, exe) }));
+      for (const { exe, sig } of signed) {
+        const m = sig?.team ? M.team.find((x) => x.test(sig.team ?? "")) : undefined;
+        if (m)
+          findings.push(
+            hitOf(m, {
+              subject: exe,
+              title: `Running program ${exe} is signed by team "${m.indicator.value}"`,
+              evidence: { kind: "command", ref: `codesign -dv ${exe}`, excerpt: [sig?.identifier, sig?.authority].filter(Boolean).join(" | ") },
+            }),
+          );
+      }
+      if (!ps.ok)
+        gaps.push({
+          surface: "host",
+          what: "the signing team of running programs (team_id IOCs)",
+          why: "ps failed",
+          fix: "ps -axo comm= | xargs -n1 codesign -dv",
+        });
+      else if (exes.length > 400)
+        gaps.push({
+          surface: "host",
+          what: `the signing team of ${exes.length - 400} running program(s) past the first 400`,
+          why: "codesign runs on a bounded number of programs",
+        });
+    }
   } else gaps.push({ surface: "host", what: "crontab, open connections, processes and code signatures", why: "live checks were skipped" });
 
   // 8. What a stealer here would take: the credential stores, by path.

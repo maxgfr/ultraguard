@@ -260,6 +260,80 @@ export async function signerOf(
   return { signed: true, signer: authority, team: team && team !== "not set" ? team : undefined };
 }
 
+/** What `codesign -dv` says about a program or a bundle. */
+export interface CodeSignature {
+  signed: boolean;
+  adhoc?: boolean;
+  /** The first Authority line: who signed it. */
+  authority?: string;
+  team?: string;
+  identifier?: string;
+}
+
+/**
+ * Who signed a program or an app bundle, from `codesign -dv` alone: no
+ * `--verify`, which hashes every resource of a bundle and takes minutes on a
+ * large app. Undefined when codesign is absent or could not read the file.
+ */
+export async function codesignInfo(runner: Runner, path: string): Promise<CodeSignature | undefined> {
+  const res = await runner("codesign", ["-dv", "--verbose=2", path], { timeoutMs: 15_000 });
+  if (res.missing) return undefined;
+  const text = `${res.stderr}\n${res.stdout}`;
+  if (/not signed at all|code object is not signed/i.test(text)) return { signed: false };
+  if (!res.ok && !/Authority=|Signature=adhoc|Identifier=/.test(text)) return undefined;
+  const identifier = /^Identifier=(.+)$/m.exec(text)?.[1]?.trim();
+  const team = /^TeamIdentifier=(.+)$/m.exec(text)?.[1]?.trim();
+  if (/Signature=adhoc/.test(text)) return { signed: false, adhoc: true, identifier };
+  return {
+    signed: true,
+    authority: /^Authority=(.+)$/m.exec(text)?.[1]?.trim(),
+    team: team && team !== "not set" ? team : undefined,
+    identifier,
+  };
+}
+
+/** Apple's own signing identities: the OS (Software Signing), the App Store, and Apple's Developer ID. */
+export const isAppleSigned = (sig: CodeSignature | undefined): boolean =>
+  !!sig?.signed &&
+  /^(Software Signing|Apple Mac OS Application Signing|Apple iPhone OS Application Signing|Developer ID Application: Apple Inc\.)/.test(sig.authority ?? "");
+
+/** The app bundle a program lives in (`/Applications/X.app/Contents/MacOS/x` → `/Applications/X.app`), if any. */
+export function appBundleOf(program: string | undefined): string | undefined {
+  const i = program?.indexOf(".app/Contents/") ?? -1;
+  return program && i > 0 ? program.slice(0, i + 4) : undefined;
+}
+
+/**
+ * A bundle's CFBundleIdentifier: read from an XML Info.plist directly, through
+ * `plutil` for a binary one (when `runner` is given). Undefined when unreadable.
+ */
+export async function bundleIdOf(bundle: string, runner?: Runner): Promise<string | undefined> {
+  const plist = join(bundle, "Contents/Info.plist");
+  const text = readSmall(plist);
+  if (text === undefined) return undefined;
+  const xml = /<key>CFBundleIdentifier<\/key>\s*<string>([^<]*)<\/string>/.exec(text)?.[1];
+  if (xml !== undefined) return decodeXml(xml).trim() || undefined;
+  if (!runner || !text.startsWith("bplist")) return undefined;
+  const r = await runner("plutil", ["-extract", "CFBundleIdentifier", "raw", "-o", "-", plist], { timeoutMs: 10_000 });
+  return r.ok ? r.stdout.trim() || undefined : undefined;
+}
+
+/** A finding for an IOC match: compromised unless said otherwise, citing the indicator's source. */
+export function iocHit(
+  m: Matcher,
+  f: Omit<NewFinding, "campaign" | "source" | "indicator" | "key" | "severity" | "surface"> & { severity?: Finding["severity"] },
+): NewFinding {
+  return {
+    surface: "host",
+    severity: "compromised",
+    ...f,
+    campaign: m.campaign.id,
+    source: m.indicator.source,
+    indicator: { type: m.indicator.type, value: m.indicator.value },
+    key: `host|${f.subject}|${m.indicator.type}:${m.indicator.value}`,
+  };
+}
+
 /** Shell startup files: the persistence that runs every time a terminal opens (or closes). */
 export const SHELL_STARTUP = [
   ".zshrc",
