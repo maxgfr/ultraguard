@@ -39,7 +39,7 @@ export LC_ALL=C
 # Version - automatically updated by release workflow
 # Last release: https://github.com/maxgfr/package-checker.sh/releases
 # NOTE: this exact 'VERSION="..."' format is sed-matched by .releaserc.json — do not reformat.
-VERSION="1.16.5"
+VERSION="1.17.0"
 
 # Default configuration
 CONFIG_FILE=".package-checker.config.json"
@@ -89,10 +89,14 @@ GITIGNORED_SCANNED=0
 GITIGNORED_SKIPPED=0
 
 # Built-in feed resolution: --data-dir (or PACKAGE_CHECKER_DATA_DIR) is tried
-# first; a local feed older than MAX_FEED_AGE_DAYS (--max-feed-age, 0 = no
-# limit) is replaced by a download when the network is reachable.
+# first; a local feed older than MAX_FEED_AGE_DAYS (--max-feed-age, default
+# PACKAGE_CHECKER_MAX_FEED_AGE, else 2; 0 = no limit) is replaced by a download when the network is reachable.
 FEED_DATA_DIR="${PACKAGE_CHECKER_DATA_DIR:-}"
 MAX_FEED_AGE_DAYS=2
+# Set when GitHub could not be reached during this run (connection failure or
+# timeout): the other feeds are not tried again, so a network that drops
+# packets costs one connect timeout per run, not one per feed.
+FEED_REMOTE_UNREACHABLE=false
 # One record per data source, fields separated by $'\x1f':
 # kind|ecosystem|file|name|status|origin|entries|date|age_days|stale
 # (kind: ghsa, osv, runtime, custom; status: loaded, missing, failed)
@@ -474,11 +478,13 @@ OPTIONS:
     --data-dir DIR          Look for the default feeds in DIR first, and keep the
                             feeds downloaded during a scan there (env:
                             PACKAGE_CHECKER_DATA_DIR; must exist)
-    --max-feed-age DAYS     A local feed older than DAYS (default: 2; 0 = no limit; age
-                            from its "# generated:" date) is replaced by a download,
-                            kept for the next runs; offline, the newest copy is used
-                            with a warning. Downloads go to --data-dir, else
-                            PACKAGE_CHECKER_CACHE_DIR or ~/.cache/package-checker/feeds
+    --max-feed-age DAYS     A local feed older than DAYS (default: 2, or env
+                            PACKAGE_CHECKER_MAX_FEED_AGE, 0 in the Docker image;
+                            0 = no limit; age from its "# generated:" date) is
+                            replaced by a download, kept for the next runs; offline,
+                            the newest copy is used with a warning. Downloads go to
+                            --data-dir, else PACKAGE_CHECKER_CACHE_DIR or
+                            ~/.cache/package-checker/feeds
     --update-feeds          Download the published feeds into --data-dir (each file
                             replaced atomically) and exit; --ecosystems limits them
     --strict                Exit 3 whenever the scan is incomplete, even with findings;
@@ -542,10 +548,12 @@ OPTIONS:
                             .gitignore ignores (scanned and counted by default)
     --include-gitignored    Accepted for compatibility (git-ignored files are scanned)
     --no-default-prune      Also descend into caches, package stores and build outputs:
-                            ~/Library, .Trash, .cache, .npm, .pnpm-store, .yarn/cache,
+                            ~/Library (except Mobile Documents and CloudStorage, always
+                            scanned), .Trash, .cache, .npm, .pnpm-store, .yarn/cache,
                             .cargo/registry, .rustup, .gradle, .m2, site-packages,
                             __pycache__, .next, .nuxt, Pods, DerivedData (skipped by
-                            default, like options.ignore_paths)
+                            default, like options.ignore_paths; the skipped
+                            directories are listed)
 
 EXIT CODES:
     0   No vulnerable package found, and the scan is complete
@@ -2299,12 +2307,25 @@ load_data_source() {
     # A built-in feed always lists advisories: one without any purl line is
     # an empty file or something else (an HTML error or captive-portal page
     # served with 200), never a clean feed.
+    # Likewise a --source list (JSON, CSV or purl) with no entry is an empty
+    # file or a page served in its place; a scanner report (SARIF, SBOM,
+    # Trivy) with no finding is a valid, clean one.
     case "$kind" in
         ghsa|osv|runtime)
             if [ "$FEED_RAW_COUNT" -eq 0 ]; then
                 echo -e "${RED}❌ Error: $name has no advisory: $url is empty or not a feed${NC}"
                 return 1
             fi
+            ;;
+        custom)
+            case "$format" in
+                json|csv|purl)
+                    if [ "$FEED_RAW_COUNT" -eq 0 ]; then
+                        echo -e "${RED}❌ Error: $name has no entry: $url is empty or not a $format list${NC}"
+                        return 1
+                    fi
+                    ;;
+            esac
             ;;
     esac
 
@@ -7657,20 +7678,34 @@ feed_remove_stale_staging() {
 
 # Download one published feed into DIR (atomic: a staging file renamed over
 # the previous copy only when it is a complete purl feed), with a
-# "# fetched:" header. Arguments: feed name, directory, curl --max-time.
+# "# fetched:" header. Arguments: feed name, directory, curl --max-time and
+# --connect-timeout (default 10). Sets FEED_FETCH_STATUS to curl's exit
+# status (0 when the download itself succeeded).
 feed_fetch_into() {
-    local name="$1" dir="$2" max_time="$3" staged stamp
+    local name="$1" dir="$2" max_time="$3" connect_timeout="${4:-10}" staged stamp
+    FEED_FETCH_STATUS=0
     feed_clock
     epoch_to_iso "$NOW_EPOCH"
     stamp="$EPOCH_ISO"
     staged=$(mktemp "$dir/.$name.tmp.XXXXXX") || return 1
     register_temp_file "$staged"
-    if ! { printf '# fetched: %s\n' "$stamp" &&
-        curl -fsSL --connect-timeout 10 --max-time "$max_time" "$FEED_REMOTE_BASE/$name"; } > "$staged"; then
+    { printf '# fetched: %s\n' "$stamp" &&
+        curl -fsSL --connect-timeout "$connect_timeout" --max-time "$max_time" "$FEED_REMOTE_BASE/$name"; } > "$staged" ||
+        FEED_FETCH_STATUS=$?
+    if [ "$FEED_FETCH_STATUS" -ne 0 ]; then
         rm -f "$staged"
         return 1
     fi
     feed_install "$staged" "$dir/$name"
+}
+
+# Remember, for the rest of the run, a curl failure that is not an HTTP
+# error (22): GitHub could not be reached or did not answer in time.
+feed_note_remote_failure() {
+    case "$1" in
+        0|22) ;;
+        *) FEED_REMOTE_UNREACHABLE=true ;;
+    esac
 }
 
 # Resolve one default feed (e.g. "ghsa.purl", "osv-pypi.purl"), in the
@@ -7684,6 +7719,8 @@ feed_fetch_into() {
 # The first fresh copy (see feed_file_meta) wins. Otherwise the published
 # feed is downloaded and kept (resolve_feed_write_dir), so the next runs use
 # it; when the download fails, the newest stale copy is used, with a warning.
+# A connection failure or timeout is remembered for the run
+# (FEED_REMOTE_UNREACHABLE): the next feeds are not tried again.
 # With no local copy at all and GitHub unreachable, ./data/ in the current
 # directory is a last resort (offline piped run), with a warning: the scanned
 # project is usually the current directory, and its own data/ must never
@@ -7728,9 +7765,15 @@ resolve_default_feed() {
         fi
     done
 
-    local url="$FEED_REMOTE_BASE/$name"
+    local url="$FEED_REMOTE_BASE/$name" probe=0 connect_timeout=10
     if [ -z "$stale" ]; then
-        if ! curl --output /dev/null --silent --head --fail --connect-timeout 10 --max-time 30 "$url" 2>/dev/null; then
+        if [ "$FEED_REMOTE_UNREACHABLE" = true ]; then
+            probe=1
+        else
+            curl --output /dev/null --silent --head --fail --connect-timeout 10 --max-time 30 "$url" 2>/dev/null || probe=$?
+            feed_note_remote_failure "$probe"
+        fi
+        if [ "$probe" -ne 0 ]; then
             if [ -f "./data/$name" ]; then
                 echo -e "${YELLOW}⚠️  Warning: built-in feeds unreachable; using ./data/$name from the current directory${NC}" >&2
                 FEED_PATH="./data/$name" FEED_ORIGIN="./data/$name"
@@ -7739,15 +7782,23 @@ resolve_default_feed() {
             [ -z "$data_dir_note" ] || echo -e "${YELLOW}⚠️  Warning: $data_dir_note${NC}" >&2
             return 1
         fi
+    elif [ "$FEED_REMOTE_UNREACHABLE" = true ]; then
+        echo -e "${YELLOW}⚠️  Warning: using $stale, $stale_age day(s) old (--max-feed-age $MAX_FEED_AGE_DAYS): GitHub could not be reached earlier in this run; refresh it with --update-feeds --data-dir DIR${NC}" >&2
+        FEED_PATH="$stale" FEED_ORIGIN="$stale" FEED_STALE=true
+        return 0
     else
         echo -e "${YELLOW}⚠️  Warning: $stale is $stale_age day(s) old (older than $MAX_FEED_AGE_DAYS day(s)); downloading the current feed${NC}" >&2
+        # A usable copy is at hand: do not wait long for a connection.
+        connect_timeout=5
     fi
 
-    if resolve_feed_write_dir && feed_fetch_into "$name" "$FEED_WRITE_DIR" 120; then
+    FEED_FETCH_STATUS=0
+    if resolve_feed_write_dir && feed_fetch_into "$name" "$FEED_WRITE_DIR" 120 "$connect_timeout"; then
         FEED_PATH="$FEED_WRITE_DIR/$name" FEED_ORIGIN="$url"
         return 0
     fi
-    echo -e "${RED}❌ Error: Unable to download from $url${NC}"
+    feed_note_remote_failure "$FEED_FETCH_STATUS"
+    echo -e "${RED}❌ Error: Unable to download from $url${NC}" >&2
     if [ -n "$stale" ]; then
         echo -e "${YELLOW}⚠️  Warning: using $stale, $stale_age day(s) old (--max-feed-age $MAX_FEED_AGE_DAYS): the current feed could not be downloaded; refresh it with --update-feeds --data-dir DIR${NC}" >&2
         FEED_PATH="$stale" FEED_ORIGIN="$stale" FEED_STALE=true
@@ -8249,13 +8300,28 @@ discover_project_files() {
             find_args+=( '(' "${prune_args[@]}" ')' -prune -o )
         fi
         if [ ${#default_prune_args[@]} -gt 0 ]; then
-            find_args+=( '(' "${default_prune_args[@]}" ')' -type d -prune -print -o )
+            find_args+=( '(' "${default_prune_args[@]}" ')' -type d -prune -print0 -o )
         fi
-        find_args+=( '(' "${match_args[@]}" ')' -type f -print )
-        # An unreadable directory must not abort the scan (set -e): report it
-        # and keep whatever was found. A failure that found nothing at all is
-        # not a scan: stop instead of reporting a clean project.
-        if ! found=$(find "${find_args[@]}" 2>/dev/null); then
+        find_args+=( '(' "${match_args[@]}" ')' -type f -print0 )
+        # NUL-separated: a default-pruned directory (printed so the skipped
+        # trees can be listed) is told from a project file (a regular file)
+        # even when its path holds a newline. An unreadable directory must
+        # not abort the scan (set -e): report it and keep whatever was
+        # found. A failure that found no project file is not a scan: stop
+        # instead of reporting a clean project.
+        local find_list find_status=0 entry
+        find_list=$(mktemp) || exit "$EXIT_ERROR"
+        register_temp_file "$find_list"
+        find "${find_args[@]}" > "$find_list" 2>/dev/null || find_status=$?
+        while IFS= read -r -d '' entry; do
+            if [ ${#default_prune_args[@]} -gt 0 ] && [ -d "$entry" ]; then
+                PRUNED_DIRS+=("$entry")
+            else
+                found+="${found:+$'\n'}$entry"
+            fi
+        done < "$find_list"
+        rm -f -- "$find_list"
+        if [ "$find_status" -ne 0 ]; then
             if [ -z "$found" ]; then
                 echo -e "${RED}❌ Error: unable to search $SEARCH_DIR for project files${NC}" >&2
                 exit "$EXIT_ERROR"
@@ -8266,23 +8332,12 @@ discover_project_files() {
     fi
 
     # ---- Default-pruned directories ----
-    # Printed by find next to the project files (which are regular files).
-    if [ ${#default_prune_args[@]} -gt 0 ] && [ -n "$found" ]; then
-        local kept_found="" line
-        while IFS= read -r line; do
-            if [ -d "$line" ]; then
-                PRUNED_DIRS+=("$line")
-            else
-                kept_found+="${kept_found:+$'\n'}$line"
-            fi
-        done <<< "$found"
-        found="$kept_found"
-        if [ ${#PRUNED_DIRS[@]} -gt 0 ]; then
-            echo -e "${BLUE}ℹ️  Skipping ${#PRUNED_DIRS[@]} cache, package-store or build directory(ies) (use --no-default-prune to scan them):${NC}"
-            printf '      %s\n' "${PRUNED_DIRS[@]:0:10}"
-            [ ${#PRUNED_DIRS[@]} -le 10 ] || echo "      ... and $(( ${#PRUNED_DIRS[@]} - 10 )) more"
-            echo ""
-        fi
+    # Split from the project files while reading find's output.
+    if [ ${#PRUNED_DIRS[@]} -gt 0 ]; then
+        echo -e "${BLUE}ℹ️  Skipping ${#PRUNED_DIRS[@]} cache, package-store or build directory(ies) (use --no-default-prune to scan them):${NC}"
+        printf '      %s\n' "${PRUNED_DIRS[@]:0:10}"
+        [ ${#PRUNED_DIRS[@]} -le 10 ] || echo "      ... and $(( ${#PRUNED_DIRS[@]} - 10 )) more"
+        echo ""
     fi
 
     # ---- Git-ignored files ----
@@ -8549,7 +8604,7 @@ main() {
     local go_reachability=false
     local runtime_check=""   # "" = not set on the command line (config decides)
     local exclude_gitignored=false
-    local update_feeds_requested=false data_dir_flag=false
+    local update_feeds_requested=false data_dir_flag=false max_feed_age_flag=false
 
     # Any unexpected failure that aborts the run (set -e) exits with
     # EXIT_ERROR, never with 1, which means "vulnerable packages found".
@@ -8773,6 +8828,7 @@ main() {
                     exit "$EXIT_ERROR"
                 fi
                 MAX_FEED_AGE_DAYS=$((10#$2))
+                max_feed_age_flag=true
                 shift 2
                 ;;
             --update-feeds)
@@ -8873,6 +8929,16 @@ main() {
         fi
         echo -e "${YELLOW}⚠️  Warning: PACKAGE_CHECKER_DATA_DIR=$FEED_DATA_DIR is not a directory; ignored${NC}" >&2
         FEED_DATA_DIR=""
+    fi
+
+    # PACKAGE_CHECKER_MAX_FEED_AGE: the default of --max-feed-age (the full
+    # Docker image sets 0: its feeds are those of the image build).
+    if [ "$max_feed_age_flag" = false ] && [ -n "${PACKAGE_CHECKER_MAX_FEED_AGE:-}" ]; then
+        if [[ "$PACKAGE_CHECKER_MAX_FEED_AGE" =~ ^[0-9]+$ ]]; then
+            MAX_FEED_AGE_DAYS=$((10#$PACKAGE_CHECKER_MAX_FEED_AGE))
+        else
+            echo -e "${YELLOW}⚠️  Warning: PACKAGE_CHECKER_MAX_FEED_AGE=$PACKAGE_CHECKER_MAX_FEED_AGE is not a number of days; ignored${NC}" >&2
+        fi
     fi
 
     # --update-feeds: refresh the feeds of --data-dir, then stop.
@@ -9122,6 +9188,7 @@ main() {
             echo "  - Next to the script: <script dir>/data/"
             echo "  - Homebrew: \$(brew --prefix)/share/package-checker/data/"
             echo "  - Docker: /app/data/"
+            echo "  - Download cache: PACKAGE_CHECKER_CACHE_DIR or ~/.cache/package-checker/feeds/"
             echo "  - Remote: $FEED_REMOTE_BASE/"
             echo "  - Local: ./data/"
             echo ""
