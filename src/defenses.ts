@@ -17,6 +17,8 @@ export interface DefenseUpdate {
   /** updated: refreshed now; current: fresh enough, left alone; skipped: engine absent; failed: the refresh did not work. */
   status: "updated" | "current" | "skipped" | "failed";
   detail: string;
+  /** Why a refresh failed, without the copy it kept: what the stale-feed gap of scan deps quotes. */
+  error?: string;
 }
 
 /** freshclam's summary lines ("daily.cvd updated (version: 28181, ...)"), without the noise. */
@@ -96,10 +98,14 @@ export async function updateAdvisoryFeeds(state: string, runner: Runner, opts: {
     return { engine: "package-checker", status: "current", detail: `${have.files} feed(s) in ${dir} (${have.ageDays} days old)` };
   const r = await updateCheckerFeeds(runner, dir);
   if (r.ok) return { engine: "package-checker", status: "updated", detail: `${r.detail} (OSV and GHSA advisories for scan deps)` };
+  // No Bash 4: package-checker cannot run at all, like an engine that is not installed.
+  if (/bash 4|bash is not installed/i.test(r.detail))
+    return { engine: "package-checker", status: "skipped", detail: `${r.detail} Install Bash 4 or newer (macOS: brew install bash) for scan deps.` };
   const kept = localFeeds(dir, opts.now);
   return {
     engine: "package-checker",
     status: "failed",
+    error: r.detail,
     detail: `feed refresh failed: ${r.detail}; ${kept ? `kept the copy in ${dir} (${kept.ageDays} days old${kept.missing.length ? `, ${kept.missing.length} of ${FEED_FILES.length} feeds missing` : ""})` : "no local copy: each scan deps downloads the feeds again"}`,
   };
 }

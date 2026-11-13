@@ -199,6 +199,59 @@ describe("advisory feeds refresh", () => {
   });
 });
 
+describe("advisory feeds refresh messages", () => {
+  afterEach(() => {
+    setRunner(defaultRunner);
+    setRulesDeps(defaultRulesDeps);
+    vi.restoreAllMocks();
+  });
+
+  const BASH3 = "Error: package-checker requires Bash 4 or newer (this shell: 3.2.57(1)-release).\n  macOS (/bin/bash is 3.2): brew install bash\n";
+
+  it("Bash 3 skips the feeds with the fix, and does not fail rules update", async () => {
+    const bash3: Runner = async (cmd, args) =>
+      cmd === "bash" && args.includes("--update-feeds") ? { ok: false, status: 2, stdout: "", stderr: BASH3 } : missing();
+    const r = await updateAdvisoryFeeds(tmp("ug-def-"), bash3);
+    expect(r.status).toBe("skipped");
+    expect(r.detail).toContain("brew install bash");
+    expect(r.detail).not.toContain("downloads");
+    setRunner(bash3);
+    setRulesDeps(deps);
+    captureOut();
+    expect(await main(["rules", "update", "--state", tmp("ug-def-")])).toBe(0);
+  });
+
+  it("the stale-feed gap quotes the refresh error once, without the copy it kept", async () => {
+    const state = tmp("ug-def-");
+    mkdirSync(feedDir(state), { recursive: true });
+    const old = new Date(Date.now() - 3 * 86_400_000);
+    for (const f of FEED_FILES) {
+      writeFileSync(join(feedDir(state), f), "pkg:npm/x@1\n");
+      utimesSync(join(feedDir(state), f), old, old);
+    }
+    const root = tmp("ug-defr-");
+    mkdirSync(join(root, "app"));
+    writeFileSync(join(root, "app", "package-lock.json"), JSON.stringify({ lockfileVersion: 3, packages: { "": {} } }));
+    setRunner(async (cmd, args) => {
+      if (cmd !== "bash") return missing();
+      if (args.includes("--update-feeds")) return { ok: false, status: 2, stdout: "", stderr: "Error: curl: (6) Could not resolve host\n" };
+      const osv = join(feedDir(state), "osv.purl");
+      const report = {
+        vulnerabilities: [],
+        sources: [{ kind: "osv", ecosystem: "npm", status: "loaded", origin: osv, origin_type: "local", date: old.toISOString(), age_days: 3 }],
+      };
+      writeFileSync(args[args.indexOf("--export-json") + 1] as string, JSON.stringify(report));
+      return ok();
+    });
+    captureOut();
+    const run = aikidoRun();
+    expect(await main(["scan", "deps", "--out", run.dir, "--roots", root, "--no-registry", "--state", state])).toBe(0);
+    expect(run.gaps().find((g) => g.what.startsWith("advisories newer than 3 days"))?.why).toBe(
+      "the feed refresh failed (Error: curl: (6) Could not resolve host): the 3-day-old copy was used",
+    );
+  });
+});
+
 describe("rules update", () => {
   afterEach(() => {
     setRunner(defaultRunner);

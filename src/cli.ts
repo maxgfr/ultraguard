@@ -431,7 +431,7 @@ async function runScan(surface: "github" | "host" | "deps" | "cloud", a: Command
       // Global installs (npm -g, nvm, bun, uv tools, pipx) are read under the real home.
       home: homedir(),
       feedDir: feedDir(state),
-      feedRefreshError: feeds?.status === "failed" ? feeds.detail : undefined,
+      feedRefreshError: feeds?.status === "failed" ? feeds.error : undefined,
     });
     // The packages the user publishes: a worm with their npm token republishes them.
     const pub = argBool(a, "no-registry") ? undefined : await scanNpmPublishes(iocs, { user: argValue(a, "npm-user"), runner, get: registryGet });

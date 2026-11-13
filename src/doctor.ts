@@ -96,7 +96,7 @@ export async function doctor(
                   ? ""
                   : " (stale: refreshed after 1 day)"
             }`
-          : `; no advisory feeds in ${feedDir(opts.state)} (scan deps downloads them on each run)`
+          : `; no advisory feeds in ${feedDir(opts.state)} (the next scan deps downloads them, or ultraguard rules update now)`
         : ""
     }`,
     fix: opts.state && !fresh ? "ultraguard rules update" : undefined,

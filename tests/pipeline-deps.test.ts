@@ -64,7 +64,9 @@ describe("package-checker runs", () => {
     const root = tmp("ug-pc1r-");
     put(root, "app/package-lock.json", npmLock({ a: "1.0.0" }));
     const s = await scanDeps(NO_PKG, walk([root]), new Run(tmp()), { runner, roots: [root] });
-    expect(s.gaps.some((g) => g.why === `package-checker: ${OSV_MISSING}: malicious-package (MAL-) advisories were not loaded`)).toBe(true);
+    expect(s.gaps.find((g) => g.why === `package-checker: ${OSV_MISSING}: malicious-package (MAL-) advisories were not loaded`)?.fix).toBe(
+      "ultraguard rules update, then re-run scan deps",
+    );
     expect(s.gaps.some((g) => g.why.startsWith("package-checker failed"))).toBe(false);
   });
 
@@ -284,7 +286,7 @@ describe("what the deps walk could not see", () => {
     });
     expect(dirs).toEqual([join(root, "web/app")]);
     expect(s.result.stats.advisoryOnlyLockfiles).toBe(1);
-    expect(s.gaps.some((g) => g.why === `package-checker: ${reason}`)).toBe(true);
+    expect(s.gaps.find((g) => g.why === `package-checker: ${reason}`)?.fix).toMatch(/^install bun/);
   });
 
   it("e2e-5: no lockfile at all under the roots is said, with the roots", async () => {
@@ -403,7 +405,9 @@ describe("doctor", () => {
     const state = tmp("ug-doc-");
     const line = async (now?: Date) => (await doctor(runner, { state, now, platform: "linux" })).find((l) => l.check === "package-checker");
     expect(await line()).toMatchObject({ ok: false, fix: "ultraguard rules update" });
-    expect((await line())?.detail).toContain(`${PACKAGE_CHECKER_VERSION} (${PACKAGE_CHECKER_REF}, vendored); no advisory feeds in ${feedDir(state)}`);
+    expect((await line())?.detail).toContain(
+      `${PACKAGE_CHECKER_VERSION} (${PACKAGE_CHECKER_REF}, vendored); no advisory feeds in ${feedDir(state)} (the next scan deps downloads them`,
+    );
     // A partial copy is not ok.
     put(feedDir(state), "osv.purl", "pkg:npm/x@1\n");
     expect(await line()).toMatchObject({ ok: false, fix: "ultraguard rules update" });

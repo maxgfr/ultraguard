@@ -158,11 +158,21 @@ export async function updateCheckerFeeds(runner: Runner, dir: string): Promise<{
 
 /** What to do about a failed package-checker run, by its error. */
 const checkerFix = (error: string): string =>
-  /bash 4/i.test(error)
+  /bash 4|bash is not installed/i.test(error)
     ? "brew install bash (package-checker needs Bash 4 or newer), then re-run"
     : /^timed out/.test(error)
       ? "re-run with --roots narrowed to your code folders"
       : "re-run when online";
+
+/** What to do about one of package-checker's incomplete_reasons. */
+const warningFix = (reason: string): string =>
+  /\bfeed\b.*could not be (found|loaded)/.test(reason)
+    ? "ultraguard rules update, then re-run scan deps"
+    : /\bbun\b/.test(reason)
+      ? "install bun (https://bun.sh) so package-checker can read bun.lockb, then re-run scan deps"
+      : /could not be read/.test(reason)
+        ? "check the permissions of those files, then re-run scan deps"
+        : "check those lockfiles by hand";
 
 export function defaultChecker(runner: Runner, workDir: string, opts: { dataDir?: string } = {}): Checker {
   const script = materializeChecker(join(workDir, "tools"));
@@ -502,7 +512,12 @@ export async function scanDeps(
         }
         // A staged copy is named by the lockfile it stands for.
         for (const w of r.warnings ?? [])
-          gaps.push({ surface: "deps", what: `advisories for ${label}`, why: `package-checker: ${orig ? w.split(join(g, basename(orig))).join(orig) : w}` });
+          gaps.push({
+            surface: "deps",
+            what: `advisories for ${label}`,
+            why: `package-checker: ${orig ? w.split(join(g, basename(orig))).join(orig) : w}`,
+            fix: warningFix(w),
+          });
         for (const src of r.sources ?? []) {
           const k = `${src.kind}|${src.ecosystem}|${src.origin}`;
           if (!sources.has(k)) sources.set(k, src);
