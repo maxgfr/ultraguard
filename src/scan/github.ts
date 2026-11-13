@@ -11,7 +11,7 @@ import { inWindow, type Matcher, matchers, reviewStart, windowStart } from "../i
 import { mapPool } from "../pool.js";
 import type { Runner } from "../runner.js";
 import type { Finding, Gap, IocFile, SurfaceResult } from "../types.js";
-import { Gh } from "./gh.js";
+import { Gh, type GhList } from "./gh.js";
 
 type NewFinding = Omit<Finding, "id">;
 
@@ -21,6 +21,8 @@ export interface GithubScanOptions {
   repos?: string[];
   maxRepos?: number;
   now?: Date;
+  /** Injected so tests do not wait for the search rate limit to reset. */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 export interface GithubScanResult {
@@ -64,6 +66,15 @@ function hit(m: Matcher, base: Omit<NewFinding, "campaign" | "source" | "indicat
   };
 }
 
+/** REST calls an active repository costs at most, and an inactive one (PRs only). */
+const COST_ACTIVE = 16;
+const COST_INACTIVE = 1;
+
+/** The query-free path, for grouping failures by what they read. */
+const basePath = (p: string) => p.split("?")[0] ?? p;
+/** Paths that read a repository rather than the account. */
+const REPO_PATH = /^(repos\/|repositories\/|user\/repos|search\/code)/;
+
 /** The first indicator that matches `value`, counting only campaigns whose own window holds `at`. */
 function firstMatch(ms: Matcher[], value: string | undefined | null, at?: string | null): Matcher | undefined {
   if (!value) return undefined;
@@ -71,11 +82,10 @@ function firstMatch(ms: Matcher[], value: string | undefined | null, at?: string
 }
 
 export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScanOptions = {}): Promise<GithubScanResult> {
-  const gh = new Gh(runner);
+  const gh = new Gh(runner, undefined, opts.sleep);
   const now = opts.now ?? new Date();
   const since = windowStart(iocs);
   const sinceDay = since.slice(0, 10);
-  const reviewSince = reviewStart(iocs, now);
   const accountRes: SurfaceResult = { surface: "github:account", scanned: false, stats: {}, startedAt: now.toISOString() };
   const reposRes: SurfaceResult = { surface: "github:repos", scanned: false, stats: {}, startedAt: now.toISOString() };
   const accF: NewFinding[] = [];
@@ -106,8 +116,24 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
     };
   }
   const login = me.data.login;
-  accountRes.scanned = true;
-  reposRes.scanned = true;
+  // Paths whose failure already has its own gap: not counted again in the generic failed-reads gap.
+  const reported = new Set(["user", "rate_limit"]);
+  /** The gap for a list read in part (a later page failed) or not at all. */
+  const listGap = (gaps: Gap[], surface: Gap["surface"], what: string, res: GhList<unknown>, base: string, fix?: string) => {
+    reported.add(base);
+    if (!res.ok) gaps.push({ surface, what, why: res.error ?? `HTTP ${res.status}`, ...(fix ? { fix } : {}) });
+    else if (res.partial)
+      gaps.push({
+        surface,
+        what: `${what} past the first ${res.data?.length ?? 0}`,
+        why: `page ${res.partial.page} failed: ${res.partial.error ?? "error"}`,
+        fix: res.partial.rateLimited
+          ? "re-run scan github in a minute (search calls reset each minute, the rest each hour: gh api rate_limit)"
+          : (fix ?? "re-run scan github"),
+      });
+  };
+  // Every account read that was attempted, and whether it answered: none answering is not a scan.
+  const accountReads: boolean[] = [];
   const scopeOf = (actor?: string): "own" | "other" | undefined => (actor ? (actor.toLowerCase() === login.toLowerCase() ? "own" : "other") : undefined);
 
   // ---- Account ---------------------------------------------------------------
@@ -129,10 +155,26 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
   // PRs your login opened anywhere on GitHub: the probe PR lands in repos you do not own.
   if (M.pr.length) {
     const q = encodeURIComponent(`author:${login} type:pr created:>=${sinceDay}`);
-    const prs = await gh.paged<any>(`search/issues?q=${q}`, { pick: (b) => b.items ?? [], maxPages: 10 });
+    let incomplete = false;
+    const prs = await gh.paged<any>(`search/issues?q=${q}`, {
+      pick: (b) => {
+        incomplete ||= !!b.incomplete_results;
+        return b.items ?? [];
+      },
+      maxPages: 10,
+    });
+    accountReads.push(prs.ok);
     accountRes.stats.prsSearched = prs.data?.length ?? 0;
-    if (!prs.ok) accG.push({ surface: "github:account", what: "pull requests you opened", why: prs.error ?? `HTTP ${prs.status}` });
-    if (prs.truncated) accG.push({ surface: "github:account", what: "pull requests past the first 1,000", why: "search caps at 1,000 results" });
+    listGap(accG, "github:account", "pull requests you opened", prs, "search/issues");
+    if (prs.truncated && !prs.partial)
+      accG.push({ surface: "github:account", what: "pull requests past the first 1,000", why: "search caps at 1,000 results" });
+    if (incomplete)
+      accG.push({
+        surface: "github:account",
+        what: "part of the pull requests you opened",
+        why: "GitHub search timed out (incomplete_results)",
+        fix: "re-run scan github",
+      });
     for (const pr of prs.data ?? []) {
       const m = firstMatch(M.pr, pr.title, pr.created_at);
       if (!m) continue;
@@ -153,11 +195,27 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
 
   // Commits your login authored since the window, on default branches GitHub indexes.
   if (M.commit.length) {
-    const q = encodeURIComponent(`author:${login} author-date:>=${sinceDay}`);
-    const commits = await gh.paged<any>(`search/commits?q=${q}`, { pick: (b) => b.items ?? [], maxPages: 10 });
+    // The committer date is when it landed: an author date can be backdated out of the window.
+    const q = encodeURIComponent(`author:${login} committer-date:>=${sinceDay}`);
+    let incomplete = false;
+    const commits = await gh.paged<any>(`search/commits?q=${q}`, {
+      pick: (b) => {
+        incomplete ||= !!b.incomplete_results;
+        return b.items ?? [];
+      },
+      maxPages: 10,
+    });
+    accountReads.push(commits.ok);
     accountRes.stats.commitsSearched = commits.data?.length ?? 0;
-    if (!commits.ok) accG.push({ surface: "github:account", what: "commits you authored", why: commits.error ?? `HTTP ${commits.status}` });
-    if (commits.truncated)
+    listGap(accG, "github:account", "commits you authored", commits, "search/commits");
+    if (incomplete)
+      accG.push({
+        surface: "github:account",
+        what: "part of the commits you authored",
+        why: "GitHub search timed out (incomplete_results)",
+        fix: "re-run scan github",
+      });
+    if (commits.truncated && !commits.partial)
       accG.push({
         surface: "github:account",
         what: "commits you authored past the first 1,000",
@@ -185,7 +243,9 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
   // Branches your login created or pushed, from the public event stream (90 days, 300 events).
   if (M.branch.length) {
     const events = await gh.paged<any>(`users/${login}/events`, { maxPages: 3 });
+    accountReads.push(events.ok);
     accountRes.stats.events = events.data?.length ?? 0;
+    listGap(accG, "github:account", "your public events (branches you created or pushed)", events, `users/${login}/events`);
     for (const e of events.data ?? []) {
       if (e.created_at < since) continue;
       const ref = String(e.payload?.ref ?? "").replace(/^refs\/heads\//, "");
@@ -206,19 +266,36 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
     }
   }
 
+  // Keys, webhooks and deploy keys are rare events: compare them with the campaign window
+  // (bounded at 180 days), not with the 30-day review cap meant for host installs.
+  const keySince = reviewStart(iocs, now, 180);
+  if (keySince > since)
+    for (const [surface, gaps] of [
+      ["github:account", accG],
+      ["github:repos", repG],
+    ] as const)
+      gaps.push({
+        surface,
+        what: `keys, webhooks and deploy keys added between ${sinceDay} and ${keySince.slice(0, 10)}`,
+        why: "not listed: the review of changes that match no indicator stops 180 days back",
+      });
+
   // Keys added in the window: the classic persistence step after a token theft.
   for (const [path, label] of [
     ["user/keys", "SSH key"],
     ["user/gpg_keys", "GPG key"],
   ] as const) {
-    const keys = await gh.api<any[]>(path);
+    const keys = await gh.paged<any>(path, { maxPages: 5 });
+    accountReads.push(keys.ok);
+    reported.add(path);
+    if (keys.partial) listGap(accG, "github:account", `${label}s added to your account`, keys, path);
     if (!keys.ok) {
       const scope = path === "user/keys" ? "read:public_key" : "read:gpg_key";
       accG.push({
         surface: "github:account",
         what: `${label}s added to your account`,
         why:
-          keys.status === 404 || keys.status === 403
+          keys.status === 404 || (keys.status === 403 && !/rate limit/i.test(keys.error ?? ""))
             ? `the token lacks the ${scope} scope (${keys.error ?? `HTTP ${keys.status}`})`
             : (keys.error ?? `HTTP ${keys.status}`),
         fix: `gh auth refresh -s ${scope}`,
@@ -227,7 +304,7 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
     }
     accountRes.stats[path === "user/keys" ? "sshKeys" : "gpgKeys"] = keys.data?.length ?? 0;
     for (const k of keys.data ?? []) {
-      if (!k.created_at || k.created_at < reviewSince) continue;
+      if (!k.created_at || k.created_at < keySince) continue;
       accF.push({
         surface: "github:account",
         severity: "suspicious",
@@ -239,21 +316,44 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
       });
     }
   }
+  accountRes.scanned = accountReads.some(Boolean);
+  if (!accountRes.scanned)
+    accG.push({
+      surface: "github:account",
+      what: "your account",
+      why: "every account read failed: nothing was looked at",
+      fix: "check gh auth status and gh api rate_limit, then re-run scan github",
+    });
   accountRes.finishedAt = new Date().toISOString();
 
   // ---- Repositories you can push to -------------------------------------------
   let repos: Repo[];
+  let listed = true;
   if (opts.repos?.length) {
     const got = await mapPool(opts.repos, 8, (r) => gh.api<Repo>(`repos/${r}`));
     repos = got.filter((g) => g.ok && g.data).map((g) => g.data as Repo);
-    for (const [i, g] of got.entries()) if (!g.ok) repG.push({ surface: "github:repos", what: opts.repos[i] as string, why: g.error ?? `HTTP ${g.status}` });
+    for (const [i, g] of got.entries())
+      if (!g.ok) {
+        reported.add(`repos/${opts.repos[i]}`);
+        repG.push({ surface: "github:repos", what: opts.repos[i] as string, why: g.error ?? `HTTP ${g.status}` });
+      }
+    listed = repos.length > 0;
   } else {
     const list = await gh.paged<Repo>("user/repos?affiliation=owner,collaborator,organization_member", { maxPages: 50 });
-    if (!list.ok) repG.push({ surface: "github:repos", what: "the list of your repositories", why: list.error ?? `HTTP ${list.status}` });
+    listGap(repG, "github:repos", "the list of your repositories", list, "user/repos");
+    listed = list.ok;
     repos = (list.data ?? []).filter((r) => r.permissions?.push && !r.archived);
+    // The most recently pushed first: a cap or a rate limit then spends the budget where an attack can be.
+    repos.sort((a, b) => String(b.pushed_at ?? "").localeCompare(String(a.pushed_at ?? "")));
   }
+  const isActive = (r: Repo) => !!r.pushed_at && r.pushed_at >= since;
   if (opts.maxRepos && repos.length > opts.maxRepos) {
-    repG.push({ surface: "github:repos", what: `${repos.length - opts.maxRepos} repositories past --max-repos`, why: "capped by the caller" });
+    const skipped = repos.slice(opts.maxRepos);
+    repG.push({
+      surface: "github:repos",
+      what: `${skipped.length} repositories past --max-repos (${skipped.filter(isActive).length} pushed to since ${sinceDay})`,
+      why: "capped by the caller",
+    });
     repos = repos.slice(0, opts.maxRepos);
   }
   reposRes.stats.repos = repos.length;
@@ -264,18 +364,29 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
   const contentCapped: string[] = [];
   const rate = await gh.api<any>("rate_limit");
   const remaining = rate.data?.resources?.core?.remaining as number | undefined;
-  if (remaining !== undefined && remaining < repos.length * 6)
+  const resetEpoch = rate.data?.resources?.core?.reset as number | undefined;
+  const resetAt = resetEpoch ? new Date(resetEpoch * 1000).toISOString() : undefined;
+  const activeCount = repos.filter(isActive).length;
+  const cost = activeCount * COST_ACTIVE + (repos.length - activeCount) * COST_INACTIVE;
+  if (remaining !== undefined && remaining < cost)
     repG.push({
       surface: "github:repos",
       what: "part of the repositories may hit the API rate limit",
-      why: `${remaining} REST calls left this hour for ${repos.length} repositories (about 5 each)`,
-      fix: "wait for the hourly reset, or narrow with --repos",
+      why: `${remaining} REST calls left this hour; ${repos.length} repositories need up to ${cost} (about ${COST_ACTIVE} per repository pushed since ${sinceDay}, ${COST_INACTIVE} per other)`,
+      fix: `wait for the reset${resetAt ? ` at ${resetAt}` : ""}, or narrow with --repos`,
     });
   const truncated: string[] = [];
+  // Repositories not started because the hourly budget ran out: named, so the user can re-run just them.
+  const notStarted: string[] = [];
+  const poolStart = gh.log.length;
   await mapPool(repos, opts.concurrency ?? 8, async (repo) => {
     const r = repo.full_name;
+    if (gh.coreRateLimited > 0) {
+      notStarted.push(r);
+      return;
+    }
     const add = (f: NewFinding) => repF.push(f);
-    const active = !!repo.pushed_at && repo.pushed_at >= since;
+    const active = isActive(repo);
 
     // Pull requests: a fork PR does not move pushed_at, so check them on every repo.
     if (M.pr.length || M.branch.length) {
@@ -397,7 +508,7 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
 
     if (M.commit.length || M.file.length) {
       const commits = await gh.paged<any>(`repos/${r}/commits?since=${since}`, { maxPages: 3 });
-      if (commits.truncated) truncated.push(`${r} commits`);
+      if (commits.truncated && !commits.partial) truncated.push(`${r} commits`);
       for (const c of commits.data ?? []) {
         const msg = firstLine(c.commit?.message);
         // The committer date is when it landed; an author date can be backdated to slip out of the window.
@@ -425,7 +536,7 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
 
     // Workflow runs: attacker branches and titles, and deleted runs (gaps in run_number).
     const runs = await gh.paged<any>(`repos/${r}/actions/runs?created=>=${sinceDay}`, { pick: (b) => b.workflow_runs ?? [], maxPages: 3 });
-    if (runs.truncated) truncated.push(`${r} workflow runs`);
+    if (runs.truncated && !runs.partial) truncated.push(`${r} workflow runs`);
     const byWorkflow = new Map<number, { numbers: number[]; name: string }>();
     for (const run of runs.data ?? []) {
       const w: { numbers: number[]; name: string } = byWorkflow.get(run.workflow_id) ?? { numbers: [], name: run.name };
@@ -577,9 +688,9 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
         ["hooks", "Webhook"],
         ["keys", "Deploy key"],
       ] as const) {
-        const items = await gh.api<any[]>(`repos/${r}/${path}`);
+        const items = await gh.paged<any>(`repos/${r}/${path}`, { maxPages: 5 });
         for (const it of items.data ?? []) {
-          if (!it.created_at || it.created_at < reviewSince) continue;
+          if (!it.created_at || it.created_at < keySince) continue;
           add({
             surface: "github:repos",
             severity: "suspicious",
@@ -618,13 +729,34 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
       what: `missing workflow run numbers in ${quietGaps} repositories with no IOC match`,
       why: "not reported as findings: alone they are usually retention or re-runs",
     });
-  if (gh.rateLimited)
-    for (const g of [accG, repG])
-      g.push({
-        surface: g === accG ? "github:account" : "github:repos",
-        what: `${gh.rateLimited} GitHub API calls`,
+  // Which repositories were not read at all: skipped for the rate limit, or every read refused.
+  const poolLog = gh.log.slice(poolStart);
+  const unread = repos
+    .map((x) => x.full_name)
+    .filter((r) => {
+      if (notStarted.includes(r)) return true;
+      const reads = poolLog.filter((l) => l.path.startsWith(`repos/${r}/`));
+      return reads.length > 0 && reads.every((l) => !l.answered);
+    });
+  reposRes.scanned = listed && !(repos.length > 0 && unread.length === repos.length);
+  if (unread.length)
+    repG.push({
+      surface: "github:repos",
+      what: `${unread.length} repositories not read: ${unread.slice(0, 10).join(", ")}${unread.length > 10 ? ", ..." : ""}`,
+      why: notStarted.length ? `the API rate limit ran out (${notStarted.length} not started)` : "every read of them failed",
+      fix: `re-run scan github --repos ${unread.slice(0, 20).join(",")}${resetAt ? ` after ${resetAt}` : ""}`,
+    });
+  const limited = gh.failures.filter((f) => /rate limit/i.test(f.error ?? "") && !reported.has(basePath(f.path)));
+  for (const [surface, list] of [
+    ["github:account", limited.filter((f) => !REPO_PATH.test(f.path))],
+    ["github:repos", limited.filter((f) => REPO_PATH.test(f.path))],
+  ] as const)
+    if (list.length)
+      (surface === "github:account" ? accG : repG).push({
+        surface,
+        what: `${list.length} GitHub API calls`,
         why: "the API rate limit refused them: what they would have read was not checked",
-        fix: "re-run scan github after the hourly reset (gh api rate_limit)",
+        fix: "re-run scan github (search calls reset each minute, the rest each hour: gh api rate_limit)",
       });
   reposRes.stats.inactiveSkipped = inactive;
   reposRes.stats.apiCalls = gh.calls;
@@ -644,11 +776,10 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
     repG.push({ surface: "github:repos", what: `webhooks and deploy keys of ${noAdmin} repositories`, why: "they need admin rights on the repository" });
   if (truncated.length) repG.push({ surface: "github:repos", what: truncated.join("; "), why: "more than 300 items in the window: the oldest were not read" });
   // Every other refused or failed call, and every list the page cap cut: not looked at, so never clean.
-  const handled = new Set(["user/keys", "user/gpg_keys", "user", "rate_limit"]);
-  const failed = gh.failures.filter((f) => !handled.has(f.path) && !/rate limit/i.test(f.error ?? ""));
+  const failed = gh.failures.filter((f) => !reported.has(basePath(f.path)) && !/rate limit/i.test(f.error ?? ""));
   for (const [surface, list] of [
-    ["github:account", failed.filter((f) => !/^(repos\/|user\/repos)/.test(f.path))],
-    ["github:repos", failed.filter((f) => /^(repos\/|user\/repos)/.test(f.path))],
+    ["github:account", failed.filter((f) => !REPO_PATH.test(f.path))],
+    ["github:repos", failed.filter((f) => REPO_PATH.test(f.path))],
   ] as const) {
     if (!list.length) continue;
     const byStatus = new Map<number, number>();
@@ -661,16 +792,18 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
       fix: "check the token's scopes and permissions (gh auth status), then re-run scan github",
     });
   }
-  const cut = gh.truncated.filter((p) => !/actions\/runs|\/commits\?/.test(p));
-  if (cut.length)
-    (cut.some((p) => p.startsWith("repos/") || p.startsWith("user/repos")) ? repG : accG).push({
-      surface: cut.some((p) => p.startsWith("repos/") || p.startsWith("user/repos")) ? "github:repos" : "github:account",
-      what: `${cut.length} list(s) cut by the page cap: ${cut
-        .slice(0, 5)
-        .map((p) => p.split("?")[0])
-        .join(", ")}`,
-      why: "their oldest items were not read",
-    });
+  // Search lists, runs and commits have their own truncation gap.
+  const cut = gh.truncated.filter((p) => !/actions\/runs|\/commits\?|^search\//.test(p));
+  for (const [surface, list] of [
+    ["github:account", cut.filter((p) => !REPO_PATH.test(p))],
+    ["github:repos", cut.filter((p) => REPO_PATH.test(p))],
+  ] as const)
+    if (list.length)
+      (surface === "github:account" ? accG : repG).push({
+        surface,
+        what: `${list.length} list(s) cut by the page cap: ${list.slice(0, 5).map(basePath).join(", ")}`,
+        why: "their oldest items were not read",
+      });
   repG.push({
     surface: "github:repos",
     what: "branches other than the default branch, for commits and files",
