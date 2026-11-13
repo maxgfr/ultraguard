@@ -251,6 +251,6 @@ describe("gap analysis follow-ups", () => {
       "repos/o/r/actions/runs": { workflow_runs: [] },
     });
     const r = await scanGithub(AIKIDO_IOCS, gh, { now: NOW });
-    expect(r.repos.findings.map((f) => f.title)).toContain("Branch wfx-docs: branch creation by victim");
+    expect(r.repos.findings.map((f) => f.title)).toContain("Branch wfx-docs: created by victim at 2026-11-11T10:00:00Z");
   });
 });

@@ -88,7 +88,7 @@ describe("github: rate limit", () => {
     const gh = fakeGh({ ...ACCOUNT, "user/repos": many, rate_limit: { resources: { core: { remaining: 40, reset: 1794500000 } } } });
     const r = await scanGithub(AIKIDO_IOCS, gh, { now: NOW });
     const g = r.repos.gaps.find((x) => x.what.includes("rate limit"));
-    expect(g?.why).toMatch(/need up to 65/);
+    expect(g?.why).toMatch(/need up to 73/);
     expect(g?.fix).toContain(new Date(1794500000 * 1000).toISOString());
   });
 

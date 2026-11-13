@@ -33,12 +33,22 @@ For each:
   every repository, because a PR from a fork does not move `pushed_at`.
 - Then, only if the repository was pushed to since the window:
   - **branches** by name, and the repository **activity log** (branch
-    creations, deletions and force pushes, with their actor): it finds the
-    attacker branch the cleanup already deleted;
+    creations, pushes and deletions, with their actor): it finds the
+    attacker branch the cleanup already deleted. A literal branch is asked
+    for by ref (complete); a regex branch through the list of branch
+    creations back to the window start. One finding per branch: its actor
+    is who created or pushed it, never who deleted it (the cleanup, often
+    you or an org admin). It also says what the branch pointed at: a commit
+    already on the default branch ("no commit pushed") or the files of the
+    pushed commit;
   - **commits** on the default branch since the window, by anyone, with the
-    files each matching commit touched;
+    files each matching commit touched. The author is free text: the finding
+    says "authored as", and takes its actor and `scope` from the pusher in
+    the default branch's activity log when it is there;
   - **workflow runs** since the window: branch, title, and **gaps in
     `run_number`** per workflow (the attacker deletes the run that leaked).
+    Runs on each literal attacker branch are also asked for directly, so a
+    busy repository's newest 300 runs do not hide them.
     A gap is reported only in a repository that also has an IOC match: alone,
     gaps are mostly retention and re-runs, and are counted in the coverage;
   - **Actions caches and artifacts** by prefix;
@@ -53,6 +63,11 @@ Each finding carries the actor and `scope`: `own` (your login) or `other`.
 Run and commit findings also say what the commit changed: "the commit only
 changes docs (a probe)" or "the commit changes .ci-x.sh, package.json". Their
 evidence holds the full SHA and the run id (`gh api repos/<r>/actions/runs/<id>`).
+A run counts as the repository's own code only when the default branch
+already held its commit when the run started (from the activity log, not
+today's branch), the commit is by someone else, and it touches no IOC file
+and carries no IOC message. An IOC commit whose files cannot be read is
+treated as the payload.
 
 ## Rate limit and failed reads
 
@@ -69,6 +84,8 @@ evidence holds the full SHA and the run id (`gh api repos/<r>/actions/runs/<id>`
 
 - Probe PR only: the attacker proved write access. Treat the repository's
   secrets as at risk; check the runs.
+- Attacker branch only, no run seen: the same proof of write access, without
+  a PR.
 - A run on an attacker branch, or attacker commits on the default branch: the
   payload ran in CI. Every secret, variable, OIDC role and cloud credential
   that workflow could reach is stolen. REPORT.md says "the attacker made CI

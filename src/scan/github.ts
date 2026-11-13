@@ -48,6 +48,12 @@ const activityPeriod = (since: string, now: Date): string => {
   return days <= 1 ? "day" : days <= 7 ? "week" : days <= 31 ? "month" : days <= 92 ? "quarter" : "year";
 };
 
+/** How long from `a` to `b`, in words. */
+const elapsed = (a: string, b: string): string => {
+  const s = Math.max(0, (Date.parse(b) - Date.parse(a)) / 1000);
+  return s < 120 ? `${Math.round(s)} s` : s < 7200 ? `${Math.round(s / 60)} min` : s < 172_800 ? `${Math.round(s / 3600)} h` : `${Math.round(s / 86_400)} days`;
+};
+
 /** The later of two ISO dates (author vs committer), or whichever exists. */
 const laterOf = (a?: string | null, b?: string | null): string | undefined => (a && b ? (a > b ? a : b) : (a ?? b ?? undefined));
 
@@ -104,6 +110,10 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
     artifact: matchers(iocs, "artifact_prefix"),
     actor: matchers(iocs, "actor"),
   };
+
+  // Literal branch names can be asked for directly (activity log, runs): one exact, complete call each.
+  const literalBranches = [...new Set(M.branch.filter((m) => !m.indicator.regex).map((m) => m.indicator.value))];
+  const period = activityPeriod(since, now);
 
   const me = await gh.api<{ login: string }>("user");
   if (!me.ok || !me.data) {
@@ -367,12 +377,13 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
   const resetEpoch = rate.data?.resources?.core?.reset as number | undefined;
   const resetAt = resetEpoch ? new Date(resetEpoch * 1000).toISOString() : undefined;
   const activeCount = repos.filter(isActive).length;
-  const cost = activeCount * COST_ACTIVE + (repos.length - activeCount) * COST_INACTIVE;
+  const perActive = COST_ACTIVE + literalBranches.length * 2;
+  const cost = activeCount * perActive + (repos.length - activeCount) * COST_INACTIVE;
   if (remaining !== undefined && remaining < cost)
     repG.push({
       surface: "github:repos",
       what: "part of the repositories may hit the API rate limit",
-      why: `${remaining} REST calls left this hour; ${repos.length} repositories need up to ${cost} (about ${COST_ACTIVE} per repository pushed since ${sinceDay}, ${COST_INACTIVE} per other)`,
+      why: `${remaining} REST calls left this hour; ${repos.length} repositories need up to ${cost} (about ${perActive} per repository pushed since ${sinceDay}, ${COST_INACTIVE} per other)`,
       fix: `wait for the reset${resetAt ? ` at ${resetAt}` : ""}, or narrow with --repos`,
     });
   const truncated: string[] = [];
@@ -418,6 +429,84 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
       return;
     }
 
+    // What a commit changed, once per SHA: it tells a probe (a docs file) from a payload (a script, an install hook).
+    type CommitInfo = { files: string[]; author?: string; message: string };
+    const changed = new Map<string, Promise<CommitInfo | undefined>>();
+    const commitOf = (sha: string) => {
+      if (!changed.has(sha))
+        changed.set(
+          sha,
+          gh.api<any>(`repos/${r}/commits/${sha}`).then((d) =>
+            d.ok
+              ? {
+                  files: ((d.data?.files ?? []) as { filename: string; status: string }[]).map((f) => `${f.status} ${f.filename}`),
+                  author: d.data?.author?.login as string | undefined,
+                  message: firstLine(d.data?.commit?.message),
+                }
+              : undefined,
+          ),
+        );
+      return changed.get(sha) as Promise<CommitInfo | undefined>;
+    };
+    const filesOf = async (sha: string) => (await commitOf(sha))?.files;
+    const fileName = (f: string) => f.split(" ").slice(1).join(" ");
+    /** `tip` (default: the default branch now) already contains the commit. */
+    const onDefault = async (sha: string, tip = repo.default_branch) => {
+      const cmp = await gh.api<any>(`repos/${r}/compare/${sha}...${tip}`);
+      return cmp.ok && (cmp.data?.status === "identical" || cmp.data?.status === "ahead");
+    };
+    // The default branch's activity log: who pushed what, and where the branch pointed at a given time.
+    // The pusher is recorded by GitHub, unlike a commit's author, which is free text.
+    let defaultLog: Promise<any[] | undefined> | undefined;
+    const defaultActivity = () =>
+      (defaultLog ??= gh
+        .cursor<any>(`repos/${r}/activity?ref=${encodeURIComponent(`refs/heads/${repo.default_branch}`)}&time_period=${period}`, {
+          maxPages: 5,
+          stop: (page) => page.some((e) => e.timestamp && e.timestamp < since),
+        })
+        .then((x) => (x.ok ? x.data : undefined)));
+    const pusherOf = async (sha: string): Promise<string | undefined> =>
+      (await defaultActivity())?.find((e) => e.after === sha && e.activity_type !== "branch_deletion")?.actor?.login;
+    /** The default branch's tip at `at`, from the activity log (newest first), when the log reaches that far. */
+    const tipAt = async (at: string | undefined): Promise<string | undefined> => {
+      if (!at) return undefined;
+      return (await defaultActivity())?.find((e) => e.timestamp && e.timestamp <= at && e.after && !/^0+$/.test(e.after))?.after;
+    };
+    // What a commit or a run carried, as a structured kind (never parsed back from a title the attacker writes).
+    type Carried = { text: string; kind?: "probe" | "own-code" | "attacker" };
+    const describe = (files: string[] | undefined): Carried => {
+      if (!files) return { text: "" };
+      if (files.length && files.every((f) => DOCS_ONLY.test(fileName(f)))) return { text: "; the commit only changes docs (a probe)", kind: "probe" };
+      return {
+        text: files.length ? `; the commit changes ${files.slice(0, 4).map(fileName).join(", ")}${files.length > 4 ? ", ..." : ""}` : "",
+        kind: "attacker",
+      };
+    };
+    /**
+     * For a run: what it executed. A commit by someone else that the default branch
+     * already held when the run started is the repository's own code. Neither the
+     * author (free text) nor today's default branch (the attacker's commit may
+     * have been merged since) settles that, so the tip comes from the activity
+     * log, and a commit that touches an IOC file or carries an IOC message never
+     * counts as own code. Bot authors are not trusted either: a bot name is the
+     * easiest to borrow.
+     */
+    const describeRun = async (sha: string | undefined, actor: string | undefined, at: string | undefined): Promise<Carried> => {
+      if (!sha) return { text: "" };
+      const c = await commitOf(sha);
+      const carried = describe(c?.files);
+      const iocInside = c?.files.some((f) => firstMatch(M.file, fileName(f)) || firstMatch(M.workflow, fileName(f))) || !!firstMatch(M.commit, c?.message);
+      if (c?.author && actor && !iocInside && !/\[bot\]$/i.test(c.author) && c.author.toLowerCase() !== actor.toLowerCase()) {
+        const tip = await tipAt(at);
+        if (tip && (await onDefault(sha, tip)))
+          return {
+            text: `; it ran ${repo.default_branch}'s own code (commit by ${c.author}, already on ${repo.default_branch} when the run started)`,
+            kind: "own-code",
+          };
+      }
+      return carried;
+    };
+
     if (M.branch.length) {
       const branches = await gh.paged<{ name: string }>(`repos/${r}/branches`, { maxPages: 10 });
       for (const b of branches.data ?? []) {
@@ -428,83 +517,90 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
           );
       }
       // The repository activity log keeps branch creations, deletions and force pushes with their actor:
-      // it finds the attacker branch the cleanup deleted, which no branch list shows any more.
-      const activity = await gh.paged<any>(`repos/${r}/activity?time_period=${activityPeriod(since, now)}`, { maxPages: 3 });
-      for (const ev of activity.data ?? []) {
+      // it finds the attacker branch the cleanup deleted, which no branch list shows any more. It is
+      // cursor-paginated: a literal branch is asked for by ref (complete in one call), a regex by
+      // listing branch creations back to the window start.
+      const lists = await Promise.all([
+        ...literalBranches.map((b) =>
+          gh.cursor<any>(`repos/${r}/activity?ref=${encodeURIComponent(`refs/heads/${b}`)}&time_period=${period}`, { maxPages: 2 }),
+        ),
+        ...(M.branch.some((m) => m.indicator.regex)
+          ? [
+              gh.cursor<any>(`repos/${r}/activity?activity_type=branch_creation&time_period=${period}`, {
+                maxPages: 5,
+                stop: (page) => page.some((e) => e.timestamp && e.timestamp < since),
+              }),
+            ]
+          : []),
+      ]);
+      const seen = new Set<string>();
+      const byBranch = new Map<string, { m: Matcher; events: any[] }>();
+      for (const ev of lists.flatMap((l) => l.data ?? [])) {
+        const id = String(ev.id ?? `${ev.ref}|${ev.timestamp}|${ev.activity_type}|${ev.after}`);
+        if (seen.has(id)) continue;
+        seen.add(id);
         const name = String(ev.ref ?? "").replace(/^refs\/heads\//, "");
         if (!name || (ev.timestamp && ev.timestamp < since)) continue;
         const m = firstMatch(M.branch, name, ev.timestamp);
         if (!m) continue;
-        const actor = ev.actor?.login;
+        const g = byBranch.get(name) ?? { m, events: [] };
+        g.events.push(ev);
+        byBranch.set(name, g);
+      }
+      // One finding per branch. Its actor is who created or pushed it: deleting the branch is cleanup,
+      // and the one who cleaned up (often you or an org admin) is never named as the attacker.
+      for (const [name, { m, events }] of byBranch) {
+        events.sort((a, b) => String(a.timestamp ?? "").localeCompare(String(b.timestamp ?? "")));
+        const writes = events.filter((e) => e.activity_type !== "branch_deletion");
+        const deletion = events.find((e) => e.activity_type === "branch_deletion");
+        const first = writes[0];
+        const actor: string | undefined = first?.actor?.login;
+        let title = first
+          ? `Branch ${name}: ${first.activity_type === "branch_creation" ? "created" : "pushed"} by ${actor ?? "?"} at ${first.timestamp}${writes.length > 1 ? `, pushed ${writes.length - 1} more time(s)` : ""}`
+          : `Branch ${name}: deleted by ${deletion?.actor?.login ?? "?"} (creation not in the activity log)`;
+        if (first && deletion)
+          title += `, deleted by ${deletion.actor?.login ?? "?"}${deletion.actor?.login === actor ? "" : " (cleanup)"} ${elapsed(first.timestamp, deletion.timestamp)} later`;
+        // What the branch pointed at: a commit already on the default branch means nothing was pushed.
+        let ciRun: Carried["kind"];
+        const shas = [...new Set(writes.map((e) => String(e.after ?? "")).filter((x) => x && !/^0+$/.test(x)))].slice(0, 3);
+        for (const sha of shas) {
+          if (await onDefault(sha)) {
+            title += `; it points at a commit already on ${repo.default_branch}: no commit pushed`;
+            continue;
+          }
+          const files = await filesOf(sha);
+          if (!files) {
+            title += `; its commit ${sha.slice(0, 8)} is no longer readable`;
+            continue;
+          }
+          const c = describe(files);
+          title += c.text;
+          if (c.kind === "attacker" || (c.kind && !ciRun)) ciRun = c.kind;
+        }
         add(
           hit(m, {
             surface: "github:repos",
             subject: r,
-            title: `Branch ${name}: ${String(ev.activity_type ?? "activity").replace(/_/g, " ")} by ${actor ?? "?"}`,
+            title,
+            ...(ciRun ? { ciRun } : {}),
             actor,
             scope: scopeOf(actor),
-            at: ev.timestamp,
+            at: first?.timestamp ?? deletion?.timestamp,
             evidence: {
               kind: "api",
               ref: `repos/${r}/activity?ref=${encodeURIComponent(name)}`,
-              excerpt: `${ev.activity_type} ${ev.before ?? ""}..${ev.after ?? ""}`,
+              excerpt: events
+                .map(
+                  (e) =>
+                    `${e.timestamp} ${e.activity_type} by ${e.actor?.login ?? "?"} ${String(e.before ?? "").slice(0, 8)}..${String(e.after ?? "").slice(0, 8)}`,
+                )
+                .join("; ")
+                .slice(0, 600),
             },
           }),
         );
       }
     }
-
-    // What a commit changed, once per SHA: it tells a probe (a docs file) from a payload (a script, an install hook).
-    const changed = new Map<string, Promise<{ files: string[]; author?: string } | undefined>>();
-    const commitOf = (sha: string) => {
-      if (!changed.has(sha))
-        changed.set(
-          sha,
-          gh.api<any>(`repos/${r}/commits/${sha}`).then((d) =>
-            d.ok
-              ? {
-                  files: ((d.data?.files ?? []) as { filename: string; status: string }[]).map((f) => `${f.status} ${f.filename}`),
-                  author: d.data?.author?.login as string | undefined,
-                }
-              : undefined,
-          ),
-        );
-      return changed.get(sha) as Promise<{ files: string[]; author?: string } | undefined>;
-    };
-    const filesOf = async (sha: string) => (await commitOf(sha))?.files;
-    /** The commit is already part of the default branch: a run on it executed the repository's own code. */
-    const onDefault = async (sha: string) => {
-      const cmp = await gh.api<any>(`repos/${r}/compare/${sha}...${repo.default_branch}`);
-      return cmp.ok && (cmp.data?.status === "identical" || cmp.data?.status === "ahead");
-    };
-    // What a commit or a run carried, as a structured kind (never parsed back from a title the attacker writes).
-    type Carried = { text: string; kind?: "probe" | "own-code" | "attacker" };
-    const describe = (files: string[] | undefined): Carried => {
-      if (!files) return { text: "" };
-      if (files.length && files.every((f) => DOCS_ONLY.test(f.split(" ").slice(1).join(" "))))
-        return { text: "; the commit only changes docs (a probe)", kind: "probe" };
-      return {
-        text: files.length
-          ? `; the commit changes ${files
-              .slice(0, 4)
-              .map((f) => f.split(" ").slice(1).join(" "))
-              .join(", ")}${files.length > 4 ? ", ..." : ""}`
-          : "",
-        kind: "attacker",
-      };
-    };
-    /**
-     * For a run: what it executed. A commit by someone else, already on the default
-     * branch, is the repository's own code. Bot authors are not trusted for that:
-     * the author of a commit is free text, and a bot name is the easiest to borrow.
-     */
-    const describeRun = async (sha: string | undefined, actor: string | undefined): Promise<Carried> => {
-      if (!sha) return { text: "" };
-      const c = await commitOf(sha);
-      if (c?.author && actor && !/\[bot\]$/i.test(c.author) && c.author.toLowerCase() !== actor.toLowerCase() && (await onDefault(sha)))
-        return { text: `; it ran ${repo.default_branch}'s own code (commit by ${c.author}, no attacker change)`, kind: "own-code" };
-      return describe(c?.files);
-    };
 
     if (M.commit.length || M.file.length) {
       const commits = await gh.paged<any>(`repos/${r}/commits?since=${since}`, { maxPages: 3 });
@@ -515,7 +611,11 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
         const landed = laterOf(c.commit?.author?.date, c.commit?.committer?.date);
         const m = firstMatch(M.commit, msg, landed);
         if (!m) continue;
-        const actor = c.author?.login ?? c.commit?.author?.name;
+        // The author is self-declared: the pusher (activity log) says whose credentials did it.
+        const authorLogin: string | undefined = c.author?.login;
+        const pusher = await pusherOf(c.sha);
+        const actor = pusher ?? authorLogin;
+        const authored = authorLogin ?? `${c.commit?.author?.name ?? "?"} (author not linked to an account)`;
         const files = await filesOf(c.sha);
         const carried = describe(files);
         const excerpt = `sha=${c.sha}${files ? `; ${files.join(", ")}` : ""}`.slice(0, 600);
@@ -523,8 +623,9 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
           hit(m, {
             surface: "github:repos",
             subject: r,
-            title: `Commit ${String(c.sha).slice(0, 8)} "${msg}" on ${repo.default_branch} by ${actor}${carried.text}`,
-            ciRun: carried.kind,
+            title: `Commit ${String(c.sha).slice(0, 8)} "${msg}" on ${repo.default_branch}, authored as ${authored}${pusher ? `, pushed by ${pusher}` : ""}${carried.text}${files ? "" : "; its changed files could not be read"}`,
+            // A commit on the default branch ran in CI; when its files cannot be read, assume the payload.
+            ciRun: carried.kind ?? "attacker",
             actor,
             scope: scopeOf(actor),
             at: c.commit?.author?.date,
@@ -537,8 +638,22 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
     // Workflow runs: attacker branches and titles, and deleted runs (gaps in run_number).
     const runs = await gh.paged<any>(`repos/${r}/actions/runs?created=>=${sinceDay}`, { pick: (b) => b.workflow_runs ?? [], maxPages: 3 });
     if (runs.truncated && !runs.partial) truncated.push(`${r} workflow runs`);
+    // A busy repository passes 300 runs in days: ask for runs on each literal attacker branch directly.
+    const runList: any[] = [...(runs.data ?? [])];
+    const runIds = new Set(runList.map((x) => x.id ?? x.html_url));
+    for (const b of literalBranches) {
+      const more = await gh.paged<any>(`repos/${r}/actions/runs?branch=${encodeURIComponent(b)}&created=>=${sinceDay}`, {
+        pick: (x) => x.workflow_runs ?? [],
+        maxPages: 3,
+      });
+      for (const x of more.data ?? [])
+        if (!runIds.has(x.id ?? x.html_url)) {
+          runIds.add(x.id ?? x.html_url);
+          runList.push(x);
+        }
+    }
     const byWorkflow = new Map<number, { numbers: number[]; name: string }>();
-    for (const run of runs.data ?? []) {
+    for (const run of runList) {
       const w: { numbers: number[]; name: string } = byWorkflow.get(run.workflow_id) ?? { numbers: [], name: run.name };
       w.numbers.push(run.run_number);
       byWorkflow.set(run.workflow_id, w);
@@ -548,7 +663,7 @@ export async function scanGithub(iocs: IocFile, runner: Runner, opts: GithubScan
         firstMatch(M.pr, run.display_title, run.created_at);
       if (!m) continue;
       const actor = run.triggering_actor?.login ?? run.actor?.login;
-      const carried = await describeRun(run.head_sha, actor);
+      const carried = await describeRun(run.head_sha, actor, run.created_at);
       add(
         hit(m, {
           surface: "github:repos",
