@@ -22,7 +22,8 @@ indicators of compromise (IOCs) that cite it, and ultraguard sweeps for them:
 - your **dependencies**: the campaign's packages in lockfiles, manifests,
   `node_modules`, virtualenvs and global installs, and the OSV and GHSA feeds
   through [package-checker.sh](https://github.com/maxgfr/package-checker.sh):
-  malicious packages are compromises, known CVEs a backlog;
+  malicious packages are compromises, known CVEs a backlog; and the npm
+  packages you publish, for a version a worm pushed during the campaign;
 - your **cloud**: roles that trust everyone, new roles and users, open GitHub
   OIDC trusts, keys minted during the campaign, federated credentials.
 

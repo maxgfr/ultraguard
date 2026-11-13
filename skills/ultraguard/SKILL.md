@@ -119,6 +119,12 @@ pipx installs. It runs the vendored `package-checker.sh` (OSV and GHSA feeds,
 Bash 4+) for malicious packages (compromised) and known CVEs (one info line,
 the list in `<run>/deps-vulnerabilities.json`: a patching backlog, not a
 compromise). A feed it could not load, or a stale local copy of it, is a gap.
+It also lists the npm packages the user maintains (`npm whoami`, or
+`--npm-user`) and flags every version published inside a campaign window: a
+worm holding their npm token republishes them with an install script
+(Shai-Hulud). Ask the user whether they published it; one they did not is a
+compromise of their npm account: revoke every npm token, deprecate the
+version. `--no-registry` skips it.
 
 **Antivirus.** When ClamAV is installed, `scan host` also runs it, targeted:
 the programs startup items run, the files the other checks flagged, recent

@@ -32,6 +32,7 @@ import { scanCloud } from "./scan/cloud.js";
 import { scanDeps } from "./scan/deps.js";
 import { scanGithub } from "./scan/github.js";
 import { scanHost } from "./scan/host.js";
+import { defaultRegistryGet, type RegistryGet, scanNpmPublishes } from "./scan/registry.js";
 import { walk, type WalkResult } from "./scan/walk.js";
 import { type Campaign, type Gap, type IocFile, SURFACES, type Surface } from "./types.js";
 import { VERSION } from "./version.js";
@@ -84,6 +85,8 @@ SCAN FLAGS
   --no-update           host: do not refresh ClamAV signatures or YARA-Forge rules older than 7 days
   --state <dir>         host, rules, watch: ultraguard's state folder (default ~/.ultraguard)
   --set <name>          rules update: core (default, highest precision), extended or full
+  --npm-user <name>     deps: the npm account whose packages to check for versions published in a campaign window (default: npm whoami)
+  --no-registry         deps: skip that check (it reads the public npm registry)
   --no-osv              deps: skip package-checker (OSV and GHSA feeds, malicious packages)
   --surfaces <list>     sweep: github,host,deps,cloud (default: all)
   scan and sweep exit 20 when GitHub was asked for and could not be scanned
@@ -125,8 +128,9 @@ export const VALUE_FLAGS = [
   "yara",
   "yara-source",
   "set",
+  "npm-user",
 ];
-export const BOOL_FLAGS = ["json", "probe", "skip-live", "no-osv", "no-av", "av-full", "no-rules", "no-update"];
+export const BOOL_FLAGS = ["json", "probe", "skip-live", "no-osv", "no-av", "av-full", "no-rules", "no-update", "no-registry"];
 
 const SCAN = [
   "out",
@@ -137,6 +141,8 @@ const SCAN = [
   "depth",
   "skip-live",
   "no-osv",
+  "no-registry",
+  "npm-user",
   "no-av",
   "av-full",
   "yara",
@@ -168,6 +174,11 @@ let runner: Runner = defaultRunner;
 /** Test seam: replace every external command. */
 export function setRunner(r: Runner): void {
   runner = r;
+}
+let registryGet: RegistryGet = defaultRegistryGet;
+/** Test seam: replace the npm registry reads. */
+export function setRegistryGet(g: RegistryGet): void {
+  registryGet = g;
 }
 let rulesDeps: RulesDeps = defaultRulesDeps;
 /** Test seam: replace the YARA-Forge download. */
@@ -333,8 +344,11 @@ async function runScan(surface: "github" | "host" | "deps" | "cloud", a: Command
       // Global installs (npm -g, nvm, bun, uv tools, pipx) are read under the real home.
       home: homedir(),
     });
-    const f = run.recordSurface(r.result, r.findings, r.gaps);
-    return `deps: ${r.result.stats.lockfiles ?? 0} lockfiles, ${r.result.stats.packages ?? 0} packages, ${r.result.stats.malicious ?? 0} malicious, ${r.result.stats.vulnerable ?? 0} with known CVEs; ${f.length} finding(s)`;
+    // The packages the user publishes: a worm with their npm token republishes them.
+    const pub = argBool(a, "no-registry") ? undefined : await scanNpmPublishes(iocs, { user: argValue(a, "npm-user"), runner, get: registryGet });
+    if (pub) Object.assign(r.result.stats, pub.stats);
+    const f = run.recordSurface(r.result, [...r.findings, ...(pub?.findings ?? [])], [...r.gaps, ...(pub?.gaps ?? [])]);
+    return `deps: ${r.result.stats.lockfiles ?? 0} lockfiles${pub?.user ? `, ${pub.stats.npmPackages ?? 0} npm packages of ${pub.user}` : ""}, ${r.result.stats.packages ?? 0} packages, ${r.result.stats.malicious ?? 0} malicious, ${r.result.stats.vulnerable ?? 0} with known CVEs; ${f.length} finding(s)`;
   }
   const r = await scanCloud(iocs, runner);
   const f = run.recordSurface(r.result, r.findings, r.gaps);

@@ -15835,6 +15835,104 @@ async function scanHost(iocs, tree, runner2, opts = {}) {
   return { result, findings, gaps, inventory };
 }
 
+// src/scan/registry.ts
+var REGISTRY = "https://registry.npmjs.org";
+var SEARCH_PAGE = 250;
+var MAX_PACKAGES = 500;
+var INSTALL_SCRIPTS = ["preinstall", "install", "postinstall", "prepare"];
+var defaultRegistryGet = (url) => httpJson("GET", url, void 0, { timeoutMs: 3e4 });
+async function npmLogin(opts) {
+  if (opts.user) return { user: opts.user };
+  const r = await opts.runner("npm", ["whoami", `--registry=${REGISTRY}/`], { timeoutMs: 2e4 });
+  if (r.missing) return { why: "npm is not installed" };
+  const user = r.stdout.trim().split("\n").pop()?.trim();
+  if (!r.ok || !user) return { why: "npm is not logged in here (npm whoami failed)" };
+  return { user };
+}
+async function scanNpmPublishes(iocs, opts) {
+  const findings = [];
+  const gaps = [];
+  const stats = {};
+  const get = opts.get ?? defaultRegistryGet;
+  const campaigns = iocs.campaigns;
+  if (!campaigns.length) return { findings, gaps, stats };
+  const login = await npmLogin(opts);
+  if (!login.user) {
+    gaps.push({
+      surface: "deps",
+      what: "new versions of npm packages you maintain (a worm republishing them)",
+      why: login.why ?? "no npm login",
+      fix: "pass --npm-user <your npm username> (or skip if you publish nothing to npm)"
+    });
+    return { findings, gaps, stats };
+  }
+  const user = login.user;
+  const names = [];
+  for (let from2 = 0; from2 < MAX_PACKAGES; from2 += SEARCH_PAGE) {
+    const res = await get(`${REGISTRY}/-/v1/search?text=maintainer:${encodeURIComponent(user)}&size=${SEARCH_PAGE}&from=${from2}`);
+    if (!res.ok) {
+      gaps.push({
+        surface: "deps",
+        what: `npm packages maintained by ${user}`,
+        why: `the registry search failed: ${res.error ?? `HTTP ${res.status}`}`,
+        fix: "re-run scan deps later"
+      });
+      return { findings, gaps, stats, user };
+    }
+    const objects = res.data?.objects ?? [];
+    for (const o of objects) if (typeof o?.package?.name === "string") names.push(o.package.name);
+    if (objects.length < SEARCH_PAGE) break;
+    if (from2 + SEARCH_PAGE >= MAX_PACKAGES)
+      gaps.push({ surface: "deps", what: `npm packages of ${user} past the first ${MAX_PACKAGES}`, why: "the scan caps the package list" });
+  }
+  stats.npmPackages = names.length;
+  let unread = 0;
+  await mapPool(names, opts.concurrency ?? 8, async (name) => {
+    const res = await get(`${REGISTRY}/${name.startsWith("@") ? `@${encodeURIComponent(name.slice(1))}` : encodeURIComponent(name)}`);
+    if (!res.ok || !res.data?.time) {
+      unread++;
+      return;
+    }
+    const time = res.data.time;
+    for (const [version, at] of Object.entries(time)) {
+      if (version === "created" || version === "modified") continue;
+      const t = Date.parse(at);
+      if (Number.isNaN(t)) continue;
+      const camp = campaigns.find((c) => t >= Date.parse(c.since) && (!c.until || t <= Date.parse(c.until) + 864e5));
+      if (!camp) continue;
+      const meta = res.data.versions?.[version] ?? {};
+      const scripts = INSTALL_SCRIPTS.filter((s) => typeof meta.scripts?.[s] === "string");
+      const publisher = typeof meta._npmUser?.name === "string" ? meta._npmUser.name : void 0;
+      const named2 = camp.indicators.find((i) => packageHit(i, "npm", name, version));
+      const by = publisher ? ` by ${publisher}${publisher.toLowerCase() === user.toLowerCase() ? " (your npm account)" : ""}` : "";
+      const withScript = scripts.length ? ` with an install script (${scripts.map((s) => `${s}: ${String(meta.scripts[s]).slice(0, 120)}`).join("; ")})` : "";
+      findings.push({
+        surface: "deps",
+        severity: named2 ? "compromised" : "suspicious",
+        subject: `npm:${name}`,
+        title: named2 ? `Your npm package ${name}@${version} was published${by} during the campaign, and the campaign names it` : `Your npm package ${name}@${version} was published${by} during the campaign window${withScript}: confirm you published it`,
+        at,
+        actor: publisher,
+        scope: publisher && publisher.toLowerCase() === user.toLowerCase() ? "own" : publisher ? "other" : void 0,
+        campaign: camp.id,
+        source: named2?.source,
+        indicator: named2 ? { type: "package", value: named2.value } : void 0,
+        evidence: { kind: "url", ref: `https://www.npmjs.com/package/${name}/v/${version}`, excerpt: `published ${at}${withScript}` },
+        key: `deps|npm-publish|${name}|${version}`
+      });
+    }
+  });
+  stats.npmPublishesInWindow = findings.length;
+  if (unread)
+    gaps.push({
+      surface: "deps",
+      what: `${unread} of ${names.length} npm package(s) maintained by ${user}`,
+      why: "the registry did not answer for them",
+      fix: "re-run scan deps later"
+    });
+  return { findings, gaps, stats, user };
+}
+
 // src/scan/walk.ts
 import { lstatSync as lstatSync3, readdirSync as readdirSync11 } from "fs";
 import { join as join16 } from "path";
@@ -16105,6 +16203,8 @@ SCAN FLAGS
   --no-update           host: do not refresh ClamAV signatures or YARA-Forge rules older than 7 days
   --state <dir>         host, rules, watch: ultraguard's state folder (default ~/.ultraguard)
   --set <name>          rules update: core (default, highest precision), extended or full
+  --npm-user <name>     deps: the npm account whose packages to check for versions published in a campaign window (default: npm whoami)
+  --no-registry         deps: skip that check (it reads the public npm registry)
   --no-osv              deps: skip package-checker (OSV and GHSA feeds, malicious packages)
   --surfaces <list>     sweep: github,host,deps,cloud (default: all)
   scan and sweep exit 20 when GitHub was asked for and could not be scanned
@@ -16144,9 +16244,10 @@ var VALUE_FLAGS = [
   "limit",
   "yara",
   "yara-source",
-  "set"
+  "set",
+  "npm-user"
 ];
-var BOOL_FLAGS = ["json", "probe", "skip-live", "no-osv", "no-av", "av-full", "no-rules", "no-update"];
+var BOOL_FLAGS = ["json", "probe", "skip-live", "no-osv", "no-av", "av-full", "no-rules", "no-update", "no-registry"];
 var SCAN = [
   "out",
   "repos",
@@ -16156,6 +16257,8 @@ var SCAN = [
   "depth",
   "skip-live",
   "no-osv",
+  "no-registry",
+  "npm-user",
   "no-av",
   "av-full",
   "yara",
@@ -16185,6 +16288,10 @@ var SPEC = {
 var runner = defaultRunner;
 function setRunner(r) {
   runner = r;
+}
+var registryGet = defaultRegistryGet;
+function setRegistryGet(g) {
+  registryGet = g;
 }
 var rulesDeps = defaultRulesDeps;
 function setRulesDeps(d) {
@@ -16326,8 +16433,10 @@ ${blind2.map((x) => `${x.result.surface} NOT SCANNED: ${x.gaps.find((g) => g.fix
       // Global installs (npm -g, nvm, bun, uv tools, pipx) are read under the real home.
       home: homedir5()
     });
-    const f2 = run.recordSurface(r2.result, r2.findings, r2.gaps);
-    return `deps: ${r2.result.stats.lockfiles ?? 0} lockfiles, ${r2.result.stats.packages ?? 0} packages, ${r2.result.stats.malicious ?? 0} malicious, ${r2.result.stats.vulnerable ?? 0} with known CVEs; ${f2.length} finding(s)`;
+    const pub = argBool(a, "no-registry") ? void 0 : await scanNpmPublishes(iocs, { user: argValue(a, "npm-user"), runner, get: registryGet });
+    if (pub) Object.assign(r2.result.stats, pub.stats);
+    const f2 = run.recordSurface(r2.result, [...r2.findings, ...pub?.findings ?? []], [...r2.gaps, ...pub?.gaps ?? []]);
+    return `deps: ${r2.result.stats.lockfiles ?? 0} lockfiles${pub?.user ? `, ${pub.stats.npmPackages ?? 0} npm packages of ${pub.user}` : ""}, ${r2.result.stats.packages ?? 0} packages, ${r2.result.stats.malicious ?? 0} malicious, ${r2.result.stats.vulnerable ?? 0} with known CVEs; ${f2.length} finding(s)`;
   }
   const r = await scanCloud(iocs, runner);
   const f = run.recordSurface(r.result, r.findings, r.gaps);
@@ -16664,6 +16773,7 @@ export {
   SURFACES,
   VALUE_FLAGS,
   main,
+  setRegistryGet,
   setRulesDeps,
   setRunner
 };
