@@ -128,9 +128,15 @@ version. `--no-registry` skips it.
 
 **Antivirus.** When ClamAV is installed, `scan host` also runs it, targeted:
 the programs startup items run, the files the other checks flagged, recent
-files in temporary and shared folders and Downloads, new extensions.
-`--av-full` scans every root instead (hours on a large home), `--no-av` skips
-it. Its PUA detections are suspicious, not compromised. You manage the
+files in temporary and shared folders and Downloads, new extensions. On
+macOS it also reads XProtect, Apple's own antivirus: Apple's YARA rules over
+the same targets, XProtect Remediator's silent reports from the unified log
+(a threat it found or removed is compromised), and Gatekeeper, SIP and
+automatic security updates (off is suspicious). `--av-full` scans every file
+under the roots instead, incrementally: the first run takes hours, the next
+ones minutes, since unchanged files scanned clean less than
+`--av-rescan-days` ago (default 7) are skipped. `--no-av` skips ClamAV. Its
+PUA detections are suspicious, not compromised. You manage the
 antivirus, not the user: `scan host` first runs `freshclam` when ClamAV's
 signatures are older than 7 days, and installs or refreshes the YARA-Forge
 community rules (5,000+ rules, released weekly, kept in ultraguard's state
