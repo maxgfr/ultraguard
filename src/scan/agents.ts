@@ -6,7 +6,7 @@
 //
 // Read-only. Config values are read for commands, packages and URLs only;
 // environment values are never copied into a finding except base URLs.
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { escapeRegExp } from "../engine.js";
 import { packageHit, type Matcher } from "../ioc.js";
@@ -47,6 +47,28 @@ export function readJson(p: string): any {
     }
   } catch {
     return undefined;
+  }
+}
+
+/** Mach-O (thin or fat) or ELF: a compiled program. */
+function isBinaryExecutable(p: string): boolean {
+  const head = readHead(p, 4, "latin1");
+  if (!head || head.length < 4) return false;
+  const magic = Buffer.from(head, "latin1").readUInt32BE(0);
+  return [0xfeedface, 0xfeedfacf, 0xcefaedfe, 0xcffaedfe, 0xcafebabe, 0xbebafeca, 0x7f454c46].includes(magic);
+}
+
+function readHead(p: string, bytes: number, encoding: BufferEncoding = "utf8"): string | undefined {
+  let fd: number | undefined;
+  try {
+    fd = openSync(p, "r");
+    const buf = Buffer.alloc(bytes);
+    const n = readSync(fd, buf, 0, bytes, 0);
+    return buf.subarray(0, n).toString(encoding);
+  } catch {
+    return undefined;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
   }
 }
 
@@ -537,8 +559,10 @@ function scriptSignals(path: string | undefined, home: string, content: Matcher[
   } catch {
     return { signals: [] };
   }
-  if (size > MAX) return { signals: [`its script ${basename(path)} is over 2 MB`] };
-  const text = readText(path);
+  // A compiled program is not a script: its signature is the check (codesign), not its text.
+  if (isBinaryExecutable(path)) return { signals: [] };
+  // A large bundled script (a bun- or esbuild-built CLI) is read on its first 2 MB.
+  const text = size > MAX ? readHead(path, MAX) : readText(path);
   if (!text) return { signals: [] };
   const ioc = content.find((x) => x.test(text));
   if (ioc) return { signals: [], ioc };

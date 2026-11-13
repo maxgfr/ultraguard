@@ -11336,6 +11336,36 @@ function interpretedScript(command2, executable, home, args) {
     if (l.trim() && !/^\s*#/.test(l)) for (const s of riskSignals(l, void 0, home)) signals.add(`its script ${basename3(script)} ${s}`);
   return { script, text, signals: [...signals] };
 }
+var GIT_HOOKS = /* @__PURE__ */ new Set([
+  "applypatch-msg",
+  "pre-applypatch",
+  "post-applypatch",
+  "pre-commit",
+  "pre-merge-commit",
+  "prepare-commit-msg",
+  "commit-msg",
+  "post-commit",
+  "pre-rebase",
+  "post-checkout",
+  "post-merge",
+  "pre-push",
+  "pre-receive",
+  "update",
+  "proc-receive",
+  "post-receive",
+  "post-update",
+  "reference-transaction",
+  "push-to-checkout",
+  "pre-auto-gc",
+  "post-rewrite",
+  "sendemail-validate",
+  "fsmonitor-watchman",
+  "p4-changelist",
+  "p4-prepare-changelist",
+  "p4-post-changelist",
+  "p4-pre-submit",
+  "post-index-change"
+]);
 var MANAGED_HOOK = /husky\.sh|\.husky\/_\/h\b|^\s*git lfs (pre-push|post-checkout|post-commit|post-merge)\b|lefthook\b.*\b(run|install)\b|pre-commit.*hook-impl|^\s*INSTALL_PYTHON=|simple-git-hooks|overcommit|yorkie|lint-staged/m;
 function hookDirs(repo, home) {
   const dirs = [join5(repo, ".git/hooks")];
@@ -11362,7 +11392,7 @@ function gitHookFindings(clones, home, reviewSinceMs, content = [], nowMs = Date
         continue;
       }
       for (const n of names) {
-        if (n.endsWith(".sample") || n === "_" || n.startsWith(".")) continue;
+        if (!GIT_HOOKS.has(n)) continue;
         const p = join5(dir, n);
         if (seen.has(p)) continue;
         seen.add(p);
@@ -11394,7 +11424,7 @@ function gitHookFindings(clones, home, reviewSinceMs, content = [], nowMs = Date
         }
         const signals = /* @__PURE__ */ new Set();
         for (const l of text.split("\n").slice(0, 5e3)) if (l.trim() && !/^\s*#/.test(l)) for (const s of riskSignals(l, void 0, home)) signals.add(s);
-        const managed = MANAGED_HOOK.test(text);
+        const managed = MANAGED_HOOK.test(text) || /(^|\/)\.husky(\/_)?$/.test(dir);
         const recent = changedMs(st, nowMs) >= reviewSinceMs;
         if (!signals.size && (managed || !recent)) continue;
         out2.push({
@@ -14620,12 +14650,12 @@ async function scanGithub(iocs, runner2, opts = {}) {
 
 // src/scan/host.ts
 import { createHash as createHash4 } from "crypto";
-import { closeSync as closeSync3, existsSync as existsSync13, lstatSync, openSync as openSync3, readdirSync as readdirSync10, readFileSync as readFileSync15, readSync as readSync2, realpathSync as realpathSync3, statSync as statSync12 } from "fs";
+import { closeSync as closeSync4, existsSync as existsSync13, lstatSync, openSync as openSync4, readdirSync as readdirSync10, readFileSync as readFileSync15, readSync as readSync3, realpathSync as realpathSync3, statSync as statSync12 } from "fs";
 import { homedir as homedir3, platform, tmpdir as tmpdir5 } from "os";
 import { basename as basename7, dirname as dirname3, join as join15 } from "path";
 
 // src/scan/agents.ts
-import { existsSync as existsSync12, readdirSync as readdirSync9, readFileSync as readFileSync14, statSync as statSync11 } from "fs";
+import { closeSync as closeSync3, existsSync as existsSync12, openSync as openSync3, readdirSync as readdirSync9, readFileSync as readFileSync14, readSync as readSync2, statSync as statSync11 } from "fs";
 import { basename as basename6, dirname as dirname2, join as join14, resolve as resolve4 } from "path";
 var MAX = 2 * 1024 * 1024;
 function readJson3(p) {
@@ -14639,6 +14669,25 @@ function readJson3(p) {
     }
   } catch {
     return void 0;
+  }
+}
+function isBinaryExecutable(p) {
+  const head = readHead(p, 4, "latin1");
+  if (!head || head.length < 4) return false;
+  const magic = Buffer.from(head, "latin1").readUInt32BE(0);
+  return [4277009102, 4277009103, 3472551422, 3489328638, 3405691582, 3199925962, 2135247942].includes(magic);
+}
+function readHead(p, bytes, encoding = "utf8") {
+  let fd;
+  try {
+    fd = openSync3(p, "r");
+    const buf = Buffer.alloc(bytes);
+    const n = readSync2(fd, buf, 0, bytes, 0);
+    return buf.subarray(0, n).toString(encoding);
+  } catch {
+    return void 0;
+  } finally {
+    if (fd !== void 0) closeSync3(fd);
   }
 }
 function readText(p) {
@@ -15046,8 +15095,8 @@ function scriptSignals(path, home, content = [], depth = 0) {
   } catch {
     return { signals: [] };
   }
-  if (size > MAX) return { signals: [`its script ${basename6(path)} is over 2 MB`] };
-  const text = readText(path);
+  if (isBinaryExecutable(path)) return { signals: [] };
+  const text = size > MAX ? readHead(path, MAX) : readText(path);
   if (!text) return { signals: [] };
   const ioc = content.find((x) => x.test(text));
   if (ioc) return { signals: [], ioc };
@@ -15087,11 +15136,11 @@ function sha256File(p, max = Number.POSITIVE_INFINITY) {
   try {
     const st = statSync12(p);
     if (!st.isFile() || st.size > max) return void 0;
-    fd = openSync3(p, "r");
+    fd = openSync4(p, "r");
     const h = createHash4("sha256");
     const buf = Buffer.alloc(1024 * 1024);
     for (; ; ) {
-      const n = readSync2(fd, buf, 0, buf.length, null);
+      const n = readSync3(fd, buf, 0, buf.length, null);
       if (n <= 0) break;
       h.update(buf.subarray(0, n));
     }
@@ -15099,7 +15148,7 @@ function sha256File(p, max = Number.POSITIVE_INFINITY) {
   } catch {
     return void 0;
   } finally {
-    if (fd !== void 0) closeSync3(fd);
+    if (fd !== void 0) closeSync4(fd);
   }
 }
 var MAX_TEXT = 2 * 1024 * 1024;

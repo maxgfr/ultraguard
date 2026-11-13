@@ -1139,6 +1139,38 @@ export function interpretedScript(
 }
 
 /** Hooks a manager generated: recognised by their template, not by a word anywhere in the file (a comment is enough to fake that). */
+/** The hook names git runs (githooks(5)). */
+const GIT_HOOKS = new Set([
+  "applypatch-msg",
+  "pre-applypatch",
+  "post-applypatch",
+  "pre-commit",
+  "pre-merge-commit",
+  "prepare-commit-msg",
+  "commit-msg",
+  "post-commit",
+  "pre-rebase",
+  "post-checkout",
+  "post-merge",
+  "pre-push",
+  "pre-receive",
+  "update",
+  "proc-receive",
+  "post-receive",
+  "post-update",
+  "reference-transaction",
+  "push-to-checkout",
+  "pre-auto-gc",
+  "post-rewrite",
+  "sendemail-validate",
+  "fsmonitor-watchman",
+  "p4-changelist",
+  "p4-prepare-changelist",
+  "p4-post-changelist",
+  "p4-pre-submit",
+  "post-index-change",
+]);
+
 const MANAGED_HOOK =
   /husky\.sh|\.husky\/_\/h\b|^\s*git lfs (pre-push|post-checkout|post-commit|post-merge)\b|lefthook\b.*\b(run|install)\b|pre-commit.*hook-impl|^\s*INSTALL_PYTHON=|simple-git-hooks|overcommit|yorkie|lint-staged/m;
 
@@ -1175,7 +1207,8 @@ export function gitHookFindings(clones: string[], home: string, reviewSinceMs: n
         continue;
       }
       for (const n of names) {
-        if (n.endsWith(".sample") || n === "_" || n.startsWith(".")) continue;
+        // Only names git runs: husky's helpers (h, husky.sh) and stray files are not hooks.
+        if (!GIT_HOOKS.has(n)) continue;
         const p = join(dir, n);
         if (seen.has(p)) continue;
         seen.add(p);
@@ -1207,7 +1240,8 @@ export function gitHookFindings(clones: string[], home: string, reviewSinceMs: n
         }
         const signals = new Set<string>();
         for (const l of text.split("\n").slice(0, 5000)) if (l.trim() && !/^\s*#/.test(l)) for (const s of riskSignals(l, undefined, home)) signals.add(s);
-        const managed = MANAGED_HOOK.test(text);
+        // .husky/<hook> is the project's own committed hook and .husky/_ husky's generated stubs (a fresh clone or worktree writes them today): only their content counts.
+        const managed = MANAGED_HOOK.test(text) || /(^|\/)\.husky(\/_)?$/.test(dir);
         const recent = changedMs(st, nowMs) >= reviewSinceMs;
         if (!signals.size && (managed || !recent)) continue;
         out.push({
