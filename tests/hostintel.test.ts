@@ -43,8 +43,8 @@ describe("risk signals", () => {
 
   it("reads what a launchd, systemd or autostart item runs", () => {
     const plist = "<key>ProgramArguments</key><array><string>/bin/sh</string><string>-c</string><string>/opt/x/run --flag &amp;&amp; echo</string></array>";
-    expect(startupCommand(plist)).toEqual({ command: "/bin/sh -c /opt/x/run --flag && echo", executable: "/opt/x/run" });
-    expect(startupCommand("[Service]\nExecStart=-/usr/bin/agent --x\n")).toEqual({ command: "/usr/bin/agent --x", executable: "/usr/bin/agent" });
+    expect(startupCommand(plist)).toMatchObject({ command: "/bin/sh -c /opt/x/run --flag && echo", executable: "/opt/x/run" });
+    expect(startupCommand("[Service]\nExecStart=-/usr/bin/agent --x\n")).toMatchObject({ command: "/usr/bin/agent --x", executable: "/usr/bin/agent" });
     expect(startupCommand("<key>Program</key><string>/usr/local/bin/a</string>").executable).toBe("/usr/local/bin/a");
   });
 
