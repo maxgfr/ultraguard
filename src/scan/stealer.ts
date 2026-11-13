@@ -143,6 +143,8 @@ const STOLEN = /(^|\/)(Login Data|Cookies|Local State|Web Data|logins\.json|key4
 /** Archive names stealers use for their loot. */
 const LOOT_NAME = /^(osalogging|out)\.zip$/i;
 const ARCHIVE = /\.(zip|tar\.gz|tgz)$/i;
+/** Entries read across the staging folders. */
+const MAX_ENTRIES = 50_000;
 
 /**
  * Archives changed in the review window in the staging folders (/tmp,
@@ -153,41 +155,66 @@ const ARCHIVE = /\.(zip|tar\.gz|tgz)$/i;
 export async function stagingArchives(
   runner: Runner,
   dirs: string[],
-  opts: { sinceMs: number; nowMs: number; skip: (p: string) => boolean },
+  opts: { sinceMs: number; nowMs: number; skip: (p: string) => boolean; maxEntries?: number },
 ): Promise<{ findings: NewFinding[]; gaps: Gap[]; archives: number }> {
+  const maxEntries = opts.maxEntries ?? MAX_ENTRIES;
   const findings: NewFinding[] = [];
   const gaps: Gap[] = [];
   const archives: string[] = [];
   const seen = new Set<string>();
-  let entries = 0;
-  const visit = (d: string, depth: number) => {
-    let list: Dirent[] = [];
-    try {
-      list = readdirSync(d, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    // The entry types come with the listing: only archives are stat'ed (a temp folder can hold hundreds of thousands of entries).
-    for (const e of list) {
-      if (++entries > 200_000 || archives.length >= 500) return;
-      const p = join(d, e.name);
-      if (e.isDirectory()) {
-        if (depth > 0 && !opts.skip(p)) visit(p, depth - 1);
-      } else if (e.isFile() && ARCHIVE.test(e.name) && !opts.skip(p))
-        try {
-          if (changedMs(lstatSync(p), opts.nowMs) >= opts.sinceMs) archives.push(p);
-        } catch {}
-    }
-  };
+  // Breadth first, all folders level by level: a stealer writes its zip at the top of /tmp, and a temp folder can hold
+  // hundreds of thousands of entries. Entry types come with the listing: only archives are stat'ed.
+  let level: { dir: string; root: string }[] = [];
   for (const d of dirs) {
     let real = d;
     try {
       real = realpathSync(d);
     } catch {}
-    if (seen.has(real)) continue;
+    if (!seen.has(real)) level.push({ dir: d, root: d });
     seen.add(real);
-    visit(d, 2);
   }
+  // Each staging folder has its own bound: a crowded $TMPDIR must not hide /tmp.
+  const entries = new Map<string, number>();
+  const stopped = new Set<string>();
+  for (let depth = 0; depth <= 2 && level.length; depth++) {
+    const next: { dir: string; root: string }[] = [];
+    for (const { dir, root } of level) {
+      // Past the bound, no folder is listed any more: the ones left are named in the gap.
+      if (stopped.has(root) || archives.length >= 500) {
+        stopped.add(root);
+        continue;
+      }
+      let list: Dirent[] = [];
+      try {
+        list = readdirSync(dir, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const e of list) {
+        const n = (entries.get(root) ?? 0) + 1;
+        entries.set(root, n);
+        if (n > maxEntries || archives.length >= 500) {
+          stopped.add(root);
+          break;
+        }
+        const p = join(dir, e.name);
+        if (e.isDirectory()) {
+          if (depth < 2 && !opts.skip(p)) next.push({ dir: p, root });
+        } else if (e.isFile() && ARCHIVE.test(e.name) && !opts.skip(p))
+          try {
+            if (changedMs(lstatSync(p), opts.nowMs) >= opts.sinceMs) archives.push(p);
+          } catch {}
+      }
+    }
+    level = next;
+  }
+  if (stopped.size)
+    gaps.push({
+      surface: "host",
+      what: `archives deeper in ${[...stopped].join(", ")}`,
+      why: `they hold more than ${maxEntries} entries each: the listing stopped there (top levels first)`,
+      fix: `find ${[...stopped].map((d) => JSON.stringify(d)).join(" ")} -maxdepth 3 -name '*.zip' -mtime -30`,
+    });
   const unlisted: string[] = [];
   for (const p of archives) {
     let names: string[] | undefined;

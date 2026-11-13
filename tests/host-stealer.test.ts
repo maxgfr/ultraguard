@@ -5,7 +5,7 @@ import type { Runner } from "../src/runner.js";
 import { scanHost } from "../src/scan/host.js";
 import { clickfixLines, clickfixSignals, processFindings } from "../src/scan/hostintel.js";
 import { appleLike } from "../src/scan/macos.js";
-import { binaryKind, zipEntries } from "../src/scan/stealer.js";
+import { binaryKind, stagingArchives, zipEntries } from "../src/scan/stealer.js";
 import { walk } from "../src/scan/walk.js";
 import type { Indicator, IocFile } from "../src/types.js";
 import { AIKIDO_IOCS, tmp } from "./helpers.js";
@@ -219,6 +219,16 @@ describe("what 2026 macOS stealers leave on disk", () => {
     ]);
     expect(r.gaps.find((g) => g.what.includes("could not") || g.why.includes("could not be listed"))?.what).toContain(join(stage, "broken.zip"));
     expect(r.result.stats.stagingArchives).toBe(4);
+  });
+
+  it("lists staging folders breadth first: a top-level archive is found even when the entry bound stops the listing", async () => {
+    const stage = tmp("ug-stb-");
+    for (let i = 0; i < 30; i++) put(stage, `d${String(i).padStart(2, "0")}/f.txt`, "x");
+    put(stage, "zz/out.zip", zip(["a"]));
+    put(stage, "out.zip", zip(["Cookies"]));
+    const r = await stagingArchives(none, [stage], { sinceMs: 0, nowMs: NOW.getTime(), skip: () => false, maxEntries: 40 });
+    expect(r.findings.map((f) => f.subject)).toEqual([join(stage, "out.zip")]);
+    expect(r.gaps.map((g) => g.what)).toEqual([`archives deeper in ${stage}`]);
   });
 
   it("flags new unsigned or ad-hoc apps and Apple look-alikes not signed by Apple; Apple's own and old apps are fine", async () => {
