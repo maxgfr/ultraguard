@@ -44,12 +44,21 @@ describe("npm packages you publish", () => {
           versions: { "1.0.1": { scripts: { preinstall: "bash setup.sh" }, _npmUser: { name: "someone-else" } } },
         },
         quiet: { time: { "1.0.0": "2023-01-01T00:00:00Z" }, versions: {} },
+        "ci-built": {
+          time: { "3.0.0": "2026-11-11T09:00:00Z" },
+          versions: {
+            "3.0.0": {
+              _npmUser: { name: "GitHub Actions", trustedPublisher: { id: "github" } },
+              dist: { attestations: { provenance: { predicateType: "https://slsa.dev/provenance/v1" } } },
+            },
+          },
+        },
       },
       calls,
     );
     const r = await scanNpmPublishes(iocs, { runner: whoami("me"), get });
     expect(r.user).toBe("me");
-    expect(r.stats.npmPackages).toBe(3);
+    expect(r.stats.npmPackages).toBe(4);
     const byName = Object.fromEntries(r.findings.map((f) => [f.subject, f]));
     expect(byName["npm:left-thing"]?.severity).toBe("compromised");
     expect(byName["npm:left-thing"]?.source).toBe("S1");
@@ -58,6 +67,10 @@ describe("npm packages you publish", () => {
     expect(byName["npm:@me/tool"]?.title).toContain("preinstall: bash setup.sh");
     expect(byName["npm:@me/tool"]?.scope).toBe("other");
     expect(byName["npm:quiet"]).toBeUndefined();
+    // Trusted publishing with provenance: one info line, never a suspicion.
+    expect(byName["npm:ci-built"]).toBeUndefined();
+    expect(byName["npm:me"]?.severity).toBe("info");
+    expect(byName["npm:me"]?.title).toContain("ci-built@3.0.0");
     // Scoped names keep their @ and encode the slash.
     expect(calls).toContain("https://registry.npmjs.org/@me%2Ftool");
     expect(r.gaps).toEqual([]);

@@ -83,6 +83,8 @@ export async function scanNpmPublishes(
   stats.npmPackages = names.length;
 
   let unread = 0;
+  // Versions CI published through npm trusted publishing (OIDC, with a provenance attestation): not a stolen token.
+  const fromCi: string[] = [];
   await mapPool(names, opts.concurrency ?? 8, async (name) => {
     const res = await get(`${REGISTRY}/${name.startsWith("@") ? `@${encodeURIComponent(name.slice(1))}` : encodeURIComponent(name)}`);
     if (!res.ok || !res.data?.time) {
@@ -100,6 +102,12 @@ export async function scanNpmPublishes(
       const scripts = INSTALL_SCRIPTS.filter((s) => typeof meta.scripts?.[s] === "string");
       const publisher = typeof meta._npmUser?.name === "string" ? meta._npmUser.name : undefined;
       const named = camp.indicators.find((i) => packageHit(i, "npm", name, version));
+      // A worm holding a token publishes as the user, without provenance; trusted publishing needs the repository's own workflow.
+      const trusted = !!meta._npmUser?.trustedPublisher && !!meta.dist?.attestations?.provenance;
+      if (trusted && !named) {
+        fromCi.push(`${name}@${version}`);
+        continue;
+      }
       const by = publisher ? ` by ${publisher}${publisher.toLowerCase() === user.toLowerCase() ? " (your npm account)" : ""}` : "";
       const withScript = scripts.length ? ` with an install script (${scripts.map((s) => `${s}: ${String(meta.scripts[s]).slice(0, 120)}`).join("; ")})` : "";
       findings.push({
@@ -120,7 +128,16 @@ export async function scanNpmPublishes(
       });
     }
   });
-  stats.npmPublishesInWindow = findings.length;
+  stats.npmPublishesInWindow = findings.length + fromCi.length;
+  if (fromCi.length)
+    findings.push({
+      surface: "deps",
+      severity: "info",
+      subject: `npm:${user}`,
+      title: `${fromCi.length} version(s) of your npm packages were published during the campaign window from CI, through trusted publishing with provenance (${fromCi.slice(0, 5).join(", ")}${fromCi.length > 5 ? ", ..." : ""}): not a stolen token; check the workflow runs that published them if the campaign targets CI`,
+      evidence: { kind: "url", ref: `https://www.npmjs.com/~${user}`, excerpt: fromCi.join(", ") },
+      key: `deps|npm-publish-ci|${user}`,
+    });
   if (unread)
     gaps.push({
       surface: "deps",

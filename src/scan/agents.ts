@@ -544,6 +544,9 @@ export function scanAgents(
   return { findings, inventory, instructionFiles };
 }
 
+/** A base64 WebAssembly module (its "\0asm" magic encodes as AGFzbQ). */
+const WASM_B64 = /AGFzbQ[A-Za-z0-9+/]{1000,}={0,2}/g;
+
 /** A base64 or hex run this long is a payload, not code. */
 const BLOB = /[A-Za-z0-9+/=]{10000,}|[0-9a-fA-F]{10000,}/;
 
@@ -570,7 +573,9 @@ function scriptSignals(path: string | undefined, home: string, content: Matcher[
   const lines = text.split("\n");
   for (const l of lines.slice(0, 5000))
     if (l.trim() && !/^\s*#/.test(l)) for (const s of riskSignals(l, undefined, home, { location: false })) out.add(`its script ${basename(path)} ${s}`);
-  if (lines.some((l) => l.length >= 20_000) || BLOB.test(text)) out.add(`its script ${basename(path)} holds a large encoded blob`);
+  // A WebAssembly module a bundler inlined (base64 of "\0asm": yoga-layout in ink CLIs) is code, not a hidden payload.
+  const plain = text.replace(WASM_B64, "");
+  if (plain.split("\n").some((l) => l.length >= 20_000) || BLOB.test(plain)) out.add(`its script ${basename(path)} holds a large encoded blob`);
   if (depth === 0)
     for (const mm of [...text.matchAll(/(?:require\(|import\(|from\s+|import\s+)\s*["'](\.{1,2}\/[^"']+)["']/g)].slice(0, 20)) {
       const base = resolve(dirname(path), mm[1] as string);

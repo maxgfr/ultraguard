@@ -15086,6 +15086,7 @@ function scanAgents(home, clones, m, opts = {}) {
   }
   return { findings, inventory, instructionFiles };
 }
+var WASM_B64 = /AGFzbQ[A-Za-z0-9+/]{1000,}={0,2}/g;
 var BLOB = /[A-Za-z0-9+/=]{10000,}|[0-9a-fA-F]{10000,}/;
 function scriptSignals(path, home, content = [], depth = 0) {
   if (!path) return { signals: [] };
@@ -15104,7 +15105,8 @@ function scriptSignals(path, home, content = [], depth = 0) {
   const lines = text.split("\n");
   for (const l of lines.slice(0, 5e3))
     if (l.trim() && !/^\s*#/.test(l)) for (const s of riskSignals(l, void 0, home, { location: false })) out2.add(`its script ${basename6(path)} ${s}`);
-  if (lines.some((l) => l.length >= 2e4) || BLOB.test(text)) out2.add(`its script ${basename6(path)} holds a large encoded blob`);
+  const plain2 = text.replace(WASM_B64, "");
+  if (plain2.split("\n").some((l) => l.length >= 2e4) || BLOB.test(plain2)) out2.add(`its script ${basename6(path)} holds a large encoded blob`);
   if (depth === 0)
     for (const mm of [...text.matchAll(/(?:require\(|import\(|from\s+|import\s+)\s*["'](\.{1,2}\/[^"']+)["']/g)].slice(0, 20)) {
       const base2 = resolve4(dirname2(path), mm[1]);
@@ -15936,6 +15938,7 @@ async function scanNpmPublishes(iocs, opts) {
   }
   stats.npmPackages = names.length;
   let unread = 0;
+  const fromCi = [];
   await mapPool(names, opts.concurrency ?? 8, async (name) => {
     const res = await get(`${REGISTRY}/${name.startsWith("@") ? `@${encodeURIComponent(name.slice(1))}` : encodeURIComponent(name)}`);
     if (!res.ok || !res.data?.time) {
@@ -15953,6 +15956,11 @@ async function scanNpmPublishes(iocs, opts) {
       const scripts = INSTALL_SCRIPTS.filter((s) => typeof meta.scripts?.[s] === "string");
       const publisher = typeof meta._npmUser?.name === "string" ? meta._npmUser.name : void 0;
       const named2 = camp.indicators.find((i) => packageHit(i, "npm", name, version));
+      const trusted = !!meta._npmUser?.trustedPublisher && !!meta.dist?.attestations?.provenance;
+      if (trusted && !named2) {
+        fromCi.push(`${name}@${version}`);
+        continue;
+      }
       const by = publisher ? ` by ${publisher}${publisher.toLowerCase() === user.toLowerCase() ? " (your npm account)" : ""}` : "";
       const withScript = scripts.length ? ` with an install script (${scripts.map((s) => `${s}: ${String(meta.scripts[s]).slice(0, 120)}`).join("; ")})` : "";
       findings.push({
@@ -15971,7 +15979,16 @@ async function scanNpmPublishes(iocs, opts) {
       });
     }
   });
-  stats.npmPublishesInWindow = findings.length;
+  stats.npmPublishesInWindow = findings.length + fromCi.length;
+  if (fromCi.length)
+    findings.push({
+      surface: "deps",
+      severity: "info",
+      subject: `npm:${user}`,
+      title: `${fromCi.length} version(s) of your npm packages were published during the campaign window from CI, through trusted publishing with provenance (${fromCi.slice(0, 5).join(", ")}${fromCi.length > 5 ? ", ..." : ""}): not a stolen token; check the workflow runs that published them if the campaign targets CI`,
+      evidence: { kind: "url", ref: `https://www.npmjs.com/~${user}`, excerpt: fromCi.join(", ") },
+      key: `deps|npm-publish-ci|${user}`
+    });
   if (unread)
     gaps.push({
       surface: "deps",
