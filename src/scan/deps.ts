@@ -120,6 +120,11 @@ export function materializeChecker(dir: string): string {
   return p;
 }
 
+/** The runner's exit status for a command it killed on timeout. */
+const TIMED_OUT = 124;
+const CHECK_TIMEOUT_MIN = 15;
+const UPDATE_TIMEOUT_MIN = 20;
+
 /** The line of package-checker's error output that says why: its first "Error:" line, else the last line. */
 const checkerError = (out: string): string | undefined => {
   const lines = out
@@ -136,13 +141,28 @@ const checkerError = (out: string): string | undefined => {
  */
 export async function updateCheckerFeeds(runner: Runner, dir: string): Promise<{ ok: boolean; detail: string }> {
   const script = materializeChecker(join(dir, "..", "bin"));
-  const res = await runner("bash", [script, "--update-feeds", "--data-dir", dir], { timeoutMs: 20 * 60_000 });
+  const res = await runner("bash", [script, "--update-feeds", "--data-dir", dir], { timeoutMs: UPDATE_TIMEOUT_MIN * 60_000 });
   if (res.missing) return { ok: false, detail: "bash is not installed" };
   const summary = /Updated \d+ of \d+ feed\(s\)/.exec(res.stdout)?.[0];
   if (res.status === 0) return { ok: true, detail: summary ?? "feeds updated" };
+  // A download cut short (killed on timeout) leaves its temp file (.<feed>.purl.tmp.XXXXXX) behind.
+  try {
+    for (const f of readdirSync(dir)) if (/^\..+\.purl\.tmp\./.test(f)) rmSync(join(dir, f), { force: true });
+  } catch {
+    // No feed folder: nothing to clean.
+  }
+  if (res.status === TIMED_OUT) return { ok: false, detail: `timed out after ${UPDATE_TIMEOUT_MIN} min` };
   if (res.status === 3) return { ok: false, detail: `${summary ?? "some feeds"} (the others could not be downloaded)` };
   return { ok: false, detail: checkerError(`${res.stderr}\n${res.stdout}`) ?? `exit ${res.status}` };
 }
+
+/** What to do about a failed package-checker run, by its error. */
+const checkerFix = (error: string): string =>
+  /bash 4/i.test(error)
+    ? "brew install bash (package-checker needs Bash 4 or newer), then re-run"
+    : /^timed out/.test(error)
+      ? "re-run with --roots narrowed to your code folders"
+      : "re-run when online";
 
 export function defaultChecker(runner: Runner, workDir: string, opts: { dataDir?: string } = {}): Checker {
   const script = materializeChecker(join(workDir, "tools"));
@@ -162,11 +182,12 @@ export function defaultChecker(runner: Runner, workDir: string, opts: { dataDir?
       // --no-default-prune: ultraguard's walk decides which folders count (Pods, .nuxt, site-packages included).
       [script, dir, "--default-source-ghsa-osv", "--only-lockfiles", "--no-config", "--no-runtime-check", "--no-default-prune", ...feeds, "--export-json", out],
       {
-        timeoutMs: 15 * 60_000,
+        timeoutMs: CHECK_TIMEOUT_MIN * 60_000,
         cwd: workDir,
       },
     );
     if (res.missing) return { ok: false, vulnerabilities: [], error: "bash is not installed" };
+    if (res.status === TIMED_OUT) return { ok: false, vulnerabilities: [], error: `timed out after ${CHECK_TIMEOUT_MIN} min` };
     if (res.status !== 0 && res.status !== 1 && res.status !== 3)
       return { ok: false, vulnerabilities: [], error: checkerError(`${res.stderr}\n${res.stdout}`) ?? `exit ${res.status}` };
     if (!existsSync(out)) return { ok: res.status === 0, vulnerabilities: [], error: res.status === 0 ? undefined : "no JSON report written" };
@@ -465,7 +486,7 @@ export async function scanDeps(
             surface: "deps",
             what: `advisories for ${label}`,
             why: `package-checker failed: ${r.error ?? "unknown error"}`,
-            fix: /bash 4/i.test(r.error ?? "") ? "brew install bash (package-checker needs Bash 4 or newer), then re-run" : "re-run when online",
+            fix: checkerFix(r.error ?? ""),
           });
           continue;
         }

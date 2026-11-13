@@ -1,12 +1,12 @@
 // Regressions for the dependency-scan findings of the pipeline audit.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { doctor } from "../src/doctor.js";
 import { Run } from "../src/run.js";
 import type { Runner } from "../src/runner.js";
 import { renderReport } from "../src/report.js";
-import { type CheckerSource, type CheckerVuln, defaultChecker, FEED_FILES, feedDir, feedSummary, scanDeps } from "../src/scan/deps.js";
+import { type CheckerSource, type CheckerVuln, defaultChecker, FEED_FILES, feedDir, feedSummary, scanDeps, updateCheckerFeeds } from "../src/scan/deps.js";
 import { parseLockfile } from "../src/scan/lockfiles.js";
 import { walk } from "../src/scan/walk.js";
 import { PACKAGE_CHECKER_REF, PACKAGE_CHECKER_VERSION } from "../src/vendor/package-checker-script.js";
@@ -155,6 +155,23 @@ describe("package-checker runs", () => {
     const bash3 = "Error: package-checker requires Bash 4 or newer (this shell: 3.2.57(1)-release).\n  macOS (/bin/bash is 3.2): brew install bash\n";
     const r = await defaultChecker(fakeChecker(2, undefined, bash3), work)(work);
     expect(r).toMatchObject({ ok: false, error: "Error: package-checker requires Bash 4 or newer (this shell: 3.2.57(1)-release)." });
+  });
+
+  it("a run killed on timeout says so, and the update leaves no temp file in the feed folder", async () => {
+    const work = tmp("ug-pcto-");
+    const killed: Runner = async (_cmd, args) => {
+      const i = args.indexOf("--data-dir");
+      if (args.includes("--update-feeds")) writeFileSync(join(args[i + 1] as string, ".ghsa.purl.tmp.51mzbE"), "partial");
+      return { ok: false, status: 124, stdout: "Updating feeds...\nFormat: purl\n", stderr: "" };
+    };
+    expect(await defaultChecker(killed, work)(work)).toMatchObject({ ok: false, error: "timed out after 15 min" });
+    const data = tmp("ug-pctod-");
+    expect(await updateCheckerFeeds(killed, data)).toEqual({ ok: false, detail: "timed out after 20 min" });
+    expect(readdirSync(data)).toEqual([]);
+    const root = tmp("ug-pcto-r-");
+    put(root, "app/package-lock.json", npmLock({ a: "1.0.0" }));
+    const s = await scanDeps(NO_PKG, walk([root]), undefined, { runner: killed, roots: [root] });
+    expect(s.gaps.find((g) => g.why === "package-checker failed: timed out after 15 min")?.fix).toBe("re-run with --roots narrowed to your code folders");
   });
 
   it("deps-7: a Bash 3 failure says to install Bash, not to go online", async () => {
