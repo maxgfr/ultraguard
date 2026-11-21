@@ -1,6 +1,6 @@
 import { mkdirSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { main, setRulesDeps, setRunner } from "../src/cli.js";
 import { freshclamSummary, refreshDefenses, updateAdvisoryFeeds, updateClamav, updateYaraForge } from "../src/defenses.js";
 import { defaultRulesDeps, installedRules, type RulesDeps } from "../src/rules.js";
@@ -314,6 +314,11 @@ describe("rules update", () => {
   });
 
   it("scan host refreshes stale signatures before scanning, unless --no-update", async () => {
+    // The CLI reads the real clock: pin it so NEW stays fresh (it went stale on 2026-11-20).
+    vi.useFakeTimers({ now: NOW, toFake: ["Date"] });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
     const state = tmp("ug-def-");
     setRulesDeps(deps);
     const m = machine();
