@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here, generated automatically from the [Conventional Commits](https://www.conventionalcommits.org/) by [semantic-release](https://github.com/semantic-release/semantic-release).
 
+## [1.8.1](https://github.com/maxgfr/ultraguard/compare/v1.8.0...v1.8.1) (2026-11-21)
+
+
+### Bug Fixes
+
+* add the engine:prepare and engine:gate scripts the repin workflow runs ([#19](https://github.com/maxgfr/ultraguard/issues/19)) ([291d36f](https://github.com/maxgfr/ultraguard/commit/291d36fdb0c06e90fa6d5304f502dddf77cc4677))
+
 # [1.8.0](https://github.com/maxgfr/ultraguard/compare/v1.7.1...v1.8.0) (2026-11-13)
 
 
