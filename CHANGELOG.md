@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here, generated automatically from the [Conventional Commits](https://www.conventionalcommits.org/) by [semantic-release](https://github.com/semantic-release/semantic-release).
 
+## [1.8.2](https://github.com/maxgfr/ultraguard/compare/v1.8.1...v1.8.2) (2026-11-27)
+
+
+### Bug Fixes
+
+* **engine:** update shared engines and maintenance tool ([2aae6bb](https://github.com/maxgfr/ultraguard/commit/2aae6bbf700498b9d55dab68c95c04d05b6d26fb))
+
 ## [1.8.1](https://github.com/maxgfr/ultraguard/compare/v1.8.0...v1.8.1) (2026-11-21)
 
 
